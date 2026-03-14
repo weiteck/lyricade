@@ -1,0 +1,29 @@
+[package]
+edition = "2024"
+name = "lrc-lyrics"
+version = "0.1.0"
+
+[dependencies]
+anyhow = "1.0"
+bon = "3.9"
+camino = { version = "1.2", features = ["serde1"] }
+chrono = { version = "0.4", features = ["serde"] }
+config = { version = "0.15", features = ["toml"] }
+derive-where = "1.6.1"
+diesel = { version = "2.3", features = [
+  "chrono",
+  "r2d2",
+  "returning_clauses_for_sqlite_3_35",
+  "sqlite",
+] }
+directories = "6.0"
+# diesel currently only supports <= v0.35 (support added in diesel v2.3.0, Sep 2025)
+libsqlite3-sys = { version = "0.35", features = ["bundled"] }
+lofty = "0.23"
+regex = "1.12"
+reqwest = { version = "0.13", features = ["json", "rustls"] }
+serde = { version = "1.0", features = ["derive"] }
+tokio = { version = "1.50", features = ["full"] }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+walkdir = "2.5"
