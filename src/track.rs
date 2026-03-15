@@ -305,6 +305,7 @@ impl Track {
         if response.is_err() {
             // Update DB on error to record the API check timestamp
             self.write_to_db().call()?;
+            return Ok(false);
         }
         let LrcLibLyricsResponse {
             instrumental,

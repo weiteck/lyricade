@@ -1,16 +1,16 @@
 use std::sync::LazyLock;
 
-use camino::Utf8Path;
 use chrono::Utc;
 use diesel::{
     SqliteConnection,
     connection::SimpleConnection,
     r2d2::{self, ConnectionManager},
 };
+use libsqlite3_sys::SQLITE_VERSION;
 use tracing::{Level, info};
 use tracing_subscriber::FmtSubscriber;
 
-use crate::{lrclib::LrcLibClient, util::now};
+use crate::lrclib::LrcLibClient;
 
 pub mod library;
 pub mod lrclib;
@@ -55,27 +55,24 @@ pub fn init_app() -> Result<()> {
     init_db_pool()?;
 
     let pkg_name_and_version = format!(
-        "### {} v{} ###",
+        ":::::::::::: {}  v{} ::::::::::::",
         std::env::var("CARGO_PKG_NAME")?,
         std::env::var("CARGO_PKG_VERSION")?
     );
-    let separator = "#".repeat(pkg_name_and_version.len());
-    info!("{}", separator);
-    info!("{}", pkg_name_and_version);
-    info!("{}", separator);
-
-    info!("");
-
-    info!("Started at:     {}", Utc::now());
-
+    let separator = "`".repeat(pkg_name_and_version.len());
     info!(
-        "SQLite version: v{}",
-        libsqlite3_sys::SQLITE_VERSION.to_string_lossy()
+        r#"
+{}
+{}
+
+SQLite:   v{}
+Database: {}
+      "#,
+        pkg_name_and_version,
+        separator,
+        SQLITE_VERSION.to_string_lossy(),
+        DB_PATH
     );
-
-    info!("Database path:  {DB_PATH}");
-
-    info!("");
 
     Ok(())
 }

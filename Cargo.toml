@@ -17,8 +17,8 @@ diesel = { version = "2.3", features = [
   "sqlite",
 ] }
 directories = "6.0"
-# diesel currently only supports <= v0.35 (support added in diesel v2.3.0, Sep 2025)
-libsqlite3-sys = { version = "0.35", features = ["bundled"] }
+# diesel currently supports <= v0.36 as of v2.3.7
+libsqlite3-sys = { version = "0.36", features = ["bundled"] }
 lofty = "0.23"
 regex = "1.12"
 reqwest = { version = "0.13", features = ["json", "rustls"] }

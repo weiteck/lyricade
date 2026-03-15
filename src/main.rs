@@ -25,7 +25,7 @@ async fn main() -> anyhow::Result<()> {
         keep_one_sidecar_file: false,
     };
 
-    let refresh_opts = RefreshOptions {
+    let _refresh_opts = RefreshOptions {
         scan_new_only: true,
         scan_options: scan_opts,
     };
@@ -34,17 +34,16 @@ async fn main() -> anyhow::Result<()> {
         let _added = Library::add(&path)?;
     }
     let _library = Library::get(1)?;
-    _library.refresh().options(refresh_opts).call()?;
 
-    let fetch_opts = FetchLyricsOptions {
+    let _fetch_opts = FetchLyricsOptions {
         prefer_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
         ignore_plain_lyrics: false,
         update_lyrics_tag: true,
         save_sidecar_file: true,
     };
 
-    _library.refresh().options(refresh_opts).call()?;
-    _library.fetch_lyrics().options(fetch_opts).call().await?;
+    // _library.refresh().options(refresh_opts).call()?;
+    // _library.fetch_lyrics().options(fetch_opts).call().await?;
     // let mut track = library.track(3)?;
     // dbg!(&track);
     // track.fetch_lyrics_from_api(true).await?;
