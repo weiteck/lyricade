@@ -2,17 +2,24 @@ const API_BASE_URL: &str = "https://lrclib.net/api";
 static API_URL_GET_LYRICS_FROM_TRACK_SIGNATURE: LazyLock<String> =
     LazyLock::new(|| format!("{}/get", API_BASE_URL));
 
-use std::{io::Write, sync::LazyLock, time::Duration};
+use std::{sync::LazyLock, time::Duration};
 
 use anyhow::anyhow;
 use reqwest::Url;
 use serde::Deserialize;
+use tracing::{debug, error, trace, warn};
 
-use crate::{Result, track::Track, util::now};
+use crate::{
+    Result,
+    lyrics::{Lyrics, LyricsType},
+    track::Track,
+    util::now,
+};
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(unused)]
 #[serde(untagged)]
-pub enum ApiResponse {
+enum ApiResponse {
     #[serde(rename_all = "camelCase")]
     Success {
         id: i64,
@@ -37,6 +44,13 @@ pub struct LrcLibClient {
     http_client: reqwest::Client,
 }
 
+#[derive(Debug, Clone)]
+pub struct LrcLibLyricsResponse {
+    pub instrumental: bool,
+    pub plain_lyrics: Option<Lyrics>,
+    pub synced_lyrics: Option<Lyrics>,
+}
+
 impl LrcLibClient {
     pub fn new() -> Self {
         let http_client = match reqwest::Client::builder()
@@ -52,11 +66,10 @@ impl LrcLibClient {
         Self { http_client }
     }
 
-    pub async fn get_lyrics_from_track_signature(
+    pub async fn lyrics_from_track_signature(
         &self,
         track: &mut Track,
-        embed: bool,
-    ) -> Result<()> {
+    ) -> Result<LrcLibLyricsResponse> {
         let url = Url::parse_with_params(
             &API_URL_GET_LYRICS_FROM_TRACK_SIGNATURE,
             &[
@@ -67,63 +80,56 @@ impl LrcLibClient {
             ],
         )?;
 
+        debug!("Getting lyrics from lrclib.net for {}", &track);
+        trace!("Trying lrclib.net endpoint \"{}\"", &url);
+
         let response = self.http_client.get(url).send().await?;
         let response_status = response.status();
 
         if let Ok(api_response) = response.json::<ApiResponse>().await {
+            trace!("lrclib.net API response:\n{:#?}", &api_response);
+
             track.last_api_check_at = Some(now());
 
             match api_response {
                 ApiResponse::Success {
+                    instrumental,
                     plain_lyrics,
                     synced_lyrics,
                     ..
                 } => {
-                    let (sidecar_file_path, lyrics, lyrics_synchronised) =
-                        if synced_lyrics.is_some() {
-                            let path = Some(track.path().with_extension("lrc"));
-                            track.lyrics_sidecar_lrc_file = synced_lyrics.clone();
-                            (path, synced_lyrics, true)
-                        } else if plain_lyrics.is_some() {
-                            let path = Some(track.path().with_extension("txt"));
-                            track.lyrics_sidecar_txt_file = plain_lyrics.clone();
-                            (path, plain_lyrics, false)
-                        } else {
-                            (None, None, track.lyrics_embedded_synchronised)
-                        };
-
-                    if let (Some(sidecar_file_path), Some(lyrics)) = (sidecar_file_path, lyrics) {
-                        let mut file = std::fs::File::create(sidecar_file_path)?;
-                        file.write_all(lyrics.as_bytes())?;
-
-                        // Embed lyrics in file metadata
-                        if embed {
-                            track.lyrics = Some(lyrics);
-                            track.lyrics_embedded_synchronised = lyrics_synchronised;
-                            track.write_to_file_and_db().call()?;
-                        } else {
-                            // Update track in database
-                            track.write_to_db().call()?;
-                        }
-                    }
-
-                    return Ok(());
+                    return Ok(LrcLibLyricsResponse {
+                        instrumental,
+                        plain_lyrics: plain_lyrics.map(|s| Lyrics {
+                            lyrics_type: LyricsType::Plain,
+                            contents: s,
+                        }),
+                        synced_lyrics: synced_lyrics.map(|s| Lyrics {
+                            lyrics_type: LyricsType::Sync,
+                            contents: s,
+                        }),
+                    });
                 }
                 ApiResponse::Error {
                     code,
                     name,
                     message,
                 } => {
-                    return Err(anyhow!(
-                        "API server responded with error: \"{code}: {name}: {message}\""
-                    ));
+                    let response = format_args!(
+                        "lrclib.net API responded with error while getting lyrics for {}:\n\"{code}: {name}: {message}\"",
+                        &track
+                    );
+                    warn!("{response}");
+                    return Err(anyhow!("{response}"));
                 }
             }
         };
 
-        Err(anyhow!(
-            "API server responded with status code {}",
-            response_status
-        ))
+        let error = format_args!(
+            "lrclib.net server responded with status code {} while getting lyrics for {}",
+            &response_status, &track
+        );
+        error!("{error}");
+        Err(anyhow!("{error}"))
     }
 }

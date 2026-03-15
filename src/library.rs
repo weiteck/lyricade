@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display};
+use std::{collections::HashSet, fmt::Display, time::Instant};
 
 use anyhow::anyhow;
 use bon::bon;
@@ -10,10 +10,11 @@ use tracing::{error, info, trace, warn};
 use walkdir::WalkDir;
 
 use crate::{
-    AUDIO_FILE_EXTENSIONS, DB_POOL, Result, lyrics,
+    AUDIO_FILE_EXTENSIONS, DB_POOL, Result,
+    lyrics::LyricsType,
     schema::{libraries, tracks},
-    track::{self, NewTrack, Track},
-    util::now,
+    track::{self, FetchLyricsOptions, NewTrack, Track},
+    util::{self, now},
 };
 
 /// Represents a library path.
@@ -38,12 +39,6 @@ pub struct NewLibrary {
 pub struct RefreshOptions {
     pub scan_new_only: bool,
     pub scan_options: track::ScanOptions,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FetchLyricsOptions {
-    pub prefer_lyrics_type: lyrics::LyricsType,
-    pub ignore_other_type: bool,
 }
 
 #[bon]
@@ -127,8 +122,9 @@ impl Library {
     /// Read metadata for new and existing files in `Library` path and update database.
     pub fn refresh(&self, options: Option<RefreshOptions>) -> Result<usize> {
         let options = options.unwrap_or_default();
-        trace!("{} refresh started with options:\n{:#?}", &self, options);
+        info!("{} refresh: Started with options: {:?}", &self, options);
 
+        let start = Instant::now();
         let mut conn = DB_POOL.get()?;
         let now = now();
         let paths = self
@@ -136,9 +132,10 @@ impl Library {
             .iter()
             .map(|p| p.to_string())
             .collect::<HashSet<_>>();
+        let mut existing_count = 0_usize;
         let mut existing_refreshed_count = 0_usize;
         let mut new_refreshed_count = 0_usize;
-        let mut missing_count = 0_usize;
+        let mut missing_removed_count = 0_usize;
 
         let rows = conn.transaction::<usize, _, _>(|conn| {
             // Get existing and missing tracks
@@ -147,10 +144,9 @@ impl Library {
                 .load::<Track>(conn)?
                 .into_iter()
                 .partition(|t| paths.contains(&t.path));
+            existing_count = existing_tracks.len();
 
-            dbg!(&missing_tracks);
-
-            // Build new tracks for non-existing paths
+            // Build new tracks from paths not in the database
             let existing_track_paths = existing_tracks
                 .iter()
                 .map(|t| t.path.clone())
@@ -199,18 +195,37 @@ impl Library {
                 }
             }
 
-            // Refresh existing tracks
-            // TODO: This should be optional (i.e. a 'full scan')
-            existing_refreshed_count = existing_tracks
-                .into_iter()
-                .filter_map(|mut t| {
-                    t.scan_and_update()
+            if options.scan_new_only {
+                // Refresh tracks with changed modified timestamps
+                for mut track in existing_tracks {
+                    if track.file_modified_at != util::file_modified_at().path(&track.path()).call()
+                    {
+                        trace!("{} file has changed and will be re-scanned", &track);
+                        if track
+                            .scan_and_update()
+                            .options(options.scan_options)
+                            .conn(conn)
+                            .call()
+                            .is_ok()
+                        {
+                            existing_refreshed_count += 1;
+                        };
+                    }
+                }
+            } else {
+                // Refresh existing tracks
+                for mut track in existing_tracks {
+                    if track
+                        .scan_and_update()
                         .options(options.scan_options)
                         .conn(conn)
                         .call()
-                        .ok()
-                })
-                .count();
+                        .is_ok()
+                    {
+                        existing_refreshed_count += 1;
+                    };
+                }
+            }
 
             // Clean up rows created for new tracks that we failed to get metadata for
             for track in errored_new_tracks {
@@ -218,11 +233,11 @@ impl Library {
             }
 
             // Delete missing tracks (path not found)
-            missing_count = missing_tracks.len();
-            if missing_count > 0 {
+            missing_removed_count = missing_tracks.len();
+            if missing_removed_count > 0 {
                 warn!(
                     "{} tracks not found and will be removed: {:?}",
-                    missing_count,
+                    missing_removed_count,
                     missing_tracks.iter().map(|t| &t.path).collect::<Vec<_>>()
                 );
                 for track in missing_tracks {
@@ -231,37 +246,66 @@ impl Library {
             }
             let rows = new_refreshed_count
                 .saturating_add(existing_refreshed_count)
-                .saturating_add(missing_count);
+                .saturating_add(missing_removed_count);
 
             Ok::<usize, anyhow::Error>(rows)
         })?;
 
-        if rows == paths.len() {
-            let args = if missing_count == 0 {
-                format_args!(
-                    "{}: Updated {} tracks ({} new)",
-                    &self, rows, new_refreshed_count
-                )
-            } else {
-                format_args!(
-                    "{}: Updated {} tracks ({} new); removed {} missing tracks",
-                    &self, rows, new_refreshed_count, missing_count
-                )
-            };
-            info!("{args}");
-        } else {
-            warn!(
-                "{}: Failed to update {} tracks ({} of {} inserted; {} new; removed {} missing tracks)",
-                &self,
-                paths.len().saturating_sub(rows),
-                rows,
-                paths.len(),
-                new_refreshed_count,
-                missing_count
-            );
-        }
+        info!(
+            "{} refresh: Completed in {:.1}s: Scanned {}/{} existing tracks; added {} new tracks; removed {} missing tracks",
+            &self,
+            start.elapsed().as_secs_f32(),
+            existing_refreshed_count,
+            existing_count,
+            new_refreshed_count,
+            missing_removed_count
+        );
 
         Ok(rows)
+    }
+
+    #[builder]
+    /// Fetch lyrics for tracks in this library, if track lyrics are missing or do not meet the
+    /// requirements of `FetchLyricsOptions`.
+    pub async fn fetch_lyrics(&self, options: FetchLyricsOptions) -> Result<usize> {
+        // TODO: Use multiple async threads
+
+        info!(
+            "{} fetch lyrics: Started with options: {:?}",
+            &self, options
+        );
+
+        let start = Instant::now();
+        let mut attempted_fetches = 0_usize;
+
+        let tracks = self.tracks().call()?;
+
+        for mut track in tracks {
+            if options.update_lyrics_tag && track.lyrics.is_none()
+                || ((!track.lyrics_embedded_synchronised
+                    && options.prefer_lyrics_type == LyricsType::Sync)
+                    || (track.lyrics_embedded_synchronised
+                        && options.prefer_lyrics_type == LyricsType::Plain))
+                || options.save_sidecar_file
+                    && ((track.lyrics_sidecar_lrc_file.is_none()
+                        && options.prefer_lyrics_type == LyricsType::Sync)
+                        || (track.lyrics_sidecar_txt_file.is_none()
+                            && options.prefer_lyrics_type == LyricsType::Plain))
+            {
+                if track.fetch_lyrics().options(options).call().await.is_ok() {
+                    attempted_fetches += 1;
+                }
+            }
+        }
+
+        info!(
+            "{} fetch lyrics: Completed in {:.1}s: Tried to fetch lyrics for {} tracks",
+            &self,
+            start.elapsed().as_secs_f32(),
+            attempted_fetches
+        );
+
+        Ok(1)
     }
 
     /// Remove a library path and all `Track`s belonging to it (unless the `Track` exists in another
@@ -343,6 +387,6 @@ impl Library {
 
 impl Display for Library {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Library[{}] @ {}", &self.id, &self.path())
+        write!(f, "Library({})[\"{}\"]", &self.id, &self.path())
     }
 }

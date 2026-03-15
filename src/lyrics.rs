@@ -1,4 +1,7 @@
-use std::{io::Read, sync::LazyLock};
+use std::{
+    io::{Read, Write},
+    sync::LazyLock,
+};
 
 use anyhow::anyhow;
 use camino::{Utf8Path, Utf8PathBuf};
@@ -7,9 +10,14 @@ use regex::Regex;
 
 use crate::{Result, track::Track};
 
-/// Regex to match "\[00:00.000\]" and similar, indicating synchronised lyrics.
-pub static SYNCHRONISED_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+/// Regex to match "\[00:00.000]\" or "\[0:00.0]\", indicating synchronised lyrics.
+pub static SYNC_LYRICS_MATCH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
     regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]").expect("should be valid regex")
+});
+
+/// Regex to match "\[00:00.000]\" or "\[0:00.0]\" followed by 0 or more whitespace chars ("[ \t]*").
+pub static SYNC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+    regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*").expect("should be valid regex")
 });
 
 #[derive(Debug, Clone)]
@@ -21,11 +29,34 @@ pub struct Lyrics {
     pub contents: String,
 }
 
+impl Lyrics {
+    /// If lyrics are synchronous, remove timestamps.
+    pub fn into_plain(mut self) -> Self {
+        if self.lyrics_type == LyricsType::Sync {
+            self.contents = SYNC_LYRICS_STRIP_REGEX
+                .replace_all(&self.contents, "")
+                .to_string();
+            self.lyrics_type = LyricsType::Plain;
+        };
+        self
+    }
+}
+
 // Variants are given discriminants for sorting (lower values sorted first)
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub enum LyricsType {
+    #[default]
     Sync = 1,
     Plain = 2,
+}
+
+impl From<LyricsFileType> for LyricsType {
+    fn from(value: LyricsFileType) -> Self {
+        match value {
+            LyricsFileType::Lrc => LyricsType::Sync,
+            LyricsFileType::Txt => LyricsType::Plain,
+        }
+    }
 }
 
 // Variants are given discriminants for sorting (lower values sorted first)
@@ -34,6 +65,15 @@ pub enum LyricsFileType {
     // `Lrc` must be first for ordering when `Vec` is sorted
     Lrc = 1,
     Txt = 2,
+}
+
+impl From<LyricsType> for LyricsFileType {
+    fn from(value: LyricsType) -> Self {
+        match value {
+            LyricsType::Sync => LyricsFileType::Lrc,
+            LyricsType::Plain => LyricsFileType::Txt,
+        }
+    }
 }
 
 impl TryFrom<&Utf8Path> for LyricsFileType {
@@ -52,12 +92,20 @@ impl TryFrom<&Utf8Path> for LyricsFileType {
     }
 }
 
+impl LyricsFileType {
+    pub fn file_extension(&self) -> String {
+        match &self {
+            LyricsFileType::Lrc => "lrc".into(),
+            LyricsFileType::Txt => "txt".into(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LyricsFile {
-    pub lyrics_type: LyricsType,   // Sort by type..
-    pub file_type: LyricsFileType, // ..then by extension (path is otherwise identical)
+    pub lyrics: Lyrics,
+    pub file_type: LyricsFileType,
     pub path: Utf8PathBuf,
-    pub contents: String,
 }
 
 impl TryFrom<&Utf8Path> for LyricsFile {
@@ -95,8 +143,10 @@ impl LyricsFile {
             let file_type = LyricsFileType::try_from(path)?;
 
             return Ok(LyricsFile {
-                lyrics_type,
-                contents,
+                lyrics: Lyrics {
+                    lyrics_type,
+                    contents,
+                },
                 file_type,
                 path: path.into(),
             });
@@ -124,11 +174,18 @@ impl LyricsFile {
             None
         }
     }
+
+    /// Write `lyrics.contents` to `path`. Any existing file will be overwritten.
+    pub fn save(&self) -> Result<()> {
+        let mut file = std::fs::File::create(&self.path)?;
+        file.write_all(self.lyrics.contents.as_bytes())?;
+        Ok(())
+    }
 }
 
 /// Check if lyrics are synchronised using regex.
 pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
-    SYNCHRONISED_LYRICS_REGEX.find(lyrics).is_some()
+    SYNC_LYRICS_MATCH_REGEX.find(lyrics).is_some()
 }
 
 #[cfg(test)]
@@ -139,35 +196,43 @@ mod tests {
     fn sidecar_lyrics_sorting() {
         // Best candidate - sync type + .lrc extension
         let best_sl_candidate = LyricsFile {
-            lyrics_type: LyricsType::Sync,
+            lyrics: Lyrics {
+                lyrics_type: LyricsType::Sync,
+                contents: "4".into(),
+            },
             file_type: LyricsFileType::Lrc,
             path: Utf8PathBuf::from("/x/y.lrc"),
-            contents: "4".into(),
         };
         // Worst candidate - non-sync type + .txt extension
         let worst_sl_candidate = LyricsFile {
-            lyrics_type: LyricsType::Plain,
+            lyrics: Lyrics {
+                lyrics_type: LyricsType::Plain,
+                contents: "1".into(),
+            },
             file_type: LyricsFileType::Txt,
             path: Utf8PathBuf::from("/x/y.txt"),
-            contents: "1".into(),
         };
 
         let mut vec = (0..2)
             .flat_map(|_| {
                 [
                     LyricsFile {
-                        lyrics_type: LyricsType::Plain,
+                        lyrics: Lyrics {
+                            lyrics_type: LyricsType::Plain,
+                            contents: "3".into(),
+                        },
                         file_type: LyricsFileType::Lrc,
                         path: Utf8PathBuf::from("/x/y.lrc"),
-                        contents: "3".into(),
                     },
                     worst_sl_candidate.clone(),
                     best_sl_candidate.clone(),
                     LyricsFile {
-                        lyrics_type: LyricsType::Sync,
+                        lyrics: Lyrics {
+                            lyrics_type: LyricsType::Sync,
+                            contents: "2".into(),
+                        },
                         file_type: LyricsFileType::Txt,
                         path: Utf8PathBuf::from("/x/y.txt"),
-                        contents: "2".into(),
                     },
                 ]
             })

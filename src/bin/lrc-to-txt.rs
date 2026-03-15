@@ -14,15 +14,12 @@ fn main() -> anyhow::Result<()> {
         .filter(|p| p.exists())
         .collect::<HashSet<Utf8PathBuf>>();
 
-    // Regex to match "[00:00.000]" or "[0:00.0]" followed by 0 or more whitespace chars ("[ \t]*")
-    let re = regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*")
-        .expect("should be valid regex");
-
     for path in lrc_paths {
         let lf = LyricsFile::try_from_path(path.as_path())?;
-        if lf.file_type == LyricsFileType::Lrc && lf.lyrics_type == LyricsType::Sync {
-            let stripped = re.replace_all(&lf.contents, "");
-            std::fs::File::create(path.with_extension("txt"))?.write_all(stripped.as_bytes())?;
+        if lf.file_type == LyricsFileType::Lrc && lf.lyrics.lyrics_type == LyricsType::Sync {
+            let lyrics = lf.lyrics.into_plain();
+            std::fs::File::create(path.with_extension("txt"))?
+                .write_all(lyrics.contents.as_bytes())?;
         }
     }
 
