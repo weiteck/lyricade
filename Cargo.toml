@@ -17,6 +17,7 @@ diesel = { version = "2.3", features = [
   "sqlite",
 ] }
 directories = "6.0"
+get-size2 = { version = "0.7.4", features = ["chrono", "derive"] }
 # diesel currently supports <= v0.36 as of v2.3.7
 libsqlite3-sys = { version = "0.36", features = ["bundled"] }
 lofty = "0.23"

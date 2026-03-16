@@ -5,6 +5,7 @@ use bon::bon;
 use camino::Utf8PathBuf;
 use chrono::NaiveDateTime;
 use diesel::prelude::*;
+use get_size2::GetSize;
 use lofty::{
     file::{AudioFile, TaggedFileExt},
     tag::TagExt,
@@ -21,7 +22,9 @@ use crate::{
 };
 
 /// An audio `Track` with metadata persisted to the database.
-#[derive(Debug, Default, Clone, Queryable, Selectable, Identifiable, AsChangeset, Insertable)]
+#[derive(
+    Debug, Default, Clone, Queryable, Selectable, Identifiable, AsChangeset, Insertable, GetSize,
+)]
 #[diesel(table_name = crate::schema::tracks)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]

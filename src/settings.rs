@@ -8,12 +8,6 @@ use tracing::{info, warn};
 
 use crate::{Result, library::RefreshOptions, track::FetchLyricsOptions};
 
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
-pub struct Settings {
-    refresh_library: RefreshOptions,
-    fetch_lyrics: FetchLyricsOptions,
-}
-
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
     LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", &APP_NAME));
 
@@ -55,6 +49,13 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
         APP_DATA_DIR.join("db.sqlite3")
     }
 });
+
+// TODO: Save settings to DB instead of a file
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct Settings {
+    refresh_library: RefreshOptions,
+    fetch_lyrics: FetchLyricsOptions,
+}
 
 impl Settings {
     pub fn init_or_load() -> Result<Self> {
