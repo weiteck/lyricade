@@ -1,4 +1,4 @@
-use std::sync::LazyLock;
+use std::{fs, sync::LazyLock};
 
 use diesel::{
     SqliteConnection,
@@ -29,6 +29,8 @@ pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
 pub static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
+    Settings::create_app_dirs_if_not_exist()
+        .expect("Failed to create app config and data directories");
     Settings::init_or_load().expect(&format!(
         "Failed to load/initialise settings from \"{}\"",
         &*APP_SETTINGS_FILE_PATH
@@ -74,8 +76,8 @@ pub fn init_app() -> Result<()> {
 
     let pkg_name_and_version = format!(
         ":::::::::::: {}  v{} ::::::::::::",
-        std::env::var("CARGO_PKG_NAME")?,
-        std::env::var("CARGO_PKG_VERSION")?
+        env!("CARGO_PKG_NAME"),
+        env!("CARGO_PKG_VERSION")
     );
     let separator = "`".repeat(pkg_name_and_version.len());
     info!(
@@ -83,20 +85,28 @@ pub fn init_app() -> Result<()> {
 {}
 {}
 
-SQLite:   v{}
-Database: {}
-Settings: {}
+SQLite:        v{}
+Database:      {}
+Settings path: {}
+Settings:
+{:#?}
       "#,
         pkg_name_and_version,
         separator,
         SQLITE_VERSION.to_string_lossy(),
-        &*APP_DB_FILE_PATH.canonicalize_utf8()?,
-        &*APP_SETTINGS_FILE_PATH.canonicalize_utf8()?
+        &*APP_DB_FILE_PATH
+            .canonicalize_utf8()
+            .unwrap_or("(error while getting full path)".into()),
+        &*APP_SETTINGS_FILE_PATH
+            .canonicalize_utf8()
+            .unwrap_or("(error while getting full path)".into()),
+        &*SETTINGS
     );
 
     Ok(())
 }
 
+// `WorkerGuard` must be held for duration of the program
 fn init_logging() -> WorkerGuard {
     let default_log_level = if cfg!(debug_assertions) {
         "debug"
@@ -109,7 +119,12 @@ fn init_logging() -> WorkerGuard {
 
     let mut log_name = APP_NAME.clone();
     log_name.push_str(".log");
-    let file_appender = tracing_appender::rolling::weekly(&APP_DATA_DIR.join("logs"), log_name);
+    let log_dir = &APP_DATA_DIR.join("logs");
+    fs::create_dir_all(log_dir).expect(&format!(
+        "failed to create logging directory \"{}\"",
+        log_dir
+    ));
+    let file_appender = tracing_appender::rolling::weekly(log_dir, log_name);
     let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
     tracing_subscriber::registry()

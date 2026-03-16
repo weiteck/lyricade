@@ -20,6 +20,7 @@ directories = "6.0"
 # diesel currently supports <= v0.36 as of v2.3.7
 libsqlite3-sys = { version = "0.36", features = ["bundled"] }
 lofty = "0.23"
+mimalloc = "0.1"
 regex = "1.12"
 reqwest = { version = "0.13", features = ["json", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }

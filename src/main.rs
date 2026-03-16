@@ -1,5 +1,9 @@
-// Prevent console window in addition to Slint window in Windows release builds when, e.g., starting the app via file manager. Ignored on other platforms.
+// Prevent console window in addition to Slint window in Windows release builds
+// when, e.g., starting the app via file manager. Ignored on other platforms.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 slint::include_modules!();
 
@@ -12,6 +16,7 @@ use lrc_lyrics::{
     library::{Library, RefreshOptions},
     track::{FetchLyricsOptions, ScanOptions},
 };
+use mimalloc::MiMalloc;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

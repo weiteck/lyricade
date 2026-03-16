@@ -43,8 +43,7 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
     }
 });
 
-pub static APP_NAME: LazyLock<String> =
-    LazyLock::new(|| env::var("CARGO_PKG_NAME").unwrap_or("lrc-app".into()));
+pub static APP_NAME: LazyLock<String> = LazyLock::new(|| env!("CARGO_PKG_NAME").into());
 
 pub static APP_SETTINGS_FILE_PATH: LazyLock<Utf8PathBuf> =
     LazyLock::new(|| APP_CONFIG_DIR.join("settings.toml"));
@@ -93,14 +92,14 @@ impl Settings {
     }
 
     pub fn save(&self) -> Result<()> {
-        Settings::create_app_dirs_if_not_exist()?;
         let toml = toml::to_string_pretty(&self)?;
         let mut file = fs::File::create(&*APP_SETTINGS_FILE_PATH)?;
         file.write_all(toml.as_bytes())?;
         Ok(())
     }
 
-    fn create_app_dirs_if_not_exist() -> Result<()> {
+    /// Create config and data dirs. Call before `init_or_load` of `Settings`.
+    pub fn create_app_dirs_if_not_exist() -> Result<()> {
         if !&APP_CONFIG_DIR.exists() {
             fs::create_dir(&*APP_CONFIG_DIR)?;
         }
