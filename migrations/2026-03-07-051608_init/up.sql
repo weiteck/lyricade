@@ -2,7 +2,9 @@ CREATE TABLE IF NOT EXISTS libraries (
   -- `NOT NULL` added to PKs to help diesel generate schema
   id INTEGER PRIMARY KEY NOT NULL,
   path TEXT NOT NULL UNIQUE,
-  added_at DATETIME NOT NULL
+  name TEXT,
+  added_at DATETIME NOT NULL,
+  updated_at DATETIME NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS tracks (

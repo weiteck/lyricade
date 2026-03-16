@@ -9,6 +9,7 @@ use lofty::{
     file::{AudioFile, TaggedFileExt},
     tag::TagExt,
 };
+use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -90,10 +91,10 @@ pub struct NewTrack {
     pub file_modified_at: NaiveDateTime,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
 pub struct ScanOptions {
     /// Used to choose lyrics type to upgrade with or keep as a sidecar file.
-    pub preferred_lyrics_type: LyricsType,
+    pub prefer_lyrics_type: LyricsType,
     /// Embed sidecar lyrics if lyrics tag is empty or not the preferred type.
     pub upgrade_lyrics_tag: bool,
     /// Delete any "<audio_filename>.lrc" or "<audio_filename>.txt" sidecar lyrics files
@@ -104,7 +105,7 @@ pub struct ScanOptions {
     pub keep_one_sidecar_file: bool,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
 pub struct FetchLyricsOptions {
     pub prefer_lyrics_type: lyrics::LyricsType,
     pub ignore_plain_lyrics: bool,
@@ -196,7 +197,7 @@ impl Track {
                 });
 
                 if options.upgrade_lyrics_tag {
-                    match options.preferred_lyrics_type {
+                    match options.prefer_lyrics_type {
                         LyricsType::Sync => {
                             if !self.lyrics_embedded_synchronised || self.lyrics.is_none() {
                                 // Collection is sorted - best sync candidate is first
@@ -241,7 +242,7 @@ impl Track {
                     // Collection is sorted - best sync candidate is first, so we skip 1
                     sidecar_lyrics
                         .iter()
-                        .filter(|&lf| lf.lyrics.lyrics_type != options.preferred_lyrics_type)
+                        .filter(|&lf| lf.lyrics.lyrics_type != options.prefer_lyrics_type)
                         .for_each(|lf| {
                             debug!(
                                 "{} scan: Keep one sidecar file: deleting redundant file \"{}\"",

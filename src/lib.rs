@@ -1,31 +1,39 @@
 use std::sync::LazyLock;
 
-use chrono::Utc;
 use diesel::{
     SqliteConnection,
     connection::SimpleConnection,
     r2d2::{self, ConnectionManager},
 };
 use libsqlite3_sys::SQLITE_VERSION;
-use tracing::{Level, info};
+use tracing::{Level, info, warn};
 use tracing_subscriber::FmtSubscriber;
 
-use crate::lrclib::LrcLibClient;
+use crate::{
+    lrclib::LrcLibClient,
+    settings::{APP_DB_FILE_PATH, APP_SETTINGS_FILE_PATH, Settings},
+};
 
 pub mod library;
 pub mod lrclib;
 pub mod lyrics;
 pub mod schema;
+pub mod settings;
 pub mod track;
 pub mod util;
 
 pub type Result<T> = anyhow::Result<T>;
 pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
-pub const DB_PATH: &str = "db.sqlite3";
+pub static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
+    Settings::init_or_load().expect(&format!(
+        "Failed to load/initialise settings from \"{}\"",
+        &*APP_SETTINGS_FILE_PATH
+    ))
+});
 
 pub static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
-    let manager = r2d2::ConnectionManager::<SqliteConnection>::new(DB_PATH);
+    let manager = r2d2::ConnectionManager::<SqliteConnection>::new(&APP_DB_FILE_PATH.to_string());
     r2d2::Pool::builder()
         .build(manager)
         .expect("error creating database connection pool")
@@ -52,6 +60,11 @@ pub static AUDIO_FILE_EXTENSIONS: &[&str] = &[
 
 pub fn init_app() -> Result<()> {
     init_logging();
+
+    if cfg!(debug_assertions) {
+        warn!("Started in DEBUG mode");
+    }
+
     init_db_pool()?;
 
     let pkg_name_and_version = format!(
@@ -67,11 +80,13 @@ pub fn init_app() -> Result<()> {
 
 SQLite:   v{}
 Database: {}
+Settings: {}
       "#,
         pkg_name_and_version,
         separator,
         SQLITE_VERSION.to_string_lossy(),
-        DB_PATH
+        &*APP_DB_FILE_PATH.canonicalize_utf8()?,
+        &*APP_SETTINGS_FILE_PATH.canonicalize_utf8()?
     );
 
     Ok(())

@@ -7,6 +7,7 @@ use anyhow::anyhow;
 use camino::{Utf8Path, Utf8PathBuf};
 use derive_where::derive_where;
 use regex::Regex;
+use serde::{Deserialize, Serialize};
 
 use crate::{Result, track::Track};
 
@@ -43,7 +44,8 @@ impl Lyrics {
 }
 
 // Variants are given discriminants for sorting (lower values sorted first)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LyricsType {
     #[default]
     Sync = 1,

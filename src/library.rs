@@ -6,6 +6,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use chrono::NaiveDateTime;
 use diesel::{dsl::insert_into, prelude::*};
 
+use serde::{Deserialize, Serialize};
 use tracing::{error, info, trace, warn};
 use walkdir::WalkDir;
 
@@ -24,7 +25,9 @@ use crate::{
 pub struct Library {
     pub id: i32,
     pub path: String,
+    pub name: Option<String>,
     pub added_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
 #[derive(Debug, Default, Clone, Insertable)]
@@ -32,10 +35,12 @@ pub struct Library {
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct NewLibrary {
     pub path: String,
+    pub name: Option<String>,
     pub added_at: NaiveDateTime,
+    pub updated_at: NaiveDateTime,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, Deserialize, Serialize)]
 pub struct RefreshOptions {
     pub scan_new_only: bool,
     pub scan_options: track::ScanOptions,
@@ -89,10 +94,13 @@ impl Library {
             ));
         }
 
+        let now = now();
         let inserted_library = insert_into(libraries::table)
             .values(NewLibrary {
                 path: path.to_string(),
-                added_at: now(),
+                name: None,
+                added_at: now,
+                updated_at: now,
             })
             .get_result::<Library>(&mut conn)?;
 
@@ -308,6 +316,36 @@ impl Library {
         Ok(1)
     }
 
+    /// Get a `Track` by its ID.
+    #[builder]
+    pub fn track(&self, track_id: i32, conn: Option<&mut SqliteConnection>) -> Result<Track> {
+        let query = tracks::table
+            .filter(tracks::library_id.eq(&self.id))
+            .find(track_id);
+
+        match conn {
+            Some(conn) => Ok(query.first::<Track>(conn)?),
+            None => {
+                let mut conn = DB_POOL.get()?;
+                Ok(query.first::<Track>(&mut conn)?)
+            }
+        }
+    }
+
+    /// Get all `Track`s.
+    #[builder]
+    pub fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
+        let query = tracks::table.filter(tracks::library_id.eq(&self.id));
+
+        match conn {
+            Some(conn) => Ok(query.load::<Track>(conn)?),
+            None => {
+                let mut conn = DB_POOL.get()?;
+                Ok(query.load::<Track>(&mut conn)?)
+            }
+        }
+    }
+
     /// Remove a library path and all `Track`s belonging to it (unless the `Track` exists in another
     /// library path). Consumes the `Library`.
     pub fn remove(self) -> Result<()> {
@@ -319,6 +357,10 @@ impl Library {
         info!("Deleted {}", &self);
 
         Ok(())
+    }
+
+    pub fn default_name(&self) -> String {
+        self.path().file_name().unwrap_or("(invalid)").into()
     }
 
     /// The `Library`'s path.
@@ -352,36 +394,6 @@ impl Library {
             .first::<i64>(&mut conn)?;
 
         Ok(size as usize)
-    }
-
-    /// Get a `Track` by its ID.
-    #[builder]
-    pub fn track(&self, track_id: i32, conn: Option<&mut SqliteConnection>) -> Result<Track> {
-        let query = tracks::table
-            .filter(tracks::library_id.eq(&self.id))
-            .find(track_id);
-
-        match conn {
-            Some(conn) => Ok(query.first::<Track>(conn)?),
-            None => {
-                let mut conn = DB_POOL.get()?;
-                Ok(query.first::<Track>(&mut conn)?)
-            }
-        }
-    }
-
-    /// Get all `Track`s.
-    #[builder]
-    pub fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
-        let query = tracks::table.filter(tracks::library_id.eq(&self.id));
-
-        match conn {
-            Some(conn) => Ok(query.load::<Track>(conn)?),
-            None => {
-                let mut conn = DB_POOL.get()?;
-                Ok(query.load::<Track>(&mut conn)?)
-            }
-        }
     }
 }
 

@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use camino::Utf8PathBuf;
 
 use lrc_lyrics::{
-    init_app,
+    SETTINGS, init_app,
     library::{Library, RefreshOptions},
     track::{FetchLyricsOptions, ScanOptions},
 };
@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
         .collect::<HashSet<Utf8PathBuf>>();
 
     let scan_opts = ScanOptions {
-        preferred_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
+        prefer_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
         upgrade_lyrics_tag: true,
         delete_sidecar_files: true,
         keep_one_sidecar_file: false,
@@ -33,7 +33,7 @@ async fn main() -> anyhow::Result<()> {
     for path in library_paths {
         let _added = Library::add(&path)?;
     }
-    let _library = Library::get(1)?;
+    // let _library = Library::get(1)?;
 
     let _fetch_opts = FetchLyricsOptions {
         prefer_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
@@ -42,6 +42,7 @@ async fn main() -> anyhow::Result<()> {
         save_sidecar_file: true,
     };
 
+    dbg!(&*SETTINGS);
     // _library.refresh().options(refresh_opts).call()?;
     // _library.fetch_lyrics().options(fetch_opts).call().await?;
     // let mut track = library.track(3)?;

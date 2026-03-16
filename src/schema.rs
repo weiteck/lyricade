@@ -4,7 +4,9 @@ diesel::table! {
     libraries (id) {
         id -> Integer,
         path -> Text,
+        name -> Nullable<Text>,
         added_at -> Timestamp,
+        updated_at -> Timestamp,
     }
 }
 
