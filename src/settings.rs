@@ -92,6 +92,7 @@ impl Settings {
     }
 
     pub fn save(&self) -> Result<()> {
+        Settings::create_app_dirs_if_not_exist()?;
         let toml = toml::to_string_pretty(&self)?;
         let mut file = fs::File::create(&*APP_SETTINGS_FILE_PATH)?;
         file.write_all(toml.as_bytes())?;

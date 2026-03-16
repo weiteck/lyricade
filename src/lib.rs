@@ -29,8 +29,8 @@ pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
 pub static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
-    Settings::create_app_dirs_if_not_exist()
-        .expect("Failed to create app config and data directories");
+    // Settings::create_app_dirs_if_not_exist()
+    //     .expect("Failed to create app config and data directories");
     Settings::init_or_load().expect(&format!(
         "Failed to load/initialise settings from \"{}\"",
         &*APP_SETTINGS_FILE_PATH
@@ -67,6 +67,9 @@ pub fn init_app() -> Result<()> {
     // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
     // is stored in a static so it is not dropped for the duration of the program
     let _guard = &*LOG_WORKER_GUARD;
+
+    // Ensure settings initialise before logging paths below
+    let _settings = &*SETTINGS;
 
     if cfg!(debug_assertions) {
         warn!("Started in DEBUG mode");
