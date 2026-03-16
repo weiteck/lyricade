@@ -38,9 +38,9 @@ pub struct Track {
     pub duration: f32,
     pub instrumental: Option<bool>,
     pub lyrics: Option<String>,
+    pub lyrics_synchronised: bool,
     pub lyrics_sidecar_lrc_file: Option<String>,
     pub lyrics_sidecar_txt_file: Option<String>,
-    pub lyrics_embedded_synchronised: bool,
     #[diesel(skip_update)]
     pub added_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
@@ -81,9 +81,9 @@ pub struct NewTrack {
     pub duration: f32,
     pub instrumental: Option<bool>,
     pub lyrics: Option<String>,
+    pub lyrics_synchronised: bool,
     pub lyrics_sidecar_lrc_file: Option<String>,
     pub lyrics_sidecar_txt_file: Option<String>,
-    pub lyrics_embedded_synchronised: bool,
     pub added_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub refreshed_at: NaiveDateTime,
@@ -173,7 +173,7 @@ impl Track {
             self.album_name = album_name.unwrap_or_default();
             self.duration = duration;
             self.lyrics = lyrics;
-            self.lyrics_embedded_synchronised = lyrics_embedded_synchronised;
+            self.lyrics_synchronised = lyrics_embedded_synchronised;
             self.updated_at = now;
             self.refreshed_at = now;
             self.file_modified_at = util::file_modified_at()
@@ -199,7 +199,7 @@ impl Track {
                 if options.upgrade_lyrics_tag {
                     match options.prefer_lyrics_type {
                         LyricsType::Sync => {
-                            if !self.lyrics_embedded_synchronised || self.lyrics.is_none() {
+                            if !self.lyrics_synchronised || self.lyrics.is_none() {
                                 // Collection is sorted - best sync candidate is first
                                 if let Some(lf) = sidecar_lyrics.first() {
                                     let sync = lf.lyrics.lyrics_type == LyricsType::Sync;
@@ -209,14 +209,14 @@ impl Track {
                                             &self, &lf.path
                                         );
                                         self.lyrics = Some(lf.lyrics.contents.clone());
-                                        self.lyrics_embedded_synchronised = sync;
+                                        self.lyrics_synchronised = sync;
                                         file_requires_update = true;
                                     };
                                 }
                             }
                         }
                         LyricsType::Plain => {
-                            if self.lyrics_embedded_synchronised || self.lyrics.is_none() {
+                            if self.lyrics_synchronised || self.lyrics.is_none() {
                                 // Collection is sorted - best plain candidate is last
                                 if let Some(lf) = sidecar_lyrics.last() {
                                     // Convert sync lyrics to plain if required
@@ -230,7 +230,7 @@ impl Track {
                                         &self, &lf.path
                                     );
                                     self.lyrics = Some(lyrics);
-                                    self.lyrics_embedded_synchronised = false;
+                                    self.lyrics_synchronised = false;
                                     file_requires_update = true;
                                 };
                             }
@@ -366,7 +366,7 @@ impl Track {
                 match options.prefer_lyrics_type {
                     LyricsType::Sync
                         if self.lyrics.is_none()
-                            || (!self.lyrics_embedded_synchronised
+                            || (!self.lyrics_synchronised
                                 && lyrics
                                     .as_ref()
                                     .is_some_and(|l| l.lyrics_type == LyricsType::Sync)) =>
@@ -381,7 +381,7 @@ impl Track {
             };
 
             if upgrade_tag {
-                self.lyrics_embedded_synchronised = lyrics
+                self.lyrics_synchronised = lyrics
                     .as_ref()
                     .is_some_and(|l| l.lyrics_type == LyricsType::Sync);
                 self.lyrics = lyrics.as_ref().map(|l| l.contents.clone());

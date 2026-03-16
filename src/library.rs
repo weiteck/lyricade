@@ -290,9 +290,8 @@ impl Library {
 
         for mut track in tracks {
             if options.update_lyrics_tag && track.lyrics.is_none()
-                || ((!track.lyrics_embedded_synchronised
-                    && options.prefer_lyrics_type == LyricsType::Sync)
-                    || (track.lyrics_embedded_synchronised
+                || ((!track.lyrics_synchronised && options.prefer_lyrics_type == LyricsType::Sync)
+                    || (track.lyrics_synchronised
                         && options.prefer_lyrics_type == LyricsType::Plain))
                 || options.save_sidecar_file
                     && ((track.lyrics_sidecar_lrc_file.is_none()
