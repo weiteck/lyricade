@@ -23,8 +23,13 @@ lofty = "0.23"
 regex = "1.12"
 reqwest = { version = "0.13", features = ["json", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
+slint = "1.15"
 tokio = { version = "1.50", features = ["full"] }
 toml = "1.0.6"
 tracing = "0.1"
-tracing-subscriber = "0.3"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2.5"
+
+[build-dependencies]
+slint-build = "1.15"

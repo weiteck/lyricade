@@ -18,37 +18,40 @@ static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
     LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", &APP_NAME));
 
 pub static APP_CONFIG_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    let path = PROJECT_DIRS
-        .as_ref()
-        .map(|pd| pd.config_dir().to_path_buf())
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./config")));
-    path.try_into()
-        .expect("Encountered invalid UTF-8 path while parsing user config directory")
+    if cfg!(debug_assertions) {
+        Utf8PathBuf::from("./config") // use project dir
+    } else {
+        let path = PROJECT_DIRS
+            .as_ref()
+            .map(|pd| pd.config_dir().to_path_buf())
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./config")));
+        path.try_into()
+            .expect("Encountered invalid UTF-8 path while parsing user config directory")
+    }
 });
 
 pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    let path = PROJECT_DIRS
-        .as_ref()
-        .map(|pd| pd.data_dir().to_path_buf())
-        .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")));
-    path.try_into()
-        .expect("Encountered invalid UTF-8 path while parsing user data directory")
+    if cfg!(debug_assertions) {
+        Utf8PathBuf::from("./data") // use project dir
+    } else {
+        let path = PROJECT_DIRS
+            .as_ref()
+            .map(|pd| pd.data_dir().to_path_buf())
+            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")));
+        path.try_into()
+            .expect("Encountered invalid UTF-8 path while parsing user data directory")
+    }
 });
 
 pub static APP_NAME: LazyLock<String> =
     LazyLock::new(|| env::var("CARGO_PKG_NAME").unwrap_or("lrc-app".into()));
 
-pub static APP_SETTINGS_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    if cfg!(debug_assertions) {
-        Utf8PathBuf::from("settings.toml") // use project dir
-    } else {
-        APP_CONFIG_DIR.join("settings.toml")
-    }
-});
+pub static APP_SETTINGS_FILE_PATH: LazyLock<Utf8PathBuf> =
+    LazyLock::new(|| APP_CONFIG_DIR.join("settings.toml"));
 
 pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
     if cfg!(debug_assertions) {
-        Utf8PathBuf::from("db.dev.sqlite3") // use project dir
+        APP_DATA_DIR.join("db.dev.sqlite3") // use project dir
     } else {
         APP_DATA_DIR.join("db.sqlite3")
     }

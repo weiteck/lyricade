@@ -6,12 +6,13 @@ use diesel::{
     r2d2::{self, ConnectionManager},
 };
 use libsqlite3_sys::SQLITE_VERSION;
-use tracing::{Level, info, warn};
-use tracing_subscriber::FmtSubscriber;
+use tracing::{info, warn};
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
 use crate::{
     lrclib::LrcLibClient,
-    settings::{APP_DB_FILE_PATH, APP_SETTINGS_FILE_PATH, Settings},
+    settings::{APP_DATA_DIR, APP_DB_FILE_PATH, APP_NAME, APP_SETTINGS_FILE_PATH, Settings},
 };
 
 pub mod library;
@@ -24,6 +25,8 @@ pub mod util;
 
 pub type Result<T> = anyhow::Result<T>;
 pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
+
+static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
 pub static SETTINGS: LazyLock<Settings> = LazyLock::new(|| {
     Settings::init_or_load().expect(&format!(
@@ -59,7 +62,9 @@ pub static AUDIO_FILE_EXTENSIONS: &[&str] = &[
 ];
 
 pub fn init_app() -> Result<()> {
-    init_logging();
+    // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
+    // is stored in a static so it is not dropped for the duration of the program
+    let _guard = &*LOG_WORKER_GUARD;
 
     if cfg!(debug_assertions) {
         warn!("Started in DEBUG mode");
@@ -92,12 +97,28 @@ Settings: {}
     Ok(())
 }
 
-fn init_logging() {
-    let subscriber = FmtSubscriber::builder()
-        .with_max_level(Level::TRACE)
-        .finish();
-    tracing::subscriber::set_global_default(subscriber)
-        .expect("setting default tracing subscriber failed");
+fn init_logging() -> WorkerGuard {
+    let default_log_level = if cfg!(debug_assertions) {
+        "debug"
+    } else {
+        "info"
+    };
+
+    let filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_log_level));
+
+    let mut log_name = APP_NAME.clone();
+    log_name.push_str(".log");
+    let file_appender = tracing_appender::rolling::weekly(&APP_DATA_DIR.join("logs"), log_name);
+    let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer().with_ansi(true)) // console logs
+        .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
+        .init();
+
+    guard
 }
 
 fn init_db_pool() -> Result<()> {

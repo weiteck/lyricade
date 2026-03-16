@@ -1,9 +1,14 @@
+// Prevent console window in addition to Slint window in Windows release builds when, e.g., starting the app via file manager. Ignored on other platforms.
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+slint::include_modules!();
+
 use std::collections::HashSet;
 
 use camino::Utf8PathBuf;
 
 use lrc_lyrics::{
-    SETTINGS, init_app,
+    init_app,
     library::{Library, RefreshOptions},
     track::{FetchLyricsOptions, ScanOptions},
 };
@@ -18,6 +23,10 @@ async fn main() -> anyhow::Result<()> {
         .map(Utf8PathBuf::from)
         .collect::<HashSet<Utf8PathBuf>>();
 
+    for path in library_paths {
+        let _added = Library::add(&path)?;
+    }
+
     let scan_opts = ScanOptions {
         prefer_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
         upgrade_lyrics_tag: true,
@@ -30,9 +39,6 @@ async fn main() -> anyhow::Result<()> {
         scan_options: scan_opts,
     };
 
-    for path in library_paths {
-        let _added = Library::add(&path)?;
-    }
     // let _library = Library::get(1)?;
 
     let _fetch_opts = FetchLyricsOptions {
@@ -42,16 +48,11 @@ async fn main() -> anyhow::Result<()> {
         save_sidecar_file: true,
     };
 
-    dbg!(&*SETTINGS);
     // _library.refresh().options(refresh_opts).call()?;
     // _library.fetch_lyrics().options(fetch_opts).call().await?;
-    // let mut track = library.track(3)?;
-    // dbg!(&track);
-    // track.fetch_lyrics_from_api(true).await?;
-    // dbg!(&track);
 
-    // let x = lyrics::sidecar_lyrics_from_track(&track::Track::default());
-    // dbg!(x);
+    let ui = AppWindow::new()?;
+    ui.run()?;
 
     Ok(())
 }
