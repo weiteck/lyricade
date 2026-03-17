@@ -112,18 +112,30 @@ impl Library {
         Ok(inserted_library)
     }
 
-    /// Get a `Library` by its ID.
+    /// Get a library by its ID.
     pub fn get(id: i32) -> Result<Library> {
         let mut conn = DB_POOL.get()?;
 
-        let library = libraries::table
+        let lib = libraries::table
             .find(id)
             .first::<Library>(&mut conn)
             .inspect_err(|error| {
-                error!("Database error while trying to get Library[{id}]: {error}")
+                error!("Database error while trying to get Library with ID {id}: {error}")
             })?;
 
-        Ok(library)
+        Ok(lib)
+    }
+
+    /// Get all libraries.
+    pub fn get_all() -> Result<Vec<Library>> {
+        let mut conn = DB_POOL.get()?;
+
+        let libs = libraries::table
+            .load::<Library>(&mut conn)
+            .inspect_err(|error| {
+                error!("Database error while trying to get all Libraries: {error}")
+            })?;
+        Ok(libs)
     }
 
     #[builder]
@@ -317,10 +329,10 @@ impl Library {
 
     /// Get a `Track` by its ID.
     #[builder]
-    pub fn track(&self, track_id: i32, conn: Option<&mut SqliteConnection>) -> Result<Track> {
+    pub fn track(&self, id: i32, conn: Option<&mut SqliteConnection>) -> Result<Track> {
         let query = tracks::table
             .filter(tracks::library_id.eq(&self.id))
-            .find(track_id);
+            .find(id);
 
         match conn {
             Some(conn) => Ok(query.first::<Track>(conn)?),

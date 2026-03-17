@@ -1,4 +1,4 @@
-use std::{fmt::Display, hash::Hash};
+use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock};
 
 use anyhow::anyhow;
 use bon::bon;
@@ -7,7 +7,9 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use get_size2::GetSize;
 use lofty::{
+    config::ParseOptions,
     file::{AudioFile, TaggedFileExt},
+    probe::Probe,
     tag::TagExt,
 };
 use serde::{Deserialize, Serialize};
@@ -20,6 +22,16 @@ use crate::{
     schema::tracks,
     util::{self, now},
 };
+
+static PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
+    lofty::config::ParseOptions::new()
+        .read_properties(true)
+        .read_tags(true)
+        .read_cover_art(false)
+        .parsing_mode(lofty::config::ParsingMode::Relaxed)
+        .max_junk_bytes(2048)
+        .implicit_conversions(true)
+});
 
 /// An audio `Track` with metadata persisted to the database.
 #[derive(
@@ -136,17 +148,15 @@ impl Track {
             &self
         );
 
-        let mut track_file = std::fs::File::options()
-            .read(true)
-            .write(false)
-            .open(&self.path)
-            .inspect_err(|error| error!("{error}"))?;
-
         // ///////////////////////////
         // ///// Handle metadata /////
         // ///////////////////////////
-        // TODO: This relies on file extension; try probing for tag if it fails
-        if let Ok(tagged_file) = lofty::read_from(&mut track_file)
+
+        let file = fs::File::open(&self.path).inspect_err(|error| error!("{error}"))?;
+        let reader = io::BufReader::new(&file);
+
+        // Probe audio file to determine filetype, then extract primary metadata tag
+        if let Ok(tagged_file) = Probe::new(reader).options(*PARSE_OPTIONS).read()
             && let Some(tag) = tagged_file.primary_tag()
         {
             let track_name = tag
@@ -181,7 +191,7 @@ impl Track {
             self.refreshed_at = now;
             self.file_modified_at = util::file_modified_at()
                 .path(&self.path())
-                .file(&track_file)
+                .file(&file)
                 .call();
 
             // ////////////////////////////////
@@ -251,8 +261,7 @@ impl Track {
                                 "{} scan: Keep one sidecar file: deleting redundant file \"{}\"",
                                 &self, &lf.path
                             );
-                            std::fs::remove_file(&lf.path)
-                                .unwrap_or_else(|error| error!("{error}"));
+                            fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"));
                             if lf.lyrics.lyrics_type == LyricsType::Sync {
                                 self.lyrics_sidecar_lrc_file = None;
                             } else {
@@ -265,7 +274,7 @@ impl Track {
                             "{} scan: Deleting sidecar files: deleting file \"{}\"",
                             &self, &lf.path
                         );
-                        std::fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"))
+                        fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"))
                     });
 
                     self.lyrics_sidecar_lrc_file = None;
@@ -440,16 +449,19 @@ impl Track {
         /// Will obtain a connection from the pool if none passed.
         conn: Option<&mut SqliteConnection>,
     ) -> Result<()> {
-        let mut file = std::fs::File::options()
+        let file = std::fs::File::options()
             .read(true)
             .write(true)
             .open(&self.path)
             .inspect_err(|error| error!("{error}"))?;
+        let reader = io::BufReader::new(&file);
 
-        if let Ok(mut tagged_file) = lofty::read_from(&mut file)
+        // Probe audio file to determine filetype, then extract primary metadata tag
+        if let Ok(mut tagged_file) = Probe::new(reader).options(*PARSE_OPTIONS).read()
             && let Some(tag) = tagged_file.primary_tag_mut()
             && let Some(lyrics) = &self.lyrics
         {
+            // Update lyrics tag (the only tag we ever change)
             let write_options = lofty::config::WriteOptions::new().lossy_text_encoding(true);
             if tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
                 && tag.save_to_path(&self.path, write_options).is_ok()
