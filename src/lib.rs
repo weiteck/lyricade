@@ -1,10 +1,12 @@
 use std::{fs, sync::LazyLock};
 
+use anyhow::anyhow;
 use diesel::{
     SqliteConnection,
     connection::SimpleConnection,
     r2d2::{self, ConnectionManager},
 };
+use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use libsqlite3_sys::SQLITE_VERSION;
 use tracing::{info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
@@ -21,10 +23,13 @@ pub mod lyrics;
 pub mod schema;
 pub mod settings;
 pub mod track;
+pub mod ui;
 pub mod util;
 
 pub type Result<T> = anyhow::Result<T>;
 pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
+
+const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
@@ -68,12 +73,12 @@ pub fn init_app() -> Result<()> {
     // is stored in a static so it is not dropped for the duration of the program
     let _guard = &*LOG_WORKER_GUARD;
 
-    // Ensure settings initialise before logging paths below
-    let _settings = &*SETTINGS;
-
     if cfg!(debug_assertions) {
         warn!("Started in DEBUG mode");
     }
+
+    // Ensure settings initialise before logging paths below
+    let _settings = &*SETTINGS;
 
     init_db_pool()?;
 
@@ -157,6 +162,22 @@ fn init_db_pool() -> Result<()> {
 
     // enforce FK constraint
     conn.batch_execute("PRAGMA foreign_keys = ON;")?;
+
+    // Run database migrations
+    if !conn.has_pending_migration(MIGRATIONS).map_err(|error| {
+        anyhow!("Failed to determine if there are pending database migrations: {error}")
+    })? {
+        return Ok(());
+    } else {
+        let pending = conn
+            .pending_migrations(MIGRATIONS)
+            .map_err(|error| anyhow!("Failed to get pending database migrations: {error}"))?;
+        for (idx, m) in pending.iter().enumerate() {
+            info!("Applying database migration {}/{}", idx + 1, pending.len());
+            conn.run_migration(m)
+                .map_err(|error| anyhow!("Failed to apply database migrations: {error}"))?;
+        }
+    }
 
     Ok(())
 }

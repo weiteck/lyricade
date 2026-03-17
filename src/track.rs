@@ -24,7 +24,7 @@ use crate::{
 };
 
 static PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
-    lofty::config::ParseOptions::new()
+    ParseOptions::new()
         .read_properties(true)
         .read_tags(true)
         .read_cover_art(false)
@@ -148,162 +148,160 @@ impl Track {
             &self
         );
 
-        // ///////////////////////////
-        // ///// Handle metadata /////
-        // ///////////////////////////
-
+        ///////////////////////////
+        ///// Handle metadata /////
+        ///////////////////////////
         let file = fs::File::open(&self.path).inspect_err(|error| error!("{error}"))?;
         let reader = io::BufReader::new(&file);
 
-        // Probe audio file to determine filetype, then extract primary metadata tag
-        if let Ok(tagged_file) = Probe::new(reader).options(*PARSE_OPTIONS).read()
-            && let Some(tag) = tagged_file.primary_tag()
-        {
-            let track_name = tag
-                .get_string(lofty::tag::ItemKey::TrackTitle)
-                .map(ToString::to_string);
-            let artist_name = tag
-                .get_string(lofty::tag::ItemKey::TrackArtist)
-                .map(ToString::to_string);
-            let album_name = tag
-                .get_string(lofty::tag::ItemKey::AlbumTitle)
-                .map(ToString::to_string);
-            let lyrics = tag
-                .get_string(lofty::tag::ItemKey::Lyrics)
-                .or_else(|| tag.get_string(lofty::tag::ItemKey::UnsyncLyrics))
-                .map(ToString::to_string);
-            let duration = tagged_file.properties().duration().as_secs_f32();
+        let tagged_file = Probe::new(reader)
+            .options(*PARSE_OPTIONS)
+            .guess_file_type()
+            .inspect_err(|error| warn!("{} scan: {error}", &self))?
+            .read()
+            .inspect_err(|error| warn!("{} scan: {error}", &self))?;
+        let tag = tagged_file
+            .primary_tag()
+            .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
 
-            // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics
-            let lyrics_embedded_synchronised = lyrics
-                .as_ref()
-                .is_some_and(|l| lyrics::lyrics_are_synchronised(l));
+        let track_name = tag
+            .get_string(lofty::tag::ItemKey::TrackTitle)
+            .map(ToString::to_string);
+        let artist_name = tag
+            .get_string(lofty::tag::ItemKey::TrackArtist)
+            .map(ToString::to_string);
+        let album_name = tag
+            .get_string(lofty::tag::ItemKey::AlbumTitle)
+            .map(ToString::to_string);
+        let lyrics = tag
+            .get_string(lofty::tag::ItemKey::Lyrics)
+            .or_else(|| tag.get_string(lofty::tag::ItemKey::UnsyncLyrics))
+            .map(ToString::to_string);
+        let duration = tagged_file.properties().duration().as_secs_f32();
 
-            let now = now();
+        // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics
+        let lyrics_embedded_synchronised = lyrics
+            .as_ref()
+            .is_some_and(|l| lyrics::lyrics_are_synchronised(l));
 
-            self.track_name = track_name.unwrap_or_default();
-            self.artist_name = artist_name.unwrap_or_default();
-            self.album_name = album_name.unwrap_or_default();
-            self.duration = duration;
-            self.lyrics = lyrics;
-            self.lyrics_synchronised = lyrics_embedded_synchronised;
-            self.updated_at = now;
-            self.refreshed_at = now;
-            self.file_modified_at = util::file_modified_at()
-                .path(&self.path())
-                .file(&file)
-                .call();
+        let now = now();
 
-            // ////////////////////////////////
-            // ///// Handle sidecar files /////
-            // ////////////////////////////////
-            let mut file_requires_update = false;
+        self.track_name = track_name.unwrap_or_default();
+        self.artist_name = artist_name.unwrap_or_default();
+        self.album_name = album_name.unwrap_or_default();
+        self.duration = duration;
+        self.lyrics = lyrics;
+        self.lyrics_synchronised = lyrics_embedded_synchronised;
+        self.updated_at = now;
+        self.refreshed_at = now;
+        self.file_modified_at = util::file_modified_at()
+            .path(&self.path())
+            .file(&file)
+            .call();
 
-            if let Some(sidecar_lyrics) = LyricsFile::from_track(&self) {
-                // Add sidecar lyrics to `Track`
-                sidecar_lyrics.iter().for_each(|lf| {
-                    if lf.file_type == LyricsFileType::Lrc {
-                        self.lyrics_sidecar_lrc_file = Some(lf.lyrics.contents.clone());
-                    } else {
-                        self.lyrics_sidecar_txt_file = Some(lf.lyrics.contents.clone());
-                    }
-                });
+        ////////////////////////////////
+        ///// Handle sidecar files /////
+        ////////////////////////////////
+        let mut file_requires_update = false;
 
-                if options.upgrade_lyrics_tag {
-                    match options.prefer_lyrics_type {
-                        LyricsType::Sync => {
-                            if !self.lyrics_synchronised || self.lyrics.is_none() {
-                                // Collection is sorted - best sync candidate is first
-                                if let Some(lf) = sidecar_lyrics.first() {
-                                    let sync = lf.lyrics.lyrics_type == LyricsType::Sync;
-                                    if sync || (!sync && self.lyrics.is_some()) {
-                                        debug!(
-                                            "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
-                                            &self, &lf.path
-                                        );
-                                        self.lyrics = Some(lf.lyrics.contents.clone());
-                                        self.lyrics_synchronised = sync;
-                                        file_requires_update = true;
-                                    };
-                                }
-                            }
-                        }
-                        LyricsType::Plain => {
-                            if self.lyrics_synchronised || self.lyrics.is_none() {
-                                // Collection is sorted - best plain candidate is last
-                                if let Some(lf) = sidecar_lyrics.last() {
-                                    // Convert sync lyrics to plain if required
-                                    let lyrics = if lf.lyrics.lyrics_type == LyricsType::Sync {
-                                        lf.lyrics.clone().into_plain().contents
-                                    } else {
-                                        lf.lyrics.contents.clone()
-                                    };
+        if let Some(sidecar_lyrics) = LyricsFile::from_track(&self) {
+            // Add sidecar lyrics to `Track`
+            sidecar_lyrics.iter().for_each(|lf| {
+                if lf.file_type == LyricsFileType::Lrc {
+                    self.lyrics_sidecar_lrc_file = Some(lf.lyrics.contents.clone());
+                } else {
+                    self.lyrics_sidecar_txt_file = Some(lf.lyrics.contents.clone());
+                }
+            });
+
+            if options.upgrade_lyrics_tag {
+                match options.prefer_lyrics_type {
+                    LyricsType::Sync => {
+                        if !self.lyrics_synchronised || self.lyrics.is_none() {
+                            // Collection is sorted - best sync candidate is first
+                            if let Some(lf) = sidecar_lyrics.first() {
+                                let sync = lf.lyrics.lyrics_type == LyricsType::Sync;
+                                if sync || (!sync && self.lyrics.is_some()) {
                                     debug!(
                                         "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
                                         &self, &lf.path
                                     );
-                                    self.lyrics = Some(lyrics);
-                                    self.lyrics_synchronised = false;
+                                    self.lyrics = Some(lf.lyrics.contents.clone());
+                                    self.lyrics_synchronised = sync;
                                     file_requires_update = true;
                                 };
                             }
                         }
                     }
+                    LyricsType::Plain => {
+                        if self.lyrics_synchronised || self.lyrics.is_none() {
+                            // Collection is sorted - best plain candidate is last
+                            if let Some(lf) = sidecar_lyrics.last() {
+                                // Convert sync lyrics to plain if required
+                                let lyrics = if lf.lyrics.lyrics_type == LyricsType::Sync {
+                                    lf.lyrics.clone().into_plain().contents
+                                } else {
+                                    lf.lyrics.contents.clone()
+                                };
+                                debug!(
+                                    "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
+                                    &self, &lf.path
+                                );
+                                self.lyrics = Some(lyrics);
+                                self.lyrics_synchronised = false;
+                                file_requires_update = true;
+                            };
+                        }
+                    }
                 }
+            }
 
-                if options.keep_one_sidecar_file {
-                    // Collection is sorted - best sync candidate is first, so we skip 1
-                    sidecar_lyrics
-                        .iter()
-                        .filter(|&lf| lf.lyrics.lyrics_type != options.prefer_lyrics_type)
-                        .for_each(|lf| {
-                            debug!(
-                                "{} scan: Keep one sidecar file: deleting redundant file \"{}\"",
-                                &self, &lf.path
-                            );
-                            fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"));
-                            if lf.lyrics.lyrics_type == LyricsType::Sync {
-                                self.lyrics_sidecar_lrc_file = None;
-                            } else {
-                                self.lyrics_sidecar_txt_file = None;
-                            }
-                        });
-                } else if options.delete_sidecar_files {
-                    sidecar_lyrics.iter().for_each(|lf| {
+            if options.keep_one_sidecar_file {
+                // Collection is sorted - best sync candidate is first, so we skip 1
+                sidecar_lyrics
+                    .iter()
+                    .filter(|&lf| lf.lyrics.lyrics_type != options.prefer_lyrics_type)
+                    .for_each(|lf| {
                         debug!(
-                            "{} scan: Deleting sidecar files: deleting file \"{}\"",
+                            "{} scan: Keep one sidecar file: deleting redundant file \"{}\"",
                             &self, &lf.path
                         );
-                        fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"))
+                        fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"));
+                        if lf.lyrics.lyrics_type == LyricsType::Sync {
+                            self.lyrics_sidecar_lrc_file = None;
+                        } else {
+                            self.lyrics_sidecar_txt_file = None;
+                        }
                     });
+            } else if options.delete_sidecar_files {
+                sidecar_lyrics.iter().for_each(|lf| {
+                    debug!(
+                        "{} scan: Deleting sidecar files: deleting file \"{}\"",
+                        &self, &lf.path
+                    );
+                    fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"))
+                });
 
-                    self.lyrics_sidecar_lrc_file = None;
-                    self.lyrics_sidecar_txt_file = None;
-                }
+                self.lyrics_sidecar_lrc_file = None;
+                self.lyrics_sidecar_txt_file = None;
             }
-
-            if file_requires_update {
-                // Update file and database
-                match conn {
-                    Some(conn) => self.write_to_file_and_db().conn(conn).call()?,
-                    None => self.write_to_file_and_db().call()?,
-                }
-            } else {
-                // Update database
-                match conn {
-                    Some(conn) => self.write_to_db().conn(conn).call()?,
-                    None => self.write_to_db().call()?,
-                }
-            }
-
-            return Ok(());
         }
 
-        Err(anyhow!(format!(
-            "{} scan: Failed to read metadata from file",
-            &self
-        )))
-        .inspect_err(|error| warn!("{error}"))
+        if file_requires_update {
+            // Update file and database
+            match conn {
+                Some(conn) => self.write_to_file_and_db().conn(conn).call()?,
+                None => self.write_to_file_and_db().call()?,
+            }
+        } else {
+            // Update database
+            match conn {
+                Some(conn) => self.write_to_db().conn(conn).call()?,
+                None => self.write_to_db().call()?,
+            }
+        }
+
+        Ok(())
     }
 
     /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
