@@ -141,6 +141,8 @@ fn init_logging() -> WorkerGuard {
         .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
         .init();
 
+    // TODO: Clean up old log files
+
     guard
 }
 
@@ -164,18 +166,14 @@ fn init_db_pool() -> Result<()> {
     conn.batch_execute("PRAGMA foreign_keys = ON;")?;
 
     // Run database migrations
-    if !conn.has_pending_migration(MIGRATIONS).map_err(|error| {
-        anyhow!("Failed to determine if there are pending database migrations: {error}")
-    })? {
-        return Ok(());
-    } else {
-        let pending = conn
-            .pending_migrations(MIGRATIONS)
-            .map_err(|error| anyhow!("Failed to get pending database migrations: {error}"))?;
+    if let Ok(pending) = conn
+        .pending_migrations(MIGRATIONS)
+        .map_err(|error| anyhow!("Failed to get pending database migrations: {error}"))
+    {
         for (idx, m) in pending.iter().enumerate() {
             info!("Applying database migration {}/{}", idx + 1, pending.len());
             conn.run_migration(m)
-                .map_err(|error| anyhow!("Failed to apply database migrations: {error}"))?;
+                .map_err(|error| anyhow!("Failed to apply database migration: {error}"))?;
         }
     }
 
