@@ -7,10 +7,10 @@ use chrono::NaiveDateTime;
 use diesel::prelude::*;
 use get_size2::GetSize;
 use lofty::{
-    config::ParseOptions,
+    config::{ParseOptions, WriteOptions},
     file::{AudioFile, TaggedFileExt},
     probe::Probe,
-    tag::TagExt,
+    tag::{self, TagExt},
 };
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, trace, warn};
@@ -23,7 +23,7 @@ use crate::{
     util::{self, now},
 };
 
-static PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
+static TAG_PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
     ParseOptions::new()
         .read_properties(true)
         .read_tags(true)
@@ -31,6 +31,13 @@ static PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
         .parsing_mode(lofty::config::ParsingMode::Relaxed)
         .max_junk_bytes(2048)
         .implicit_conversions(true)
+});
+
+static TAG_WRITE_OPTIONS: LazyLock<WriteOptions> = LazyLock::new(|| {
+    WriteOptions::new()
+        .remove_others(false)
+        .respect_read_only(false)
+        .lossy_text_encoding(true)
 });
 
 /// An audio `Track` with metadata persisted to the database.
@@ -155,7 +162,7 @@ impl Track {
         let reader = io::BufReader::new(&file);
 
         let tagged_file = Probe::new(reader)
-            .options(*PARSE_OPTIONS)
+            .options(*TAG_PARSE_OPTIONS)
             .guess_file_type()
             .inspect_err(|error| warn!("{} scan: {error}", &self))?
             .read()
@@ -164,22 +171,22 @@ impl Track {
             .primary_tag()
             .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
 
+        let duration = tagged_file.properties().duration().as_secs_f32();
         let track_name = tag
-            .get_string(lofty::tag::ItemKey::TrackTitle)
+            .get_string(tag::ItemKey::TrackTitle)
             .map(ToString::to_string);
         let artist_name = tag
-            .get_string(lofty::tag::ItemKey::TrackArtist)
+            .get_string(tag::ItemKey::TrackArtist)
             .map(ToString::to_string);
         let album_name = tag
-            .get_string(lofty::tag::ItemKey::AlbumTitle)
+            .get_string(tag::ItemKey::AlbumTitle)
             .map(ToString::to_string);
-        let lyrics = tag
-            .get_string(lofty::tag::ItemKey::Lyrics)
-            .or_else(|| tag.get_string(lofty::tag::ItemKey::UnsyncLyrics))
-            .map(ToString::to_string);
-        let duration = tagged_file.properties().duration().as_secs_f32();
-
+        // TODO: Read/write to `UnsyncLyrics` tag as appropriate
         // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics
+        let lyrics = tag
+            .get_string(tag::ItemKey::Lyrics)
+            .map(ToString::to_string);
+
         let lyrics_embedded_synchronised = lyrics
             .as_ref()
             .is_some_and(|l| lyrics::lyrics_are_synchronised(l));
@@ -447,44 +454,49 @@ impl Track {
         /// Will obtain a connection from the pool if none passed.
         conn: Option<&mut SqliteConnection>,
     ) -> Result<()> {
-        let file = std::fs::File::options()
-            .read(true)
-            .write(true)
-            .open(&self.path)
-            .inspect_err(|error| error!("{error}"))?;
-        let reader = io::BufReader::new(&file);
-
-        // Probe audio file to determine filetype, then extract primary metadata tag
-        if let Ok(mut tagged_file) = Probe::new(reader).options(*PARSE_OPTIONS).read()
-            && let Some(tag) = tagged_file.primary_tag_mut()
-            && let Some(lyrics) = &self.lyrics
-        {
+        if let Some(lyrics) = &self.lyrics {
             // Update lyrics tag (the only tag we ever change)
-            let write_options = lofty::config::WriteOptions::new().lossy_text_encoding(true);
-            if tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
-                && tag.save_to_path(&self.path, write_options).is_ok()
+            let file = std::fs::File::options()
+                .read(true)
+                .write(true)
+                .open(&self.path)
+                .inspect_err(|error| error!("{error}"))?;
+            let reader = io::BufReader::new(&file);
+            let mut tagged_file = Probe::new(reader)
+                .options(*TAG_PARSE_OPTIONS)
+                .guess_file_type()
+                .inspect_err(|error| warn!("{} write updated tag: {error}", &self))?
+                .read()?;
+            let tag = tagged_file
+                .primary_tag_mut()
+                .ok_or_else(|| anyhow!("{} write updated tag: No primary tag in file", &self))?;
+
+            // Check that lyrics have changed before writing
+            if tag
+                .get_string(tag::ItemKey::Lyrics)
+                .is_some_and(|l| &l != lyrics)
             {
-                trace!("Wrote metadata to file \"{}\"", &self.path);
+                if tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
+                    && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok()
+                {
+                    debug!("{} write updated tag: Lyrics tag updated in file", &self);
 
-                // Update track modified timestamp in DB
-                self.file_modified_at = util::file_modified_at()
-                    .path(&self.path())
-                    .file(&file)
-                    .call();
-                match conn {
-                    Some(conn) => self.write_to_db().conn(conn).call()?,
-                    None => self.write_to_db().call()?,
+                    // Update track modified timestamp in DB
+                    self.file_modified_at = util::file_modified_at()
+                        .path(&self.path())
+                        .file(&file)
+                        .call();
                 }
-
-                return Ok(());
             }
         }
 
-        Err(anyhow!(format!(
-            "Failed to write metadata to file for {}",
-            &self
-        )))
-        .inspect_err(|error| warn!("{error}"))
+        // Update database
+        match conn {
+            Some(conn) => self.write_to_db().conn(conn).call()?,
+            None => self.write_to_db().call()?,
+        }
+
+        Ok(())
     }
 
     /// Delete track row in database.

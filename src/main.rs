@@ -5,16 +5,16 @@
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-slint::include_modules!();
-
 use std::collections::HashSet;
 
 use camino::Utf8PathBuf;
 
+use get_size2::GetSize;
 use lrc_lyrics::{
     init_app,
     library::{Library, RefreshOptions},
     track::{FetchLyricsOptions, ScanOptions},
+    ui,
 };
 use mimalloc::MiMalloc;
 
@@ -44,7 +44,9 @@ async fn main() -> anyhow::Result<()> {
         scan_options: scan_opts,
     };
 
-    // let _library = Library::get(1)?;
+    if let Ok(lib) = Library::get(0) {
+        let _track = lib.track().id(0).call()?;
+    }
 
     let _fetch_opts = FetchLyricsOptions {
         prefer_lyrics_type: lrc_lyrics::lyrics::LyricsType::Sync,
@@ -56,8 +58,7 @@ async fn main() -> anyhow::Result<()> {
     // _library.refresh().options(refresh_opts).call()?;
     // _library.fetch_lyrics().options(fetch_opts).call().await?;
 
-    let ui = AppWindow::new()?;
-    ui.run()?;
+    ui::run()?;
 
     Ok(())
 }

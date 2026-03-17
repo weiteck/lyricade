@@ -1,18 +1,59 @@
-import { Button, VerticalBox } from "std-widgets.slint";
+import {
+    Button,
+    VerticalBox,
+    ProgressIndicator,
+    StandardTableView,
+    Palette,
+    Slider,
+    GridBox,
+    StandardListView,
+} from "std-widgets.slint";
+
+
+// export struct TrackRowData {
+//   track_name: StandardListViewItem,
+//   artist_name: StandardListViewItem,
+//   album_name: StandardListViewItem,
+//   duration: StandardListViewItem,
+//   instrumental: StandardListViewItem,
+//   lyrics: StandardListViewItem,
+//   lyrics_synchronised: StandardListViewItem,
+//   lyrics_sidecar_lrc_file: StandardListViewItem,
+//   lyrics_sidecar_txt_file: StandardListViewItem,
+//   last_api_check_at: StandardListViewItem,
+//   file_modified_at: StandardListViewItem,
+// }
+
+export component TracksTableView inherits StandardTableView { }
 
 export component AppWindow inherits Window {
-    in-out property <int> counter: 42;
-    callback request-increase-value();
-    VerticalBox {
+    title: @tr("LRC Manager");
+    preferred-height: 820px;
+    preferred-width: 600px;
+    in property <[[StandardListViewItem]]> track_table_rows: [];
+    in property <int> track_count: 0;
+
+    VerticalLayout {
         Text {
-            text: "Counter: \{root.counter}";
+            text: @tr("{n} track" | "{n} tracks" % track_count);
+            font-size: 12pt;
+            horizontal-alignment: TextHorizontalAlignment.center;
         }
 
-        Button {
-            text: "Increase value";
-            clicked => {
-                root.request-increase-value();
-            }
+        TracksTableView {
+            columns: [
+                { title:"Artist" },
+                { title:"Album" },
+                { title:"Track" },
+                { title:"Instrumental" },
+                { title:"Lyrics" },
+                { title:"Sync" },
+                { title:"LRC" },
+                { title:"TXT" },
+                { title:"Checked" },
+                { title:"Modified" },
+            ];
+            rows: track_table_rows;
         }
     }
 }
