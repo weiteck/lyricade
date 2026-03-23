@@ -2,7 +2,7 @@ use std::sync::LazyLock;
 
 use bon::builder;
 use camino::Utf8Path;
-use chrono::NaiveDateTime;
+use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use tracing::{error, trace};
 
 pub static UNIX_EPOCH_NDT: LazyLock<NaiveDateTime> = LazyLock::new(|| {
@@ -14,6 +14,14 @@ pub static UNIX_EPOCH_NDT: LazyLock<NaiveDateTime> = LazyLock::new(|| {
 /// Get current UTC timestamp as `NaiveDateTime`.
 pub fn now() -> chrono::NaiveDateTime {
     chrono::Utc::now().naive_utc()
+}
+
+/// Convert UTC `NaiveDateTime` to local time.
+pub fn ndt_utc_to_local_dt(ndt_utc: NaiveDateTime) -> DateTime<Local> {
+    let utc_dt: DateTime<Utc> = DateTime::from_naive_utc_and_offset(ndt_utc, Utc);
+    let dt_local: DateTime<Local> = DateTime::from(utc_dt);
+    dt_local
+    // utc_dt.into()
 }
 
 /// Get file modification timestamp as UTC `NaiveDateTime`. Falls back to Unix epoch on any error.

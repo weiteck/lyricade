@@ -7,53 +7,152 @@ import {
     Slider,
     GridBox,
     StandardListView,
+    HorizontalBox,
+    StandardButton,
+    AboutSlint,
+    ScrollView,
+    ListView,
+    CheckBox,
 } from "std-widgets.slint";
 
-
-// export struct TrackRowData {
-//   track_name: StandardListViewItem,
-//   artist_name: StandardListViewItem,
-//   album_name: StandardListViewItem,
-//   duration: StandardListViewItem,
-//   instrumental: StandardListViewItem,
-//   lyrics: StandardListViewItem,
-//   lyrics_synchronised: StandardListViewItem,
-//   lyrics_sidecar_lrc_file: StandardListViewItem,
-//   lyrics_sidecar_txt_file: StandardListViewItem,
-//   last_api_check_at: StandardListViewItem,
-//   file_modified_at: StandardListViewItem,
-// }
-
-export component TracksTableView inherits StandardTableView { }
-
-export component AppWindow inherits Window {
+export component MainWindow inherits Window {
     title: @tr("LRC Manager");
-    preferred-height: 820px;
-    preferred-width: 600px;
+    preferred-height: 800px;
+    preferred-width: 800px;
+
+    default-font-family: system-font-family;
+    in property <string> system-font-family: "sans-serif";
+
     in property <[[StandardListViewItem]]> track_table_rows: [];
     in property <int> track_count: 0;
+    in property <[[string]]> rows: [];
+
+    callback clicked_window(string);
+    callback show_settings;
+    callback quit;
+    callback sort_asc(int);
+    callback sort_desc(int);
+
+    MenuBar {
+        Menu {
+            title: "Settings";
+
+            MenuItem {
+                title: "Open Settings";
+                activated => {
+                    root.opacity = 0.5;
+                    root.show_settings();
+                    root.opacity = 1.0;
+                }
+            }
+
+            MenuSeparator { }
+
+            MenuItem {
+                title: "Quit";
+                activated => {
+                    root.quit();
+                };
+            }
+        }
+    }
 
     VerticalLayout {
-        Text {
-            text: @tr("{n} track" | "{n} tracks" % track_count);
-            font-size: 12pt;
+        GridBox {
+            Text {
+                text: "Using font: " + root.default-font-family;
+                vertical-alignment: center;
+            }
+
+            Button {
+                text: "Test Callback";
+                clicked => {
+                    root.show_settings();
+                }
+            }
+
+            Button {
+                text: "Test Callback";
+                clicked => {
+                    root.clicked_window("Button 3 clicked");
+                }
+            }
+        }
+
+        title := Text {
+            text: @tr("All Tracks");
             horizontal-alignment: TextHorizontalAlignment.center;
         }
 
-        TracksTableView {
+        StandardTableView {
             columns: [
-                { title:"Artist" },
-                { title:"Album" },
-                { title:"Track" },
-                { title:"Instrumental" },
-                { title:"Lyrics" },
-                { title:"Sync" },
-                { title:"LRC" },
-                { title:"TXT" },
-                { title:"Checked" },
-                { title:"Modified" },
+                { title: @tr("Artist"), min-width: 16rem },
+                { title: @tr("Album"), min-width: 16rem },
+                { title: @tr("Track"), min-width: 16rem },
+                { title: @tr("Instrumental"), min-width: 8rem },
+                { title: @tr("Lyrics"), min-width: 8rem },
+                { title: @tr("Sync"), min-width: 8rem },
+                { title: @tr("LRC File"), min-width: 8rem },
+                { title: @tr("TXT File"), min-width: 8rem },
+                { title: @tr("Last Checked"), min-width: 15rem },
+                { title: @tr("File Modified"), min-width: 12rem },
+                { title: @tr("Path"), min-width: 24rem },
             ];
             rows: track_table_rows;
+            sort-ascending(column) => {
+                root.sort_asc(column)
+            }
+            sort-descending(column) => {
+                root.sort_desc(column)
+            }
+        }
+
+        // TracksTable {
+        //     rows: root.rows;
+        // }
+
+        Rectangle {
+            background: Palette.alternate-background;
+
+            HorizontalBox {
+                Text { }
+
+                Text { }
+
+                Text {
+                    text: @tr("{n} track" | "{n} tracks" % track_count);
+                    font-size: 1rem;
+                    horizontal-alignment: TextHorizontalAlignment.right;
+                }
+            }
+        }
+    }
+}
+
+export component SettingsWindow inherits Dialog {
+    title: @tr("Settings");
+    preferred-width: 600px;
+    preferred-height: 600px;
+    always-on-top: true;
+    resize-border-width: 10px;
+
+    callback close;
+
+    VerticalBox {
+        Text {
+            text: "Settings";
+        }
+
+        AboutSlint {
+            // preferred-width: 80%;
+        }
+    }
+
+    StandardButton {
+        kind: StandardButtonKind.close;
+        dialog-button-role: DialogButtonRole.reject;
+        clicked => {
+            root.close();
         }
     }
 }

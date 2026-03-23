@@ -9,7 +9,6 @@ use std::collections::HashSet;
 
 use camino::Utf8PathBuf;
 
-use get_size2::GetSize;
 use lrc_lyrics::{
     init_app,
     library::{Library, RefreshOptions},
@@ -58,7 +57,7 @@ async fn main() -> anyhow::Result<()> {
     // _library.refresh().options(refresh_opts).call()?;
     // _library.fetch_lyrics().options(fetch_opts).call().await?;
 
-    ui::run()?;
+    ui::start()?;
 
     Ok(())
 }
