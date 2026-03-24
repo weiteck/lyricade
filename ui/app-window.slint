@@ -13,6 +13,7 @@ import {
     ScrollView,
     ListView,
     CheckBox,
+    LineEdit,
 } from "std-widgets.slint";
 
 export component MainWindow inherits Window {
@@ -24,14 +25,13 @@ export component MainWindow inherits Window {
     in property <string> system-font-family: "sans-serif";
 
     in property <[[StandardListViewItem]]> track_table_rows: [];
-    in property <int> track_count: 0;
-    in property <[[string]]> rows: [];
 
-    callback clicked_window(string);
+    callback button_test;
     callback show_settings;
     callback quit;
     callback sort_asc(int);
     callback sort_desc(int);
+    callback filter(string);
 
     MenuBar {
         Menu {
@@ -40,9 +40,7 @@ export component MainWindow inherits Window {
             MenuItem {
                 title: "Open Settings";
                 activated => {
-                    root.opacity = 0.5;
                     root.show_settings();
-                    root.opacity = 1.0;
                 }
             }
 
@@ -74,7 +72,7 @@ export component MainWindow inherits Window {
             Button {
                 text: "Test Callback";
                 clicked => {
-                    root.clicked_window("Button 3 clicked");
+                    root.button_test();
                 }
             }
         }
@@ -107,22 +105,26 @@ export component MainWindow inherits Window {
             }
         }
 
-        // TracksTable {
-        //     rows: root.rows;
-        // }
-
         Rectangle {
             background: Palette.alternate-background;
 
-            HorizontalBox {
-                Text { }
+            HorizontalLayout {
+                spacing: 1rem;
 
-                Text { }
+                LineEdit {
+                    placeholder-text: "Search ...";
+                    edited(text) => {
+                        root.filter(text);
+                    }
+                }
 
-                Text {
-                    text: @tr("{n} track" | "{n} tracks" % track_count);
-                    font-size: 1rem;
-                    horizontal-alignment: TextHorizontalAlignment.right;
+                HorizontalBox {
+                    Text {
+                        text: @tr("{n} track" | "{n} tracks" % root.track_table_rows.length);
+                        font-size: 1rem;
+                        horizontal-alignment: right;
+                        vertical-alignment: center;
+                    }
                 }
             }
         }
