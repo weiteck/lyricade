@@ -1,3 +1,4 @@
+use camino::Utf8PathBuf;
 use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
@@ -29,9 +30,13 @@ struct AppModel {
 
 #[derive(Debug)]
 enum AppMsg {
+    AddLibrary(Utf8PathBuf),
     FetchLyrics,
     Quit,
+    /// Load libraries and tracks from the database.
     ReloadLibraries,
+    /// Scan library paths for changes.
+    RescanLibraries,
     ShowAbout,
     SearchQueryChanged(String),
     ShowSearch(bool),
@@ -179,35 +184,37 @@ impl Component for AppModel {
         // Load libraries and tracks and populate table view
         sender.input(AppMsg::ReloadLibraries);
 
-        // Setup main menu
+        // Main menu actions
         relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
+        let mut actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
+
         relm4::new_stateless_action!(ActionFetchLyrics, MainMenuActionGroup, "fetch_lyrics");
-        relm4::new_stateless_action!(ActionSettings, MainMenuActionGroup, "settings");
-        relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
-        relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
-
-        // Keyboard actions
-        relm4::new_stateless_action!(ActionQuit, MainMenuActionGroup, "quit");
-        relm4::new_stateless_action!(ActionSearch, MainMenuActionGroup, "search");
-
         let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
                 sender.input(AppMsg::FetchLyrics);
             })
         };
+        actions_group.add_action(action_fetch_lyrics);
+
+        relm4::new_stateless_action!(ActionSettings, MainMenuActionGroup, "settings");
         let action_settings: RelmAction<ActionSettings> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
                 sender.input(AppMsg::ShowSettings);
             })
         };
+        actions_group.add_action(action_settings);
+
+        relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
         let action_about: RelmAction<ActionAbout> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
                 sender.input(AppMsg::ShowAbout);
             })
         };
+        actions_group.add_action(action_about);
+
         let action_test_toast: RelmAction<ActionTestToast> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
@@ -215,41 +222,44 @@ impl Component for AppModel {
             })
         };
 
-        // Actions for keyboard
+        relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
+        actions_group.add_action(action_test_toast);
+
+        // Keyboard actions
+        relm4::new_stateless_action!(ActionQuit, MainMenuActionGroup, "quit");
         let action_quit: RelmAction<ActionQuit> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
                 sender.input(AppMsg::Quit);
             })
         };
+        actions_group.add_action(action_quit);
+
+        relm4::new_stateless_action!(ActionSearch, MainMenuActionGroup, "search");
         let action_search: RelmAction<ActionSearch> = {
             let sender = sender.clone();
             RelmAction::new_stateless(move |_| {
                 sender.input(AppMsg::ShowSearch(true));
             })
         };
-
-        let mut actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
-
-        actions_group.add_action(action_fetch_lyrics);
-        actions_group.add_action(action_settings);
-        actions_group.add_action(action_about);
-        actions_group.add_action(action_test_toast);
-        actions_group.add_action(action_quit);
         actions_group.add_action(action_search);
 
-        actions_group.register_for_widget(&widgets.main_window);
-
+        // Keyboard shortcuts
         let app = relm4::main_adw_application();
-        app.set_accelerators_for_action::<ActionSettings>(&["<primary>,"]);
-        app.set_accelerators_for_action::<ActionQuit>(&["<primary>Q"]);
-        app.set_accelerators_for_action::<ActionSearch>(&["<primary>F"]);
+        app.set_accelerators_for_action::<ActionSettings>(&["<primary>comma"]);
+        app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
+        app.set_accelerators_for_action::<ActionSearch>(&["<primary>f"]);
+
+        // Register menu/keyboard actions for main window
+        actions_group.register_for_widget(&widgets.main_window);
 
         ComponentParts { model, widgets }
     }
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
+            AppMsg::AddLibrary(path) => todo!(),
+
             AppMsg::FetchLyrics => {
                 self.tracks.iter_mut().for_each(|track| {
                     let mut track = track.clone();
@@ -305,6 +315,8 @@ impl Component for AppModel {
                     )));
                 }
             }
+
+            AppMsg::RescanLibraries => todo!(),
 
             AppMsg::SearchQueryChanged(query) => {
                 debug!("Searching for: {}", &query);
