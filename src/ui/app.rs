@@ -1,4 +1,6 @@
 use relm4::abstractions::Toaster;
+use relm4::actions::AccelsPlus;
+use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::*;
 use tracing::{debug, error};
@@ -61,26 +63,10 @@ impl Component for AppModel {
           },
         },
 
-        pack_end = &gtk::Button {
-          set_label: "About",
-          set_tooltip_text: Some("About this application"),
-          set_icon_name: "help-about-symbolic",
-          connect_clicked => AppMsg::ShowAbout,
-        },
-
-        pack_end = &gtk::Button {
-          set_label: "Settings",
-          connect_clicked => AppMsg::ShowSettings,
-        },
-
-        pack_end = &gtk::Button {
-          set_label: "Test Toast",
-          connect_clicked => AppMsg::ShowToast("Testing toast message".into()),
-        },
-
-        pack_end = &gtk::Button {
-          set_label: "Fetch Lyrics",
-          connect_clicked => AppMsg::FetchLyrics,
+        pack_end = &gtk::MenuButton {
+          set_icon_name: "open-menu-symbolic",
+          set_primary: true,
+          set_menu_model: Some(&main_menu),
         },
       },
 
@@ -93,7 +79,7 @@ impl Component for AppModel {
         #[wrap(Some)]
         set_child = &gtk::SearchEntry {
           set_hexpand: true,
-          set_placeholder_text: Some("Search tracks..."),
+          set_placeholder_text: Some("Type to search"),
 
           connect_search_changed[sender] => move |query| {
             sender.input(AppMsg::SearchQueryChanged(query.text().to_string()))
@@ -104,7 +90,7 @@ impl Component for AppModel {
       },
 
       #[root]
-      adw::ApplicationWindow {
+      main_window = adw::ApplicationWindow {
         set_default_size: (800, 800),
         set_title: Some(APP_NAME_PRETTY),
 
@@ -131,7 +117,8 @@ impl Component for AppModel {
                         set_width_request: 200,
                         #[wrap(Some)]
                         set_child = &gtk::Button {
-                          set_label: "Settings",
+                          set_label: "Add Library",
+                          set_css_classes: &["pill", "suggested-action"],
                           connect_clicked => AppMsg::ShowSettings,
                         },
                       },
@@ -150,6 +137,21 @@ impl Component for AppModel {
             },
           },
         },
+      }
+    }
+
+    menu! {
+      main_menu: {
+        "Fetch Lyrics" => ActionFetchLyrics,
+        "Settings" => ActionSettings,
+        section! {
+          "About" => ActionAbout,
+          },
+        section! {
+          "Debug" {
+            "Test Toast" => ActionTestToast,
+          },
+        }
       }
     }
 
@@ -172,11 +174,76 @@ impl Component for AppModel {
 
         let toast_overlay = model.toaster.overlay_widget();
         let tracks_table = model.tracks_table_widget.widget();
+        let widgets = view_output!();
 
         // Load libraries and tracks and populate table view
         sender.input(AppMsg::ReloadLibraries);
 
-        let widgets = view_output!();
+        // Setup main menu
+        relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
+        relm4::new_stateless_action!(ActionFetchLyrics, MainMenuActionGroup, "fetch_lyrics");
+        relm4::new_stateless_action!(ActionSettings, MainMenuActionGroup, "settings");
+        relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
+        relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
+
+        // Keyboard actions
+        relm4::new_stateless_action!(ActionQuit, MainMenuActionGroup, "quit");
+        relm4::new_stateless_action!(ActionSearch, MainMenuActionGroup, "search");
+
+        let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::FetchLyrics);
+            })
+        };
+        let action_settings: RelmAction<ActionSettings> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::ShowSettings);
+            })
+        };
+        let action_about: RelmAction<ActionAbout> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::ShowAbout);
+            })
+        };
+        let action_test_toast: RelmAction<ActionTestToast> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::ShowToast("Testing toast notification".into()));
+            })
+        };
+
+        // Actions for keyboard
+        let action_quit: RelmAction<ActionQuit> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::Quit);
+            })
+        };
+        let action_search: RelmAction<ActionSearch> = {
+            let sender = sender.clone();
+            RelmAction::new_stateless(move |_| {
+                sender.input(AppMsg::ShowSearch(true));
+            })
+        };
+
+        let mut actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
+
+        actions_group.add_action(action_fetch_lyrics);
+        actions_group.add_action(action_settings);
+        actions_group.add_action(action_about);
+        actions_group.add_action(action_test_toast);
+        actions_group.add_action(action_quit);
+        actions_group.add_action(action_search);
+
+        actions_group.register_for_widget(&widgets.main_window);
+
+        let app = relm4::main_adw_application();
+        app.set_accelerators_for_action::<ActionSettings>(&["<primary>,"]);
+        app.set_accelerators_for_action::<ActionQuit>(&["<primary>Q"]);
+        app.set_accelerators_for_action::<ActionSearch>(&["<primary>F"]);
 
         ComponentParts { model, widgets }
     }
@@ -266,7 +333,10 @@ impl Component for AppModel {
                 self.is_search_revealed = toggle;
             }
 
-            AppMsg::Quit => todo!(),
+            AppMsg::Quit => {
+                let app = relm4::main_application();
+                app.quit();
+            }
         }
     }
 

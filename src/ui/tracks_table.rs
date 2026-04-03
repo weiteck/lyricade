@@ -23,17 +23,6 @@ impl SimpleComponent for TracksTableModel {
     type Input = TracksTableMsg;
     type Output = ();
 
-    // view! {
-    //   gtk::ScrolledWindow {
-    //     set_hexpand: true,
-
-    //     #[local_ref]
-    //     tracks_table_view -> gtk::ColumnView {
-    //       set_expand: true,
-    //       set_show_column_separators: true,
-    //     },
-    //   }
-    // }
     view! {
       gtk:: Box {
       #[local_ref]
