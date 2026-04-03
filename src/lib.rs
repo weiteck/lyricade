@@ -125,7 +125,7 @@ fn init_logging() -> WorkerGuard {
     let filter =
         EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_log_level));
 
-    let mut log_name = APP_NAME.clone();
+    let mut log_name = APP_NAME.to_string();
     log_name.push_str(".log");
     let log_dir = &APP_DATA_DIR.join("logs");
     fs::create_dir_all(log_dir).expect(&format!(

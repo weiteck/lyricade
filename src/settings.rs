@@ -37,7 +37,11 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
     }
 });
 
-pub static APP_NAME: LazyLock<String> = LazyLock::new(|| env!("CARGO_PKG_NAME").into());
+/// Application name used in paths, etc.
+pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
+
+/// Application name presented in UI.
+pub const APP_NAME_PRETTY: &str = "Untitled Lyrics App";
 
 pub static APP_SETTINGS_FILE_PATH: LazyLock<Utf8PathBuf> =
     LazyLock::new(|| APP_CONFIG_DIR.join("settings.toml"));

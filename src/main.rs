@@ -16,6 +16,7 @@ use lrc_lyrics::{
     ui,
 };
 use mimalloc::MiMalloc;
+use tracing::debug;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -43,8 +44,9 @@ async fn main() -> anyhow::Result<()> {
         scan_options: scan_opts,
     };
 
-    if let Ok(lib) = Library::get(0) {
-        let _track = lib.track().id(0).call()?;
+    if let Ok(lib) = Library::get(1) {
+        let track = lib.track().id(1).call()?;
+        debug!("Got {track} from {lib}");
     }
 
     let _fetch_opts = FetchLyricsOptions {
@@ -57,7 +59,5 @@ async fn main() -> anyhow::Result<()> {
     // _library.refresh().options(refresh_opts).call()?;
     // _library.fetch_lyrics().options(fetch_opts).call().await?;
 
-    ui::start()?;
-
-    Ok(())
+    ui::app::start()
 }

@@ -18,23 +18,22 @@ diesel = { version = "2.3", features = [
 ] }
 diesel_migrations = { version = "2.3.1", features = ["sqlite"] }
 directories = "6.0"
-font-kit = "0.14.3"
 get-size2 = { version = "0.7.4", features = ["chrono", "derive"] }
 # diesel currently supports <= v0.36 as of v2.3.7
 libsqlite3-sys = { version = "0.36", features = ["bundled"] }
 lofty = "0.23"
 mimalloc = "0.1"
+rand = "0.10.0"
 regex = "1.12"
+relm4 = { version = "0.10", features = ["gnome_45", "libadwaita"] }
+relm4-components = { version = "0.10", features = ["libadwaita"] }
 reqwest = { version = "0.13", features = ["json", "rustls"] }
 rfd = "0.17"
 serde = { version = "1.0", features = ["derive"] }
-slint = "1.15.1"
 tokio = { version = "1.50", features = ["full"] }
-toml = "1.0"
+toml = "1.1"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracker = "0.2"
 walkdir = "2.5"
-
-[build-dependencies]
-slint-build = "1.15.1"
