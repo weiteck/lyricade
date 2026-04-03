@@ -3,6 +3,7 @@ use relm4::adw::prelude::*;
 use relm4::*;
 use tracing::{debug, error};
 
+use crate::SETTINGS;
 use crate::settings::APP_NAME_PRETTY;
 use crate::ui::about::AboutModel;
 use crate::ui::settings::SettingsModel;
@@ -24,13 +25,19 @@ struct AppModel {
 
 #[derive(Debug)]
 enum AppMsg {
-    ShowAbout,
-    ShowSettings,
-    ReloadLibraries,
-    SearchQueryChanged(String),
-    ShowToast(String),
-    ShowSearch(bool),
+    FetchLyrics,
     Quit,
+    ReloadLibraries,
+    ShowAbout,
+    SearchQueryChanged(String),
+    ShowSearch(bool),
+    ShowSettings,
+    ShowToast(String),
+}
+
+#[derive(Debug)]
+enum AppCommand {
+    TrackUpdated(Track),
 }
 
 #[relm4::component]
@@ -38,7 +45,7 @@ impl Component for AppModel {
     type Input = AppMsg;
     type Output = ();
     type Init = ();
-    type CommandOutput = ();
+    type CommandOutput = AppCommand;
 
     view! {
       #[name(header_bar)]
@@ -67,6 +74,11 @@ impl Component for AppModel {
         pack_end = &gtk::Button {
           set_label: "Test Toast",
           connect_clicked => AppMsg::ShowToast("Testing toast message".into()),
+        },
+
+        pack_end = &gtk::Button {
+          set_label: "Fetch Lyrics",
+          connect_clicked => AppMsg::FetchLyrics,
         },
       },
 
@@ -139,6 +151,20 @@ impl Component for AppModel {
 
     fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
         match message {
+            AppMsg::FetchLyrics => {
+                self.tracks.iter_mut().for_each(|track| {
+                    let mut track = track.clone();
+                    sender.oneshot_command(async {
+                        let _ = track
+                            .fetch_lyrics()
+                            .options(SETTINGS.fetch_lyrics)
+                            .call()
+                            .await;
+                        AppCommand::TrackUpdated(track)
+                    });
+                });
+            }
+
             AppMsg::ShowAbout => {
                 debug!("Showing About window");
                 let window = self.about_widget.widget();
@@ -207,6 +233,32 @@ impl Component for AppModel {
             }
 
             AppMsg::Quit => todo!(),
+        }
+    }
+
+    fn update_cmd(
+        &mut self,
+        message: Self::CommandOutput,
+        sender: ComponentSender<Self>,
+        root: &Self::Root,
+    ) {
+        match message {
+            AppCommand::TrackUpdated(track) => {
+                // Replace local copy
+                if let Some(t) = self
+                    .tracks
+                    .iter()
+                    .position(|t| t.id == track.id)
+                    .and_then(|idx| self.tracks.get_mut(idx))
+                {
+                    *t = track.clone();
+                }
+
+                // Update table
+                self.tracks_table_widget
+                    .sender()
+                    .emit(TracksTableMsg::Update(track));
+            }
         }
     }
 }

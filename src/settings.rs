@@ -57,8 +57,8 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 // TODO: Save settings to DB instead of a file
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Settings {
-    refresh_library: RefreshOptions,
-    fetch_lyrics: FetchLyricsOptions,
+    pub refresh_library: RefreshOptions,
+    pub fetch_lyrics: FetchLyricsOptions,
 }
 
 impl Settings {

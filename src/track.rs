@@ -1,4 +1,4 @@
-use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock};
+use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock, time::Duration};
 
 use anyhow::anyhow;
 use bon::bon;
@@ -127,12 +127,23 @@ pub struct ScanOptions {
     pub keep_one_sidecar_file: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize)]
 pub struct FetchLyricsOptions {
     pub prefer_lyrics_type: lyrics::LyricsType,
     pub ignore_plain_lyrics: bool,
     pub update_lyrics_tag: bool,
     pub save_sidecar_file: bool,
+}
+
+impl Default for FetchLyricsOptions {
+    fn default() -> Self {
+        Self {
+            prefer_lyrics_type: lyrics::LyricsType::Sync,
+            ignore_plain_lyrics: false,
+            update_lyrics_tag: false,
+            save_sidecar_file: true,
+        }
+    }
 }
 
 #[bon]
@@ -309,6 +320,15 @@ impl Track {
         }
 
         Ok(())
+    }
+
+    /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
+    /// Returns `true` if tag was written or sidecar file was saved.
+    #[builder]
+    pub async fn fetch_lyrics_test(&mut self, options: FetchLyricsOptions) -> Result<bool> {
+        self.last_api_check_at = Some(now());
+        std::thread::sleep(Duration::from_secs(1));
+        Ok(false)
     }
 
     /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.

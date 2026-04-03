@@ -1,6 +1,6 @@
-use relm4::gtk::prelude::{CheckButtonExt, WidgetExt};
+use relm4::gtk::prelude::{ButtonExt, CheckButtonExt, WidgetExt};
 use relm4::prelude::*;
-use relm4::typed_view::{TypedListItem, column::*};
+use relm4::typed_view::column::*;
 use tracing::{debug, error};
 
 use crate::track::Track;
@@ -46,15 +46,12 @@ impl SimpleComponent for TracksTableModel {
         table.append_column::<TracksTableColumnArtist>();
         table.append_column::<TracksTableColumnAlbum>();
         table.append_column::<TracksTableColumnTrack>();
+        table.append_column::<TracksTableColumnInstrumental>();
         table.append_column::<TracksTableColumnLyrics>();
         table.append_column::<TracksTableColumnLyricsSync>();
         table.append_column::<TracksTableColumnSidecar>();
         table.append_column::<TracksTableColumnChecked>();
         table.append_column::<TracksTableColumnModified>();
-
-        if cfg!(debug_assertions) {
-            table.append_column::<TracksTableColumnDebugTimestamp>();
-        }
 
         let model = TracksTableModel { table };
 
@@ -89,23 +86,9 @@ impl SimpleComponent for TracksTableModel {
             }
 
             TracksTableMsg::Update(track) => {
-                if let Some(row) = self
-                    .table
-                    .find(|row| row.id == track.id)
-                    .and_then(|idx| self.table.get(idx))
-                {
-                    let mut row = row.borrow_mut();
-
-                    debug!("Updating {row} in TracksTable");
-
-                    row.lyrics = track.lyrics;
-                    row.lyrics_synchronised = track.lyrics_synchronised;
-                    row.lyrics_sidecar_lrc_file = track.lyrics_sidecar_lrc_file;
-                    row.lyrics_sidecar_txt_file = track.lyrics_sidecar_txt_file;
-                    row.last_api_check_at = track.last_api_check_at;
-                    row.file_modified_at = track.file_modified_at;
-                } else {
-                    error!("Could not find {track} in TracksTable");
+                if let Some(idx) = self.table.find(|row| row.id == track.id) {
+                    self.table.remove(idx);
+                    self.table.append(track);
                 }
             }
         }
@@ -113,20 +96,6 @@ impl SimpleComponent for TracksTableModel {
 }
 
 // Column Models ///////////////////////////////////////////////////////////////
-struct TracksTableColumnDebugTimestamp;
-impl LabelColumn for TracksTableColumnDebugTimestamp {
-    type Item = Track;
-    type Value = String;
-
-    const COLUMN_NAME: &'static str = "ROW CREATED";
-    const ENABLE_SORT: bool = true;
-
-    fn get_cell_value(_item: &Self::Item) -> Self::Value {
-        util::ndt_utc_to_local_dt(now())
-            .format("%T%.3f")
-            .to_string()
-    }
-}
 
 struct TracksTableColumnArtist;
 impl RelmColumn for TracksTableColumnArtist {
@@ -209,23 +178,49 @@ impl RelmColumn for TracksTableColumnTrack {
     }
 }
 
+struct TracksTableColumnInstrumental;
+impl RelmColumn for TracksTableColumnInstrumental {
+    type Root = gtk::Image;
+    type Widgets = ();
+    type Item = Track;
+
+    const COLUMN_NAME: &'static str = "Inst";
+
+    fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+        let img = gtk::Image::new();
+        (img, ())
+    }
+
+    fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
+        if item.instrumental.is_some_and(|b| b) {
+            root.set_icon_name(Some("checkmark-symbolic"));
+            root.set_tooltip("Track Marked as Instrumental");
+        }
+    }
+
+    fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
+        Some(Box::new(|a, b| a.lyrics.is_some().cmp(&b.lyrics.is_some())))
+    }
+}
+
 struct TracksTableColumnLyrics;
 impl RelmColumn for TracksTableColumnLyrics {
-    type Root = gtk::CheckButton;
+    type Root = gtk::Image;
     type Widgets = ();
     type Item = Track;
 
     const COLUMN_NAME: &'static str = "Lyrics";
 
     fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-        let checkbutton = gtk::CheckButton::new();
-        checkbutton.set_can_focus(false);
-        checkbutton.set_can_target(false);
-        (checkbutton, ())
+        let img = gtk::Image::new();
+        (img, ())
     }
 
     fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-        root.set_active(item.lyrics.is_some());
+        if item.lyrics.is_some() {
+            root.set_icon_name(Some("checkmark-symbolic"));
+            root.set_tooltip("Lyrics Tag Found");
+        }
     }
 
     fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -235,21 +230,22 @@ impl RelmColumn for TracksTableColumnLyrics {
 
 struct TracksTableColumnLyricsSync;
 impl RelmColumn for TracksTableColumnLyricsSync {
-    type Root = gtk::CheckButton;
+    type Root = gtk::Image;
     type Widgets = ();
     type Item = Track;
 
     const COLUMN_NAME: &'static str = "Sync";
 
     fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-        let checkbutton = gtk::CheckButton::new();
-        checkbutton.set_can_focus(false);
-        checkbutton.set_can_target(false);
-        (checkbutton, ())
+        let img = gtk::Image::new();
+        (img, ())
     }
 
     fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-        root.set_active(item.lyrics_synchronised);
+        if item.lyrics_synchronised {
+            root.set_icon_name(Some("checkmark-symbolic"));
+            root.set_tooltip("Lyrics Tag is Synchronous/LRC Format");
+        }
     }
 
     fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -277,8 +273,14 @@ impl RelmColumn for TracksTableColumnSidecar {
 
     fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
         match (&item.lyrics_sidecar_lrc_file, &item.lyrics_sidecar_txt_file) {
-            (Some(_), _) => root.set_label("LRC"),
-            (None, Some(_)) => root.set_label("TXT"),
+            (Some(_), _) => {
+                root.set_label("LRC");
+                root.set_tooltip("Sidecar Lyrics File Format");
+            }
+            (None, Some(_)) => {
+                root.set_label("TXT");
+                root.set_tooltip("Sidecar Lyrics File Format");
+            }
             _ => (),
         }
     }
