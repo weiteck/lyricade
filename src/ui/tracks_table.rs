@@ -23,16 +23,25 @@ impl SimpleComponent for TracksTableModel {
     type Input = TracksTableMsg;
     type Output = ();
 
-    view! {
-        gtk::ScrolledWindow {
-          set_hexpand: true,
+    // view! {
+    //   gtk::ScrolledWindow {
+    //     set_hexpand: true,
 
-          #[local_ref]
-          tracks_table_view -> gtk::ColumnView {
-            set_expand: true,
-            set_show_column_separators: true,
-          },
+    //     #[local_ref]
+    //     tracks_table_view -> gtk::ColumnView {
+    //       set_expand: true,
+    //       set_show_column_separators: true,
+    //     },
+    //   }
+    // }
+    view! {
+      gtk:: Box {
+      #[local_ref]
+      tracks_table_view -> gtk::ColumnView {
+        set_expand: true,
+        set_show_column_separators: true,
         }
+      }
     }
 
     fn init(
@@ -194,7 +203,7 @@ impl RelmColumn for TracksTableColumnInstrumental {
     fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
         if item.instrumental.is_some_and(|b| b) {
             root.set_icon_name(Some("checkmark-symbolic"));
-            root.set_tooltip("Track Marked as Instrumental");
+            root.set_tooltip("Marked as Instrumental");
         }
     }
 

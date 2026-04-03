@@ -19,6 +19,8 @@ struct AppModel {
     about_widget: Controller<AboutModel>,
     toaster: Toaster,
 
+    is_empty: bool,
+
     is_search_revealed: bool,
     search_query: Option<String>,
 }
@@ -116,7 +118,35 @@ impl Component for AppModel {
               set_orientation: gtk::Orientation::Vertical,
               set_margin_all: 5,
 
-              model.tracks_table_widget.widget(),
+              #[transition = "Crossfade"]
+              match model.is_empty {
+                  true => {
+                    gtk::Box {
+                      set_align: gtk::Align::Center,
+
+                      adw::StatusPage {
+                        set_title: "No Tracks",
+                        set_description: Some("Open Settings to add a music library"),
+                        set_icon_name: Some("edit-find-symbolic"),
+                        set_width_request: 200,
+                        #[wrap(Some)]
+                        set_child = &gtk::Button {
+                          set_label: "Settings",
+                          connect_clicked => AppMsg::ShowSettings,
+                        },
+                      },
+                    }
+                  }
+                  false => {
+                    gtk::ScrolledWindow {
+                      set_hexpand: true,
+
+                      #[local_ref]
+                      tracks_table -> gtk::Box {}
+                    }
+                  }
+              },
+
             },
           },
         },
@@ -135,11 +165,13 @@ impl Component for AppModel {
             settings_widget: SettingsModel::builder().launch(()).detach(),
             about_widget: AboutModel::builder().launch(()).detach(),
             toaster: Toaster::default(),
+            is_empty: false,
             is_search_revealed: false,
             search_query: None,
         };
 
         let toast_overlay = model.toaster.overlay_widget();
+        let tracks_table = model.tracks_table_widget.widget();
 
         // Load libraries and tracks and populate table view
         sender.input(AppMsg::ReloadLibraries);
@@ -196,6 +228,8 @@ impl Component for AppModel {
                     self.tracks_table_widget.sender().emit(
                         super::tracks_table::TracksTableMsg::ClearAndAppend(self.tracks.clone()),
                     );
+
+                    self.is_empty = self.tracks.is_empty();
 
                     sender.input(AppMsg::ShowToast(format!(
                         "Loaded {} music libraries with {} tracks",
