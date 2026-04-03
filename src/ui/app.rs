@@ -1,6 +1,3 @@
-use std::time::Duration;
-
-use gtk::prelude::*;
 use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
 use relm4::*;
@@ -20,8 +17,6 @@ struct AppModel {
     settings_widget: Controller<SettingsModel>,
     about_widget: Controller<AboutModel>,
     toaster: Toaster,
-
-    is_reload_libraries_required: bool,
 
     is_search_revealed: bool,
     search_query: Option<String>,
@@ -128,7 +123,6 @@ impl Component for AppModel {
             settings_widget: SettingsModel::builder().launch(()).detach(),
             about_widget: AboutModel::builder().launch(()).detach(),
             toaster: Toaster::default(),
-            is_reload_libraries_required: false,
             is_search_revealed: false,
             search_query: None,
         };
@@ -220,7 +214,6 @@ impl Component for AppModel {
 impl AppModel {
     pub fn reload_libraries(&mut self) -> Result<()> {
         debug!("Reloading Libraries and Tracks ...");
-        self.is_reload_libraries_required = false;
 
         self.libraries = Library::get_all()?;
 
@@ -236,7 +229,11 @@ impl AppModel {
             .flatten()
             .collect::<Vec<_>>();
 
-        debug!("Done reloading");
+        debug!(
+            "Reloaded {} Libraries with {} Tracks",
+            self.libraries.len(),
+            self.tracks.len()
+        );
 
         Ok(())
     }
@@ -246,5 +243,3 @@ pub fn start() -> Result<()> {
     let app = RelmApp::new("io.github.weiteck.lrc-lyrics");
     Ok(app.run::<AppModel>(()))
 }
-
-fn view_test() {}
