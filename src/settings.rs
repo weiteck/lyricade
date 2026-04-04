@@ -54,6 +54,9 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
     }
 });
 
+/// Maximum concurrent HTTP connections.
+pub const CONNECTION_LIMIT: usize = 20;
+
 // TODO: Save settings to DB instead of a file
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct Settings {

@@ -20,7 +20,7 @@ use tracing::debug;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    init_app()?;
+    init_app().await?;
 
     // One or more root library paths from args
     let library_paths = std::env::args()

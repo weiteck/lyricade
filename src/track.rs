@@ -322,10 +322,9 @@ impl Track {
         Ok(())
     }
 
-    /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
-    /// Returns `true` if tag was written or sidecar file was saved.
+    /// Does nothing but sleeps for 1s.
     #[builder]
-    pub async fn fetch_lyrics_test(&mut self, options: FetchLyricsOptions) -> Result<bool> {
+    pub async fn fetch_lyrics_test(&mut self, _options: FetchLyricsOptions) -> Result<bool> {
         self.last_api_check_at = Some(now());
         std::thread::sleep(Duration::from_secs(1));
         Ok(false)

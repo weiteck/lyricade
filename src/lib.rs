@@ -68,7 +68,7 @@ pub static AUDIO_FILE_EXTENSIONS: &[&str] = &[
     "wv",
 ];
 
-pub fn init_app() -> Result<()> {
+pub async fn init_app() -> Result<()> {
     // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
     // is stored in a static so it is not dropped for the duration of the program
     let _guard = &*LOG_WORKER_GUARD;
@@ -79,6 +79,9 @@ pub fn init_app() -> Result<()> {
 
     // Ensure settings initialise before logging paths below
     let _settings = &*SETTINGS;
+
+    // Spawn background worker to log HTTP request rate
+    LRCLIB_CLIENT.spawn_request_rate_logger().await;
 
     init_db_pool()?;
 

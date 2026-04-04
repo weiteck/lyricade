@@ -2,16 +2,20 @@ const API_BASE_URL: &str = "https://lrclib.net/api";
 static API_URL_GET_LYRICS_FROM_TRACK_SIGNATURE: LazyLock<String> =
     LazyLock::new(|| format!("{}/get", API_BASE_URL));
 
-use std::{sync::LazyLock, time::Duration};
+use std::{
+    sync::{Arc, LazyLock, atomic::AtomicUsize},
+    time::Duration,
+};
 
 use anyhow::anyhow;
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
     Result,
     lyrics::{Lyrics, LyricsType},
+    settings::CONNECTION_LIMIT,
     track::Track,
     util::now,
 };
@@ -42,6 +46,9 @@ enum ApiResponse {
 #[derive(Debug, Clone)]
 pub struct LrcLibClient {
     http_client: reqwest::Client,
+    limiter: Arc<leaky_bucket::RateLimiter>,
+    semaphore: Arc<tokio::sync::Semaphore>,
+    completed_requests: Arc<AtomicUsize>,
 }
 
 #[derive(Debug, Clone)]
@@ -63,7 +70,21 @@ impl LrcLibClient {
             Err(e) => panic!("Error creating HTTP client: {e}"),
         };
 
-        Self { http_client }
+        let limiter = Arc::new(
+            leaky_bucket::RateLimiter::builder()
+                .initial(4)
+                .max(16)
+                .refill(2)
+                .interval(Duration::from_millis(150))
+                .build(),
+        );
+
+        Self {
+            http_client,
+            limiter,
+            semaphore: Arc::new(tokio::sync::Semaphore::new(CONNECTION_LIMIT)),
+            completed_requests: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     pub async fn lyrics_from_track_signature(
@@ -79,12 +100,47 @@ impl LrcLibClient {
                 ("duration", &track.duration.to_string()),
             ],
         )?;
+        let url_str = url.as_str();
 
         debug!("Getting lyrics from lrclib.net for {}", &track);
-        trace!("Trying lrclib.net endpoint \"{}\"", &url);
+        trace!("GET request to \"{}\"", &url);
 
-        let response = self.http_client.get(url).send().await?;
-        let response_status = response.status();
+        // Try 5 req at 1 req/sec if API is rate-limited
+        let mut attempts = 0;
+        let (response_status, response) = loop {
+            // Limit concurrent connections
+            let permit = self
+                .semaphore
+                .acquire()
+                .await
+                .expect("semaphore unexpectedly closed");
+            trace!(
+                "Acquired connection permit from semaphore; {} connections free",
+                CONNECTION_LIMIT.saturating_sub(self.semaphore.available_permits())
+            );
+
+            // Rate limit requests
+            self.limiter.acquire_one().await;
+            trace!(
+                "Acquired token from rate-limiter bucket; {} tokens remaining",
+                self.limiter.balance()
+            );
+
+            let response = self.http_client.get(url_str).send().await?;
+
+            attempts += 1;
+            self.completed_requests
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+            if response.status() == StatusCode::TOO_MANY_REQUESTS && attempts < 5 {
+                // Retry in 1s
+                drop(permit);
+                tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                continue;
+            } else {
+                break (response.status(), response);
+            };
+        };
 
         if let Ok(api_response) = response.json::<ApiResponse>().await {
             trace!("lrclib.net API response:\n{:#?}", &api_response);
@@ -119,11 +175,10 @@ impl LrcLibClient {
                         "lrclib.net API responded with error while getting lyrics for {}:\n\"{code}: {name}: {message}\"",
                         &track
                     );
-                    warn!("{response}");
-                    return Err(anyhow!("{response}"));
+                    return Err(anyhow!("{response}")).inspect_err(|e| warn!("{e}"));
                 }
-            }
-        };
+            };
+        }
 
         let error = format_args!(
             "lrclib.net server responded with status code {} while getting lyrics for {}",
@@ -131,5 +186,31 @@ impl LrcLibClient {
         );
         error!("{error}");
         Err(anyhow!("{error}"))
+    }
+
+    /// Spawn background worker to log HTTP request rate.
+    pub async fn spawn_request_rate_logger(&self) {
+        let counter = Arc::clone(&self.completed_requests);
+
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+            let mut last_count = 0;
+
+            loop {
+                interval.tick().await;
+                trace!("Tick: LrcLibClient request_rate_logger");
+
+                let count = counter.load(std::sync::atomic::Ordering::Relaxed);
+                let delta = count.saturating_sub(last_count);
+                last_count = count;
+
+                if delta > 0 {
+                    debug!(
+                        "Current completed request rate: {} req/sec ({} total requests)",
+                        delta, count
+                    );
+                }
+            }
+        });
     }
 }
