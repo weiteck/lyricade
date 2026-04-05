@@ -1,13 +1,12 @@
-use relm4::gtk::prelude::{ButtonExt, CheckButtonExt, WidgetExt};
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
-use tracing::{debug, error};
 
 use crate::track::Track;
-use crate::util::{self, now};
+use crate::util::{self};
 
 pub struct TracksTableModel {
     table: TypedColumnView<Track, gtk::MultiSelection>,
+    preset_filters_len: usize,
 }
 
 #[derive(Debug)]
@@ -15,6 +14,17 @@ pub enum TracksTableMsg {
     ClearAndAppend(Vec<Track>),
     Update(Track),
     Filter(Option<String>),
+    SetFilter((TracksTableFilter, bool)),
+}
+
+#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+pub enum TracksTableFilter {
+    NeverChecked = 0,
+    NoLyrics = 1,
+    NotInstrumental = 2,
+    NotSync = 3,
+    Lrc = 4,
+    Txt = 5,
 }
 
 #[relm4::component(pub)]
@@ -51,7 +61,42 @@ impl SimpleComponent for TracksTableModel {
         table.append_column::<TracksTableColumnChecked>();
         table.append_column::<TracksTableColumnModified>();
 
-        let model = TracksTableModel { table };
+        // 0 = NeverChecked
+        table.add_filter(|track| track.last_api_check_at.is_none());
+        table.set_filter_status(0, false);
+
+        // 1 = NoLyrics
+        table.add_filter(|track| {
+            track.lyrics.is_none()
+                && track.lyrics_sidecar_lrc_file.is_none()
+                && track.lyrics_sidecar_txt_file.is_none()
+        });
+        table.set_filter_status(1, false);
+
+        // 2 = NotInstrumental
+        table.add_filter(|track| {
+            track.instrumental.is_none() || track.instrumental.is_some_and(|b| !b)
+        });
+        table.set_filter_status(2, false);
+
+        // 3 = NotSync
+        table.add_filter(|track| {
+            !track.lyrics_synchronised && track.lyrics_sidecar_lrc_file.is_none()
+        });
+        table.set_filter_status(3, false);
+
+        // 4 = Lrc
+        table.add_filter(|track| track.lyrics_sidecar_lrc_file.is_some());
+        table.set_filter_status(4, false);
+
+        // 5 = Txt
+        table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
+        table.set_filter_status(5, false);
+
+        let model = TracksTableModel {
+            preset_filters_len: table.filters_len(),
+            table,
+        };
 
         // Ref of the view to use in `view!` macro
         let tracks_table_view = &model.table.view;
@@ -69,7 +114,9 @@ impl SimpleComponent for TracksTableModel {
 
             TracksTableMsg::Filter(query) => {
                 if let Some(query) = query {
-                    self.table.clear_filters();
+                    while self.table.filters_len() > self.preset_filters_len {
+                        self.table.pop_filter();
+                    }
 
                     for token in query.to_lowercase().split_whitespace().map(String::from) {
                         self.table.add_filter(move |track| {
@@ -79,7 +126,9 @@ impl SimpleComponent for TracksTableModel {
                         });
                     }
                 } else {
-                    self.table.clear_filters();
+                    while self.table.filters_len() > self.preset_filters_len {
+                        self.table.pop_filter();
+                    }
                 }
             }
 
@@ -88,6 +137,10 @@ impl SimpleComponent for TracksTableModel {
                     self.table.remove(idx);
                     self.table.append(track);
                 }
+            }
+
+            TracksTableMsg::SetFilter((filter, active)) => {
+                self.table.set_filter_status(filter as usize, active);
             }
         }
     }

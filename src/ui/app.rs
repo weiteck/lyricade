@@ -10,7 +10,7 @@ use crate::SETTINGS;
 use crate::settings::APP_NAME_PRETTY;
 use crate::ui::about::AboutModel;
 use crate::ui::settings::SettingsModel;
-use crate::ui::tracks_table::{TracksTableModel, TracksTableMsg};
+use crate::ui::tracks_table::{TracksTableFilter, TracksTableModel, TracksTableMsg};
 use crate::{Result, library::Library, track::Track};
 
 struct AppModel {
@@ -42,6 +42,7 @@ enum AppMsg {
     ShowSearch(bool),
     ShowSettings,
     ShowToast(String),
+    SetSearchFilter((TracksTableFilter, bool)),
 }
 
 #[derive(Debug)]
@@ -79,19 +80,111 @@ impl Component for AppModel {
       &gtk::SearchBar {
         #[watch]
         set_search_mode: model.is_search_revealed,
-        set_key_capture_widget: Some(&root),
+        set_key_capture_widget: Some(&main_window),
+        set_show_close_button: true,
+        connect_entry: &search_entry,
 
         #[wrap(Some)]
-        set_child = &gtk::SearchEntry {
-          set_hexpand: true,
-          set_placeholder_text: Some("Type to search"),
+        set_child = &gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
 
-          connect_search_changed[sender] => move |query| {
-            sender.input(AppMsg::SearchQueryChanged(query.text().to_string()))
-          },
+            append = &adw::Clamp {
+                set_maximum_size: 600,
+                set_tightening_threshold: 400,
 
-          connect_stop_search => AppMsg::ShowSearch(false),
-        },
+                #[name(search_entry)]
+                gtk::SearchEntry {
+                set_hexpand: true,
+                set_placeholder_text: Some("Type to search"),
+
+                connect_search_changed[sender] => move |query| {
+                    sender.input(AppMsg::SearchQueryChanged(query.text().to_string()))
+                },
+
+                connect_stop_search => AppMsg::ShowSearch(false),
+                }
+            },
+
+            // Filter chip buttons
+            append = &gtk::ScrolledWindow {
+                set_hscrollbar_policy: gtk::PolicyType::External,
+                set_vscrollbar_policy: gtk::PolicyType::Never,
+                set_hexpand: true,
+
+                gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_halign: gtk::Align::Center,
+                    set_margin_top: 8,
+                    set_margin_bottom: 4,
+
+                    gtk::ToggleButton {
+                        set_label: "lrc file",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Lrc, btn.is_active())));
+                        },
+                    },
+
+                    gtk::ToggleButton {
+                        set_label: "txt file",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
+                        },
+                    },
+
+                    gtk::ToggleButton {
+                        set_label: "no lyrics",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
+                        },
+                    },
+
+                    gtk::ToggleButton {
+                        set_label: "not sync",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotSync, btn.is_active())));
+                        },
+                    },
+
+                    gtk::ToggleButton {
+                        set_label: "never checked",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NeverChecked, btn.is_active())));
+                        },
+                    },
+
+                    gtk::ToggleButton {
+                        set_label: "not instrumental",
+                        set_hexpand: false,
+                        set_margin_end: 4,
+                        set_css_classes: &["pill", "caption"],
+                        inline_css: "padding: 0 0.75rem",
+                        connect_toggled[sender] => move |btn| {
+                            sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotInstrumental, btn.is_active())));
+                        },
+                    },
+                }
+            }
+        }
       },
 
       #[root]
@@ -334,15 +427,22 @@ impl Component for AppModel {
                 self.toaster.add_toast(toast);
             }
 
-            AppMsg::ShowSearch(toggle) => {
-                if toggle {
+            AppMsg::ShowSearch(active) => {
+                if active {
                     debug!("Search bar revealed");
                 } else {
                     debug!("Search bar hidden");
                     self.search_query = None;
                 }
 
-                self.is_search_revealed = toggle;
+                self.is_search_revealed = active;
+            }
+
+            AppMsg::SetSearchFilter((filter, active)) => {
+                debug!("Search filter \"{:?}\" active: {}", &filter, active);
+                self.tracks_table_widget
+                    .sender()
+                    .emit(TracksTableMsg::SetFilter((filter, active)));
             }
 
             AppMsg::Quit => {
