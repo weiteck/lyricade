@@ -45,7 +45,7 @@ impl SimpleComponent for TracksTableModel {
         table.append_column::<TracksTableColumnAlbum>();
         table.append_column::<TracksTableColumnTrack>();
         table.append_column::<TracksTableColumnInstrumental>();
-        table.append_column::<TracksTableColumnLyrics>();
+        table.append_column::<TracksTableColumnLyricsTag>();
         table.append_column::<TracksTableColumnLyricsSync>();
         table.append_column::<TracksTableColumnSidecar>();
         table.append_column::<TracksTableColumnChecked>();
@@ -201,13 +201,13 @@ impl RelmColumn for TracksTableColumnInstrumental {
     }
 }
 
-struct TracksTableColumnLyrics;
-impl RelmColumn for TracksTableColumnLyrics {
+struct TracksTableColumnLyricsTag;
+impl RelmColumn for TracksTableColumnLyricsTag {
     type Root = gtk::Image;
     type Widgets = ();
     type Item = Track;
 
-    const COLUMN_NAME: &'static str = "Lyrics";
+    const COLUMN_NAME: &'static str = "Tag";
 
     fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
         let img = gtk::Image::new();
@@ -223,33 +223,6 @@ impl RelmColumn for TracksTableColumnLyrics {
 
     fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
         Some(Box::new(|a, b| a.lyrics.is_some().cmp(&b.lyrics.is_some())))
-    }
-}
-
-struct TracksTableColumnLyricsSync;
-impl RelmColumn for TracksTableColumnLyricsSync {
-    type Root = gtk::Image;
-    type Widgets = ();
-    type Item = Track;
-
-    const COLUMN_NAME: &'static str = "Sync";
-
-    fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-        let img = gtk::Image::new();
-        (img, ())
-    }
-
-    fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-        if item.lyrics_synchronised {
-            root.set_icon_name(Some("checkmark-symbolic"));
-            root.set_tooltip("Lyrics Tag is Synchronous/LRC Format");
-        }
-    }
-
-    fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-        Some(Box::new(|a, b| {
-            a.lyrics_synchronised.cmp(&b.lyrics_synchronised)
-        }))
     }
 }
 
@@ -273,11 +246,11 @@ impl RelmColumn for TracksTableColumnSidecar {
         match (&item.lyrics_sidecar_lrc_file, &item.lyrics_sidecar_txt_file) {
             (Some(_), _) => {
                 root.set_label("LRC");
-                root.set_tooltip("Sidecar Lyrics File Format");
+                root.set_tooltip("Lyrics Sidecar File Format");
             }
             (None, Some(_)) => {
                 root.set_label("TXT");
-                root.set_tooltip("Sidecar Lyrics File Format");
+                root.set_tooltip("Lyrics Sidecar File Format");
             }
             _ => (),
         }
@@ -293,6 +266,34 @@ impl RelmColumn for TracksTableColumnSidecar {
                         .is_some()
                         .cmp(&b.lyrics_sidecar_txt_file.is_some())
                 })
+        }))
+    }
+}
+
+struct TracksTableColumnLyricsSync;
+impl RelmColumn for TracksTableColumnLyricsSync {
+    type Root = gtk::Image;
+    type Widgets = ();
+    type Item = Track;
+
+    const COLUMN_NAME: &'static str = "Sync";
+
+    fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+        let img = gtk::Image::new();
+        (img, ())
+    }
+
+    fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
+        if item.lyrics_synchronised || item.lyrics_sidecar_lrc_file.is_some() {
+            root.set_icon_name(Some("checkmark-symbolic"));
+            root.set_tooltip("Lyrics Are Synchronised");
+        }
+    }
+
+    fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
+        Some(Box::new(|a, b| {
+            (a.lyrics_synchronised || a.lyrics_sidecar_lrc_file.is_some())
+                .cmp(&(b.lyrics_synchronised || b.lyrics_sidecar_lrc_file.is_some()))
         }))
     }
 }
