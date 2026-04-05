@@ -7,6 +7,8 @@ use crate::util::{self};
 pub struct TracksTableModel {
     table: TypedColumnView<Track, gtk::MultiSelection>,
     preset_filters_len: usize,
+    total_rows: u32,
+    rows_visible: bool,
 }
 
 #[derive(Debug)]
@@ -34,13 +36,23 @@ impl SimpleComponent for TracksTableModel {
     type Output = ();
 
     view! {
-      gtk:: Box {
-      #[local_ref]
-      tracks_table_view -> gtk::ColumnView {
-        set_expand: true,
-        set_show_column_separators: true,
+        gtk:: Box {
+            match model.rows_visible {
+                true => {
+                    #[local_ref]
+                    *tracks_table_view -> gtk::ColumnView {
+                        set_expand: true,
+                        set_show_column_separators: true,
+                    }
+                }
+                false => {
+                    adw::StatusPage {
+                      set_title: "No Results",
+                      set_icon_name: Some("edit-find-symbolic"),
+                    }
+                }
+            },
         }
-      }
     }
 
     fn init(
@@ -95,6 +107,8 @@ impl SimpleComponent for TracksTableModel {
 
         let model = TracksTableModel {
             preset_filters_len: table.filters_len(),
+            total_rows: 0,
+            rows_visible: false,
             table,
         };
 
@@ -110,14 +124,16 @@ impl SimpleComponent for TracksTableModel {
             TracksTableMsg::ClearAndAppend(tracks) => {
                 self.table.clear();
                 self.table.extend_from_iter(tracks);
+                self.reset_rows_state();
             }
 
             TracksTableMsg::Filter(query) => {
-                if let Some(query) = query {
-                    while self.table.filters_len() > self.preset_filters_len {
-                        self.table.pop_filter();
-                    }
+                // Clear all dynamically-added filters
+                while self.table.filters_len() > self.preset_filters_len {
+                    self.table.pop_filter();
+                }
 
+                if let Some(query) = query {
                     for token in query.to_lowercase().split_whitespace().map(String::from) {
                         self.table.add_filter(move |track| {
                             track.artist_name.to_lowercase().contains(&token)
@@ -125,11 +141,10 @@ impl SimpleComponent for TracksTableModel {
                                 || track.track_name.to_lowercase().contains(&token)
                         });
                     }
-                } else {
-                    while self.table.filters_len() > self.preset_filters_len {
-                        self.table.pop_filter();
-                    }
                 }
+
+                // Are any rows visible after filtering?
+                self.set_rows_visible();
             }
 
             TracksTableMsg::Update(track) => {
@@ -141,8 +156,22 @@ impl SimpleComponent for TracksTableModel {
 
             TracksTableMsg::SetFilter((filter, active)) => {
                 self.table.set_filter_status(filter as usize, active);
+
+                // Are any rows visible after filtering?
+                self.set_rows_visible();
             }
         }
+    }
+}
+
+impl TracksTableModel {
+    fn reset_rows_state(&mut self) {
+        self.total_rows = self.table.len();
+        self.rows_visible = self.table.get_visible(0).is_some();
+    }
+
+    fn set_rows_visible(&mut self) {
+        self.rows_visible = self.table.get_visible(0).is_some();
     }
 }
 

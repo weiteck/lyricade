@@ -81,7 +81,6 @@ impl Component for AppModel {
         #[watch]
         set_search_mode: model.is_search_revealed,
         set_key_capture_widget: Some(&main_window),
-        set_show_close_button: true,
         connect_entry: &search_entry,
 
         #[wrap(Some)]
