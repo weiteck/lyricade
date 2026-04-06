@@ -189,7 +189,7 @@ impl Component for AppModel {
       #[root]
       main_window = adw::ApplicationWindow {
         set_default_size: (800, 800),
-        set_title: Some(APP_NAME_PRETTY),
+        set_title: Some(&app_title),
 
         #[local_ref]
         toast_overlay -> adw::ToastOverlay {
@@ -257,6 +257,12 @@ impl Component for AppModel {
         root: Self::Root,
         sender: relm4::ComponentSender<Self>,
     ) -> relm4::ComponentParts<Self> {
+        let app_title = if cfg!(debug_assertions) {
+            format!("{APP_NAME_PRETTY} (DEBUG)")
+        } else {
+            APP_NAME_PRETTY.to_string()
+        };
+
         let model = AppModel {
             libraries: vec![],
             tracks: vec![],
