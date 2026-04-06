@@ -1,6 +1,7 @@
 use relm4::gtk::prelude::WidgetExt;
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
+use tracing::{debug, info};
 
 use crate::track::Track;
 use crate::util::{self};
@@ -18,6 +19,12 @@ pub enum TracksTableMsg {
     Update(Track),
     Filter(Option<String>),
     SetFilter((TracksTableFilter, bool)),
+    ActivateRow(u32),
+}
+
+#[derive(Debug)]
+pub enum TracksTableOutput {
+    TrackIdActived(i32),
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -34,7 +41,7 @@ pub enum TracksTableFilter {
 impl SimpleComponent for TracksTableModel {
     type Init = ();
     type Input = TracksTableMsg;
-    type Output = ();
+    type Output = TracksTableOutput;
 
     view! {
         gtk::Overlay {
@@ -43,6 +50,9 @@ impl SimpleComponent for TracksTableModel {
             set_child = tracks_table_view -> gtk::ColumnView {
                 set_expand: true,
                 set_show_column_separators: true,
+                connect_activate => move |_cv, row| {
+                    sender.input(TracksTableMsg::ActivateRow(row));
+                },
             },
 
             add_overlay = &adw::StatusPage {
@@ -58,7 +68,7 @@ impl SimpleComponent for TracksTableModel {
     fn init(
         _init: Self::Init,
         root: Self::Root,
-        _sender: ComponentSender<Self>,
+        sender: ComponentSender<Self>,
     ) -> ComponentParts<Self> {
         let mut table = TypedColumnView::<Track, gtk::MultiSelection>::new();
 
@@ -105,6 +115,8 @@ impl SimpleComponent for TracksTableModel {
         table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
         table.set_filter_status(5, false);
 
+        // let sel = table.view.connect_activate(|x| info!("Selected {x}"));
+
         let model = TracksTableModel {
             preset_filters_len: table.filters_len(),
             total_rows: 0,
@@ -119,8 +131,22 @@ impl SimpleComponent for TracksTableModel {
         ComponentParts { model, widgets }
     }
 
-    fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
         match message {
+            TracksTableMsg::ActivateRow(row) => {
+                let track_id = self
+                    .table
+                    .get_visible(row)
+                    .map(|item| item.borrow().id)
+                    .expect("failed to get track ID");
+
+                debug!("TracksTable row activated: {row} (Track ID {track_id})");
+
+                sender
+                    .output(TracksTableOutput::TrackIdActived(track_id))
+                    .expect("receiver of TracksTableOutput dropped");
+            }
+
             TracksTableMsg::ClearAndAppend(tracks) => {
                 self.table.clear();
                 self.table.extend_from_iter(tracks);
