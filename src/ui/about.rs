@@ -17,8 +17,10 @@ impl SimpleComponent for AboutModel {
         set_developer_name: "Chris Price",
         set_developers: &["Chris Price <fair.lake5766@fastmail.com>"],
         set_version: env!("CARGO_PKG_VERSION"),
-        set_copyright: "@ 2026 Chris Price",
         set_license_type: gtk::License::MitX11,
+        set_comments: r"Thanks go to <b>tranxuanthang</b> and the <b>lrclib.net</b> contributors for creating the service that this app relies upon.
+
+    <i>github.com/tranxuanthang/lrclib</i>",
         // TODO: Change website
         set_website: "https://github.com/weiteck/lrcman",
       }
