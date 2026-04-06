@@ -34,9 +34,9 @@ enum AppMsg {
     FetchLyrics,
     Quit,
     /// Load libraries and tracks from the database.
-    ReloadLibraries,
+    LoadLibraries,
     /// Scan library paths for changes.
-    RescanLibraries,
+    RefreshLibraries,
     ShowAbout,
     SearchQueryChanged(String),
     ShowSearch(bool),
@@ -226,7 +226,7 @@ impl Component for AppModel {
                       set_hexpand: true,
 
                       #[local_ref]
-                      tracks_table -> gtk::Box {}
+                      tracks_table -> gtk::Overlay {}
                     }
                   }
               },
@@ -274,7 +274,7 @@ impl Component for AppModel {
         let widgets = view_output!();
 
         // Load libraries and tracks and populate table view
-        sender.input(AppMsg::ReloadLibraries);
+        sender.input(AppMsg::LoadLibraries);
 
         // Main menu actions
         relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
@@ -383,9 +383,9 @@ impl Component for AppModel {
             }
 
             // TODO: Use alert dialog to show errors
-            AppMsg::ReloadLibraries => {
+            AppMsg::LoadLibraries => {
                 if self
-                    .reload_libraries()
+                    .load_libraries()
                     .inspect_err(|e| {
                         sender.input(AppMsg::ShowToast(format!(
                             "Error loading music libraries: {e}"
@@ -408,7 +408,7 @@ impl Component for AppModel {
                 }
             }
 
-            AppMsg::RescanLibraries => todo!(),
+            AppMsg::RefreshLibraries => todo!(),
 
             AppMsg::SearchQueryChanged(query) => {
                 debug!("Searching for: {}", &query);
@@ -479,10 +479,44 @@ impl Component for AppModel {
 }
 
 impl AppModel {
-    pub fn reload_libraries(&mut self) -> Result<()> {
-        debug!("Reloading Libraries and Tracks ...");
+    pub fn add_libraries(&mut self) -> Result<()> {
+        debug!("Loading Libraries and Tracks ...");
 
         self.libraries = Library::get_all()?;
+        self.load_tracks()?;
+
+        debug!("Loaded {} Libraries", self.libraries.len());
+
+        Ok(())
+    }
+
+    pub fn load_libraries(&mut self) -> Result<()> {
+        debug!("Loading Libraries and Tracks ...");
+
+        self.libraries = Library::get_all()?;
+        self.load_tracks()?;
+
+        debug!("Loaded {} Libraries", self.libraries.len());
+
+        Ok(())
+    }
+
+    pub fn refresh_libraries(&mut self) -> Result<()> {
+        debug!("Refreshing Libraries ...");
+
+        self.libraries = Library::get_all()?;
+        for lib in &self.libraries {
+            lib.refresh().call()?;
+        }
+        self.load_tracks()?;
+
+        debug!("Refreshed {} Libraries", self.libraries.len());
+
+        Ok(())
+    }
+
+    pub fn load_tracks(&mut self) -> Result<()> {
+        debug!("Loading Tracks from {} Libraries ...", self.libraries.len());
 
         self.tracks = self
             .libraries
@@ -497,9 +531,9 @@ impl AppModel {
             .collect::<Vec<_>>();
 
         debug!(
-            "Reloaded {} Libraries with {} Tracks",
-            self.libraries.len(),
-            self.tracks.len()
+            "Loaded {} Tracks from {} Libraries",
+            self.tracks.len(),
+            self.libraries.len()
         );
 
         Ok(())

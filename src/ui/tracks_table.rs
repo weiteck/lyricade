@@ -1,3 +1,4 @@
+use relm4::gtk::prelude::WidgetExt;
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
 
@@ -36,21 +37,20 @@ impl SimpleComponent for TracksTableModel {
     type Output = ();
 
     view! {
-        gtk:: Box {
-            match model.rows_visible {
-                true => {
-                    #[local_ref]
-                    *tracks_table_view -> gtk::ColumnView {
-                        set_expand: true,
-                        set_show_column_separators: true,
-                    }
-                }
-                false => {
-                    adw::StatusPage {
-                      set_title: "No Results",
-                      set_icon_name: Some("edit-find-symbolic"),
-                    }
-                }
+        gtk::Overlay {
+            #[local_ref]
+            #[wrap(Some)]
+            set_child = tracks_table_view -> gtk::ColumnView {
+                set_expand: true,
+                set_show_column_separators: true,
+            },
+
+            add_overlay = &adw::StatusPage {
+              set_description: Some("No results"),
+              set_icon_name: Some("edit-find-symbolic"),
+              add_css_class: "compact",
+              #[watch]
+              set_visible: !model.rows_visible,
             },
         }
     }
