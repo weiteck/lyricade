@@ -1,4 +1,7 @@
-use std::{fs, sync::LazyLock};
+use std::{
+  fs,
+  sync::{LazyLock, RwLock},
+};
 
 use anyhow::anyhow;
 use diesel::{
@@ -33,8 +36,9 @@ const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
-pub static SETTINGS: LazyLock<Settings> =
-  LazyLock::new(|| Settings::load().expect(&format!("Failed to load settings from database")));
+pub static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| {
+  RwLock::new(Settings::load().expect(&format!("Failed to load settings from database")))
+});
 
 pub static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
   let manager = r2d2::ConnectionManager::<SqliteConnection>::new(&APP_DB_FILE_PATH.to_string());

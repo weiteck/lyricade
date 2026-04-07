@@ -153,7 +153,10 @@ impl Library {
   #[builder]
   /// Read metadata for new and existing files in `Library` path and update database.
   pub fn refresh(&self, options: Option<RefreshOptions>) -> Result<usize> {
-    let options = options.unwrap_or_else(|| RefreshOptions::from(&*SETTINGS));
+    let options = {
+      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
+      options.unwrap_or_else(|| RefreshOptions::from(settings))
+    };
     info!("{} refresh: Started with options: {:?}", &self, options);
 
     let start = Instant::now();
@@ -301,7 +304,10 @@ impl Library {
   pub async fn fetch_lyrics(&self, options: Option<FetchLyricsOptions>) -> Result<usize> {
     // TODO: Use multiple async threads
 
-    let options = options.unwrap_or_else(|| FetchLyricsOptions::from(&*SETTINGS));
+    let options = {
+      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
+      options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
+    };
     info!(
       "{} fetch lyrics: Started with options: {:?}",
       &self, options

@@ -4,7 +4,7 @@ use crate::Result;
 
 pub mod about;
 pub mod app;
-pub mod settings;
+pub mod prefs;
 pub mod tracks_table;
 
 pub fn start() -> Result<()> {

@@ -182,7 +182,10 @@ impl Track {
     /// Will obtain a connection from the pool if none passed.
     conn: Option<&mut SqliteConnection>,
   ) -> Result<()> {
-    let options = options.unwrap_or_else(|| ScanOptions::from(&*SETTINGS));
+    let options = {
+      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
+      options.unwrap_or_else(|| ScanOptions::from(settings))
+    };
     trace!(
       "{} scan: Scan and update: Refreshing metadata and sidecars",
       &self
@@ -356,7 +359,10 @@ impl Track {
   /// Returns `true` if tag was written or sidecar file was saved.
   #[builder]
   pub async fn fetch_lyrics(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
-    let options = options.unwrap_or_else(|| FetchLyricsOptions::from(&*SETTINGS));
+    let options = {
+      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
+      options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
+    };
 
     let mut modified = false;
     let mut update_db = true; // default to true to record API check timestamp

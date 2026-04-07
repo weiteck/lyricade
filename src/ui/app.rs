@@ -10,19 +10,19 @@ use tracing::{debug, error, trace};
 
 use crate::settings::APP_NAME_PRETTY;
 use crate::ui::about::AboutModel;
-use crate::ui::settings::SettingsModel;
+use crate::ui::prefs::PrefsModel;
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
+use crate::util;
 use crate::{Result, library::Library, track::Track};
-use crate::{SETTINGS, util};
 
 pub struct AppModel {
   libraries: Vec<Library>,
   tracks: Vec<Track>,
 
   tracks_table_widget: Controller<TracksTableModel>,
-  settings_widget: Controller<SettingsModel>,
+  prefs_widget: Controller<PrefsModel>,
   about_widget: Controller<AboutModel>,
   sidebar_widget: gtk::Box,
   toaster: Toaster,
@@ -53,7 +53,7 @@ pub enum AppMsg {
   ShowAbout,
   SearchQueryChanged(String),
   ShowSearch(bool),
-  ShowSettings,
+  ShowPrefsWindow,
   ShowToast(String),
   SetSearchFilter((TracksTableFilter, bool)),
   ShowTrackDetailsSidebar,
@@ -241,14 +241,14 @@ impl Component for AppModel {
 
                   adw::StatusPage {
                     set_title: "No Tracks",
-                    set_description: Some("Open Settings to add a music library"),
+                    set_description: Some("Open Preferences to add a music library"),
                     set_icon_name: Some("edit-find-symbolic"),
                     set_width_request: 200,
                     #[wrap(Some)]
                     set_child = &gtk::Button {
-                      set_label: "Add Library",
+                      set_label: "Add Library...",
                       set_css_classes: &["pill", "suggested-action"],
-                      connect_clicked => AppMsg::ShowSettings,
+                      connect_clicked => AppMsg::ShowPrefsWindow,
                     },
                   },
                 }
@@ -296,7 +296,7 @@ impl Component for AppModel {
   menu! {
     main_menu: {
       "Fetch Lyrics" => ActionFetchLyrics,
-      "Settings" => ActionSettings,
+      "Preferences" => ActionPrefs,
       section! {
         "About" => ActionAbout,
         },
@@ -331,7 +331,7 @@ impl Component for AppModel {
       libraries: vec![],
       tracks: vec![],
       tracks_table_widget,
-      settings_widget: SettingsModel::builder().launch(()).detach(),
+      prefs_widget: PrefsModel::builder().launch(()).detach(),
       about_widget: AboutModel::builder().launch(()).detach(),
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       toaster: Toaster::default(),
@@ -366,14 +366,14 @@ impl Component for AppModel {
     };
     actions_group.add_action(action_fetch_lyrics);
 
-    relm4::new_stateless_action!(ActionSettings, MainMenuActionGroup, "settings");
-    let action_settings: RelmAction<ActionSettings> = {
+    relm4::new_stateless_action!(ActionPrefs, MainMenuActionGroup, "prefs");
+    let action_prefs: RelmAction<ActionPrefs> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowSettings);
+        sender.input(AppMsg::ShowPrefsWindow);
       })
     };
-    actions_group.add_action(action_settings);
+    actions_group.add_action(action_prefs);
 
     relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
     let action_about: RelmAction<ActionAbout> = {
@@ -415,7 +415,7 @@ impl Component for AppModel {
 
     // Keyboard shortcuts
     let app = relm4::main_adw_application();
-    app.set_accelerators_for_action::<ActionSettings>(&["<primary>comma"]);
+    app.set_accelerators_for_action::<ActionPrefs>(&["<primary>comma"]);
     app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
     app.set_accelerators_for_action::<ActionSearch>(&["<primary>f"]);
 
@@ -447,9 +447,9 @@ impl Component for AppModel {
         window.present();
       }
 
-      AppMsg::ShowSettings => {
-        debug!("Showing Settings window");
-        let window = self.settings_widget.widget();
+      AppMsg::ShowPrefsWindow => {
+        debug!("Showing Preferences window");
+        let window = self.prefs_widget.widget();
         window.set_transient_for(Some(root));
         window.set_hide_on_close(true);
         window.present();
