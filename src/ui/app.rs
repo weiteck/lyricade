@@ -1,10 +1,12 @@
+use std::collections::HashSet;
+
 use camino::Utf8PathBuf;
 use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::*;
-use tracing::{debug, error};
+use tracing::{debug, error, trace};
 
 use crate::settings::APP_NAME_PRETTY;
 use crate::ui::about::AboutModel;
@@ -15,24 +17,30 @@ use crate::ui::tracks_table::{
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, util};
 
-struct AppModel {
+pub struct AppModel {
   libraries: Vec<Library>,
   tracks: Vec<Track>,
 
   tracks_table_widget: Controller<TracksTableModel>,
   settings_widget: Controller<SettingsModel>,
   about_widget: Controller<AboutModel>,
+  sidebar_widget: gtk::Box,
   toaster: Toaster,
 
   no_tracks: bool,
 
+  selected_track_id: Option<i32>,
+  selected_track_ids: HashSet<i32>,
+
+  is_sidebar_pinned: bool,
+  is_sidebar_revealed: bool,
+
   is_search_revealed: bool,
   search_query: Option<String>,
-  track_details: Option<Track>,
 }
 
 #[derive(Debug)]
-enum AppMsg {
+pub enum AppMsg {
   AddLibrary(Utf8PathBuf),
   FetchLyrics,
   Quit,
@@ -46,15 +54,18 @@ enum AppMsg {
   ShowSettings,
   ShowToast(String),
   SetSearchFilter((TracksTableFilter, bool)),
-  ShowTrackDetails(i32),
+  ShowTrackDetailsSidebar,
+  HideTrackDetailsSidebar,
+  PinTrackDetailsSidebar(bool),
+  UpdateSelection(HashSet<i32>),
 }
 
 #[derive(Debug)]
-enum AppCommand {
+pub enum AppCommand {
   TrackUpdated(Track),
 }
 
-#[relm4::component]
+#[relm4::component(pub)]
 impl Component for AppModel {
   type Input = AppMsg;
   type Output = ();
@@ -77,6 +88,15 @@ impl Component for AppModel {
         set_icon_name: "open-menu-symbolic",
         set_primary: true,
         set_menu_model: Some(&main_menu),
+      },
+
+      pack_end = &gtk::ToggleButton {
+        set_label: "Info",
+        set_tooltip_text: Some("Pin Track Details"),
+        set_icon_name: "info-outline-symbolic",
+        connect_toggled[sender] => move |btn| {
+          sender.input(AppMsg::PinTrackDetailsSidebar(btn.is_active()));
+        },
       },
     },
 
@@ -225,9 +245,12 @@ impl Component for AppModel {
               false => {
                 adw::OverlaySplitView {
                   #[watch]
-                  set_show_sidebar: model.track_details.is_some(),
-                  set_collapsed: true,
+                  set_show_sidebar: model.is_sidebar_revealed,
+                  #[watch]
+                  set_collapsed: !model.is_sidebar_pinned,
                   set_sidebar_position: gtk::PackType::End,
+                  set_enable_hide_gesture: true,
+                  set_sidebar_width_fraction: 0.5,
 
                   // Tracks table view
                   #[wrap(Some)]
@@ -247,7 +270,7 @@ impl Component for AppModel {
                     #[name = "sidebar_viewport"]
                     gtk::Viewport {
                       #[watch]
-                      set_child: Some(&model.build_sidebar_widget()),
+                      set_child: Some(&model.sidebar_widget),
                     }
                   }
                 }
@@ -289,7 +312,8 @@ impl Component for AppModel {
       TracksTableModel::builder()
         .launch(())
         .forward(sender.input_sender(), |msg| match msg {
-          TracksTableOutput::TrackIdActived(id) => AppMsg::ShowTrackDetails(id),
+          TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
+          TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
         });
 
     let model = AppModel {
@@ -298,11 +322,15 @@ impl Component for AppModel {
       tracks_table_widget,
       settings_widget: SettingsModel::builder().launch(()).detach(),
       about_widget: AboutModel::builder().launch(()).detach(),
+      sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       toaster: Toaster::default(),
       no_tracks: false,
       is_search_revealed: false,
       search_query: None,
-      track_details: None,
+      selected_track_id: None,
+      selected_track_ids: HashSet::new(),
+      is_sidebar_pinned: false,
+      is_sidebar_revealed: false,
     };
 
     let toast_overlay = model.toaster.overlay_widget();
@@ -488,10 +516,43 @@ impl Component for AppModel {
           .emit(TracksTableMsg::SetFilter((filter, active)));
       }
 
-      AppMsg::ShowTrackDetails(id) => {
-        if let Some(track) = self.tracks.iter().find(|t| t.id == id) {
-          debug!("Showing details for {track}");
-          self.track_details = Some(track.clone());
+      AppMsg::ShowTrackDetailsSidebar => {
+        debug!("Showing sidebar");
+        self.rebuild_sidebar_widget();
+        self.is_sidebar_revealed = true;
+      }
+
+      AppMsg::HideTrackDetailsSidebar => {
+        debug!("Hiding sidebar");
+        self.is_sidebar_revealed = false;
+        self.is_sidebar_pinned = false;
+      }
+
+      AppMsg::PinTrackDetailsSidebar(active) => {
+        debug!("Pinning sidebar: {active}");
+        if active {
+          self.rebuild_sidebar_widget();
+        };
+        self.is_sidebar_pinned = active;
+        self.is_sidebar_revealed = active;
+      }
+
+      AppMsg::UpdateSelection(set) => {
+        self.selected_track_ids = set;
+        debug!("Tracks selected: {}", self.selected_track_ids.len());
+        trace!("Selected Track IDs:\n{:#?}", self.selected_track_ids);
+
+        if !self.is_sidebar_pinned {
+          self.is_sidebar_revealed = false;
+        }
+
+        if self.selected_track_ids.len() == 1 {
+          self.selected_track_id = self.selected_track_ids.iter().next().copied();
+          if self.is_sidebar_pinned {
+            self.rebuild_sidebar_widget();
+          }
+        } else {
+          self.selected_track_id = None;
         }
       }
 
@@ -592,18 +653,20 @@ impl AppModel {
     Ok(())
   }
 
-  fn build_sidebar_widget(&self) -> gtk::Box {
+  fn rebuild_sidebar_widget(&mut self) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 24);
     root.set_margin_all(12);
-
-    if let Some(track) = self.track_details.as_ref() {
+    if let Some(track) = self
+      .selected_track_id
+      .and_then(|id| self.tracks.iter().find(|t| t.id == id))
+    {
       debug!("Building sidebar with {track} selected");
 
       root.set_halign(gtk::Align::Fill);
 
       // General track info
       let pg = adw::PreferencesGroup::new();
-      pg.set_title("General");
+      pg.set_title("Track Details");
       let ar = adw::ActionRow::new();
       ar.set_title("Artist Name");
       ar.set_subtitle(&track.artist_name);
@@ -625,11 +688,7 @@ impl AppModel {
       ));
       pg.container_add(&ar);
       ar.set_title("File Date");
-      ar.set_subtitle(
-        &util::ndt_utc_to_local_dt(track.file_modified_at)
-          .format("%F %T")
-          .to_string(),
-      );
+      ar.set_subtitle(&util::ndt_utc_to_ui_string(track.file_modified_at));
       pg.container_add(&ar);
       root.append(&pg);
 
@@ -690,7 +749,7 @@ impl AppModel {
       ar.set_subtitle(
         &track
           .last_api_check_at
-          .map(|ndt| util::ndt_utc_to_local_dt(ndt).format("%F %T").to_string())
+          .map(|ndt| util::ndt_utc_to_ui_string(ndt))
           .unwrap_or("Never".into()),
       );
       pg.container_add(&ar);
@@ -711,27 +770,15 @@ impl AppModel {
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Added At");
-        ar.set_subtitle(
-          &util::ndt_utc_to_local_dt(track.added_at)
-            .format("%F %T")
-            .to_string(),
-        );
+        ar.set_subtitle(&&util::ndt_utc_to_ui_string(track.added_at));
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Updated At");
-        ar.set_subtitle(
-          &util::ndt_utc_to_local_dt(track.updated_at)
-            .format("%F %T")
-            .to_string(),
-        );
+        ar.set_subtitle(&util::ndt_utc_to_ui_string(track.updated_at));
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Refreshed At");
-        ar.set_subtitle(
-          &util::ndt_utc_to_local_dt(track.refreshed_at)
-            .format("%F %T")
-            .to_string(),
-        );
+        ar.set_subtitle(&&util::ndt_utc_to_ui_string(track.refreshed_at));
         pg.container_add(&ar);
         root.append(&pg);
       }
@@ -743,12 +790,6 @@ impl AppModel {
       root.append(&label);
     }
 
-    dbg!(&root);
-    root
+    self.sidebar_widget = root;
   }
-}
-
-pub fn start() -> Result<()> {
-  let app = RelmApp::new("io.github.weiteck.lrc-lyrics");
-  Ok(app.run::<AppModel>(()))
 }

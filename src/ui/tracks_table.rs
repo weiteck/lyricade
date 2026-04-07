@@ -1,7 +1,10 @@
-use relm4::gtk::prelude::WidgetExt;
+use std::collections::HashSet;
+
+use relm4::gtk::prelude::{SelectionModelExt, WidgetExt};
+use relm4::gtk::{Bitset, BitsetIter};
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::track::Track;
 use crate::util::{self};
@@ -19,12 +22,14 @@ pub enum TracksTableMsg {
   Update(Track),
   Filter(Option<String>),
   SetFilter((TracksTableFilter, bool)),
-  ActivateRow(u32),
+  HandleRowActivated,
+  HandleRowSelection(Bitset),
 }
 
 #[derive(Debug)]
 pub enum TracksTableOutput {
-  TrackIdActived(i32),
+  TrackIdsSelected(HashSet<i32>),
+  RowActivated,
 }
 
 #[derive(Debug, Clone, Hash, PartialEq, Eq)]
@@ -50,8 +55,8 @@ impl SimpleComponent for TracksTableModel {
           set_child = tracks_table_view -> gtk::ColumnView {
               set_expand: true,
               set_show_column_separators: true,
-              connect_activate => move |_cv, row| {
-                  sender.input(TracksTableMsg::ActivateRow(row));
+              connect_activate => move |_cv, _row| {
+                  sender.input(TracksTableMsg::HandleRowActivated);
               },
           },
 
@@ -112,7 +117,14 @@ impl SimpleComponent for TracksTableModel {
     table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
     table.set_filter_status(5, false);
 
-    // let sel = table.view.connect_activate(|x| info!("Selected {x}"));
+    // Handle row selection
+    let sender_handle = sender.clone();
+    table
+      .selection_model
+      .connect_selection_changed(move |selection_model, _pos, _n_items| {
+        let set = selection_model.selection();
+        sender_handle.input(TracksTableMsg::HandleRowSelection(set));
+      });
 
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
@@ -130,17 +142,45 @@ impl SimpleComponent for TracksTableModel {
 
   fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
-      TracksTableMsg::ActivateRow(row) => {
-        let track_id = self
-          .table
-          .get_visible(row)
-          .map(|item| item.borrow().id)
-          .expect("failed to get track ID");
+      TracksTableMsg::HandleRowActivated => {
+        // let track_id = self
+        //   .table
+        //   .get_visible(row)
+        //   .map(|item| item.borrow().id)
+        //   .expect("failed to get track ID");
 
-        debug!("TracksTable row activated: {row} (Track ID {track_id})");
+        // debug!("TracksTable row activated: {row} (Track ID {track_id})");
 
         sender
-          .output(TracksTableOutput::TrackIdActived(track_id))
+          .output(TracksTableOutput::RowActivated)
+          .expect("receiver of TracksTableOutput dropped");
+      }
+
+      TracksTableMsg::HandleRowSelection(set) => {
+        let mut selected_track_ids = HashSet::new();
+
+        if let Some((mut iter, mut idx)) = BitsetIter::init_first(&set) {
+          debug!("First row selected: {idx}");
+          loop {
+            let track_id = self
+              .table
+              .get_visible(idx)
+              .map(|item| item.borrow().id)
+              .expect("failed to get track ID");
+
+            selected_track_ids.insert(track_id);
+
+            if let Some(next_idx) = iter.next() {
+              idx = next_idx;
+            } else {
+              debug!("Last row selected: {idx}");
+              break;
+            };
+          }
+        }
+
+        sender
+          .output(TracksTableOutput::TrackIdsSelected(selected_track_ids))
           .expect("receiver of TracksTableOutput dropped");
       }
 
