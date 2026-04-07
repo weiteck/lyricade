@@ -1,10 +1,10 @@
 use std::collections::HashSet;
 
 use relm4::gtk::prelude::{SelectionModelExt, WidgetExt};
-use relm4::gtk::{Bitset, BitsetIter};
+use relm4::gtk::{Bitset, BitsetIter, EventControllerKey};
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
-use tracing::debug;
+use tracing::{debug, trace};
 
 use crate::track::Track;
 use crate::util::{self};
@@ -24,6 +24,7 @@ pub enum TracksTableMsg {
   SetFilter((TracksTableFilter, bool)),
   HandleRowActivated,
   HandleRowSelection(Bitset),
+  ClearSelection,
 }
 
 #[derive(Debug)]
@@ -126,6 +127,18 @@ impl SimpleComponent for TracksTableModel {
         sender_handle.input(TracksTableMsg::HandleRowSelection(set));
       });
 
+    // Handle key presses
+    let sender_handle = sender.clone();
+    let controller = EventControllerKey::new();
+    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
+      trace!("TracksTable key event: key {key} + {:?}", modifier);
+      if key == gtk::gdk::Key::Escape {
+        sender_handle.input(TracksTableMsg::ClearSelection);
+      }
+      gtk::glib::Propagation::Proceed
+    });
+    table.view.add_controller(controller);
+
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
@@ -143,14 +156,6 @@ impl SimpleComponent for TracksTableModel {
   fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
       TracksTableMsg::HandleRowActivated => {
-        // let track_id = self
-        //   .table
-        //   .get_visible(row)
-        //   .map(|item| item.borrow().id)
-        //   .expect("failed to get track ID");
-
-        // debug!("TracksTable row activated: {row} (Track ID {track_id})");
-
         sender
           .output(TracksTableOutput::RowActivated)
           .expect("receiver of TracksTableOutput dropped");
@@ -182,6 +187,11 @@ impl SimpleComponent for TracksTableModel {
         sender
           .output(TracksTableOutput::TrackIdsSelected(selected_track_ids))
           .expect("receiver of TracksTableOutput dropped");
+      }
+
+      TracksTableMsg::ClearSelection => {
+        debug!("Clearing selection");
+        self.table.selection_model.unselect_all();
       }
 
       TracksTableMsg::ClearAndAppend(tracks) => {

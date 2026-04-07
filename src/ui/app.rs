@@ -29,6 +29,8 @@ pub struct AppModel {
 
   no_tracks: bool,
 
+  selection_state: SelectionState,
+  last_selection_state: SelectionState,
   selected_track_id: Option<i32>,
   selected_track_ids: HashSet<i32>,
 
@@ -63,6 +65,13 @@ pub enum AppMsg {
 #[derive(Debug)]
 pub enum AppCommand {
   TrackUpdated(Track),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionState {
+  None,
+  Single,
+  Multi,
 }
 
 #[relm4::component(pub)]
@@ -327,6 +336,8 @@ impl Component for AppModel {
       no_tracks: false,
       is_search_revealed: false,
       search_query: None,
+      selection_state: SelectionState::None,
+      last_selection_state: SelectionState::None,
       selected_track_id: None,
       selected_track_ids: HashSet::new(),
       is_sidebar_pinned: false,
@@ -518,8 +529,8 @@ impl Component for AppModel {
 
       AppMsg::ShowTrackDetailsSidebar => {
         debug!("Showing sidebar");
-        self.rebuild_sidebar_widget();
         self.is_sidebar_revealed = true;
+        self.rebuild_sidebar_widget();
       }
 
       AppMsg::HideTrackDetailsSidebar => {
@@ -530,11 +541,11 @@ impl Component for AppModel {
 
       AppMsg::PinTrackDetailsSidebar(active) => {
         debug!("Pinning sidebar: {active}");
+        self.is_sidebar_pinned = active;
+        self.is_sidebar_revealed = active;
         if active {
           self.rebuild_sidebar_widget();
         };
-        self.is_sidebar_pinned = active;
-        self.is_sidebar_revealed = active;
       }
 
       AppMsg::UpdateSelection(set) => {
@@ -542,17 +553,20 @@ impl Component for AppModel {
         debug!("Tracks selected: {}", self.selected_track_ids.len());
         trace!("Selected Track IDs:\n{:#?}", self.selected_track_ids);
 
+        // Selection changed; hide track details unless pinned
         if !self.is_sidebar_pinned {
           self.is_sidebar_revealed = false;
         }
 
         if self.selected_track_ids.len() == 1 {
           self.selected_track_id = self.selected_track_ids.iter().next().copied();
-          if self.is_sidebar_pinned {
-            self.rebuild_sidebar_widget();
-          }
+          self.change_selection_state(SelectionState::Single);
+        } else if self.selected_track_ids.len() > 1 {
+          self.selected_track_id = None;
+          self.change_selection_state(SelectionState::Multi);
         } else {
           self.selected_track_id = None;
+          self.change_selection_state(SelectionState::None);
         }
       }
 
@@ -754,6 +768,7 @@ impl AppModel {
       );
       pg.container_add(&ar);
       inner.append(&pg);
+
       root.append(&inner);
 
       // Extended debugging info
@@ -782,6 +797,13 @@ impl AppModel {
         pg.container_add(&ar);
         root.append(&pg);
       }
+    } else if self.selected_track_ids.len() > 1 {
+      debug!("Building sidebar with multiple tracks selected");
+
+      root.set_valign(gtk::Align::Center);
+      let selected = self.selected_track_ids.len();
+      let label = gtk::Label::new(Some(&format!("{selected} tracks selected")));
+      root.append(&label);
     } else {
       debug!("Building sidebar with no track selected");
 
@@ -791,5 +813,16 @@ impl AppModel {
     }
 
     self.sidebar_widget = root;
+  }
+
+  fn change_selection_state(&mut self, new_state: SelectionState) {
+    if self.selection_state != new_state {
+      self.last_selection_state = self.selection_state;
+      self.selection_state = new_state;
+    }
+
+    if self.is_sidebar_revealed {
+      self.rebuild_sidebar_widget();
+    }
   }
 }
