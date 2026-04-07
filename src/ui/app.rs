@@ -103,6 +103,8 @@ impl Component for AppModel {
         set_label: "Info",
         set_tooltip_text: Some("Pin Track Details"),
         set_icon_name: "info-outline-symbolic",
+        #[watch]
+        set_visible: !model.no_tracks,
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::PinTrackDetailsSidebar(btn.is_active()));
         },
@@ -431,11 +433,7 @@ impl Component for AppModel {
         self.tracks.iter_mut().for_each(|track| {
           let mut track = track.clone();
           sender.oneshot_command(async {
-            let _ = track
-              .fetch_lyrics()
-              .options(SETTINGS.fetch_lyrics)
-              .call()
-              .await;
+            let _ = track.fetch_lyrics().call().await;
             AppCommand::TrackUpdated(track)
           });
         });

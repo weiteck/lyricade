@@ -1,40 +1,28 @@
-use std::{env, fs, io::Write, path::PathBuf, sync::LazyLock};
+use std::{env, fs, path::PathBuf, sync::LazyLock};
 
 use camino::Utf8PathBuf;
-use config::{Config, Environment, File};
+use chrono::NaiveDateTime;
+use diesel::prelude::*;
 use directories::ProjectDirs;
-use serde::{Deserialize, Serialize};
-use tracing::{info, warn};
+use tracing::{debug, error, info};
 
-use crate::{Result, library::RefreshOptions, track::FetchLyricsOptions};
+use crate::{DB_POOL, Result, lyrics::LyricsType, schema::settings, util::now};
 
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
-    LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", &APP_NAME));
-
-pub static APP_CONFIG_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    if cfg!(debug_assertions) {
-        Utf8PathBuf::from("./config") // use project dir
-    } else {
-        let path = PROJECT_DIRS
-            .as_ref()
-            .map(|pd| pd.config_dir().to_path_buf())
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./config")));
-        path.try_into()
-            .expect("Encountered invalid UTF-8 path while parsing user config directory")
-    }
-});
+  LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", &APP_NAME));
 
 pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    if cfg!(debug_assertions) {
-        Utf8PathBuf::from("./data") // use project dir
-    } else {
-        let path = PROJECT_DIRS
-            .as_ref()
-            .map(|pd| pd.data_dir().to_path_buf())
-            .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")));
-        path.try_into()
-            .expect("Encountered invalid UTF-8 path while parsing user data directory")
-    }
+  if cfg!(debug_assertions) {
+    Utf8PathBuf::from("./data") // use project dir
+  } else {
+    let path = PROJECT_DIRS
+      .as_ref()
+      .map(|pd| pd.data_dir().to_path_buf())
+      .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")));
+    path
+      .try_into()
+      .expect("Encountered invalid UTF-8 path while parsing user data directory")
+  }
 });
 
 /// Application name used in paths, etc.
@@ -43,84 +31,104 @@ pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
 /// Application name presented in UI.
 pub const APP_NAME_PRETTY: &str = "Untitled Lyrics App";
 
-pub static APP_SETTINGS_FILE_PATH: LazyLock<Utf8PathBuf> =
-    LazyLock::new(|| APP_CONFIG_DIR.join("settings.toml"));
-
 pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
-    if cfg!(debug_assertions) {
-        APP_DATA_DIR.join("db.dev.sqlite3") // use project dir
-    } else {
-        APP_DATA_DIR.join("db.sqlite3")
-    }
+  if cfg!(debug_assertions) {
+    APP_DATA_DIR.join("db.dev.sqlite3") // use project dir
+  } else {
+    APP_DATA_DIR.join("db.sqlite3")
+  }
 });
 
 /// Maximum concurrent HTTP connections.
 pub const CONNECTION_LIMIT: usize = 20;
 
-// TODO: Save settings to DB instead of a file
-#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[derive(Debug, Default, Clone, Queryable, Selectable, Identifiable, Insertable, AsChangeset)]
+#[diesel(table_name = crate::schema::settings)]
+#[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Settings {
-    pub refresh_library: RefreshOptions,
-    pub fetch_lyrics: FetchLyricsOptions,
+  pub id: i32,
+
+  pub prefer_iso_timestamps: bool,
+  pub prefer_lyrics_type: LyricsType,
+
+  pub scan_new_files_only: bool,
+  pub upgrade_lyrics_tag_on_scan: bool,
+  pub delete_sidecar_files_on_scan: bool,
+  pub keep_one_sidecar_file_on_scan: bool,
+
+  pub ignore_plain_lyrics_on_fetch: bool,
+  pub update_lyrics_tag_on_fetch: bool,
+  pub save_sidecar_file_on_fetch: bool,
+
+  #[diesel(skip_update)]
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
 }
 
 impl Settings {
-    pub fn init_or_load() -> Result<Self> {
-        let settings_file_base = APP_SETTINGS_FILE_PATH.with_extension("");
+  pub fn load() -> Result<Self> {
+    Self::create_app_dirs_if_not_exist()?;
 
-        match Config::builder()
-            .add_source(File::with_name(settings_file_base.as_str()))
-            .add_source(Environment::with_prefix(&APP_NAME).separator("__"))
-            .build()
-        {
-            Ok(config) => match config.try_deserialize() {
-                Ok(settings) => {
-                    info!("Loaded settings in \"{}\"", &*APP_SETTINGS_FILE_PATH);
-                    Ok(settings)
-                }
-                Err(error) => {
-                    warn!("Settings parse error: {error}");
-                    warn!(
-                        "Failed to load settings from \"{}\" - initialising with default settings",
-                        &*APP_SETTINGS_FILE_PATH
-                    );
-                    Settings::init()
-                }
-            },
-            Err(error) => match error {
-                _ => {
-                    warn!(
-                        "Failed to load settings from \"{}\" - initialising with default settings",
-                        &*APP_SETTINGS_FILE_PATH
-                    );
-                    Settings::init()
-                }
-            },
-        }
-    }
+    let mut conn = DB_POOL.get()?;
 
-    pub fn save(&self) -> Result<()> {
-        Settings::create_app_dirs_if_not_exist()?;
-        let toml = toml::to_string_pretty(&self)?;
-        let mut file = fs::File::create(&*APP_SETTINGS_FILE_PATH)?;
-        file.write_all(toml.as_bytes())?;
-        Ok(())
-    }
+    let res = settings::table
+      .find(1) // singleton table; always id = 1
+      .first::<Settings>(&mut conn);
 
-    /// Create config and data dirs. Call before `init_or_load` of `Settings`.
-    pub fn create_app_dirs_if_not_exist() -> Result<()> {
-        if !&APP_CONFIG_DIR.exists() {
-            fs::create_dir(&*APP_CONFIG_DIR)?;
-        }
-        if !&APP_DATA_DIR.exists() {
-            fs::create_dir(&*APP_DATA_DIR)?;
-        }
-        Ok(())
-    }
-
-    fn init() -> Result<Self> {
-        let settings = Self::default();
-        settings.save()?;
+    let settings = match res {
+      Ok(settings) => {
+        info!("Loaded settings");
         Ok(settings)
+      }
+      Err(error) => match error {
+        diesel::result::Error::NotFound => {
+          info!("Initialising default settings");
+
+          let mut settings = Settings {
+            id: 1,
+            added_at: now(),
+            ..Default::default()
+          };
+
+          settings.save()?;
+
+          Ok(settings)
+        }
+        _ => {
+          error!("Database error while trying to load Settings: {error}");
+          Err(error)
+        }
+      },
+    }?;
+
+    Ok(settings)
+  }
+
+  pub fn save(&mut self) -> Result<()> {
+    let mut conn = DB_POOL.get()?;
+
+    self.updated_at = now();
+
+    if diesel::insert_into(settings::table)
+      .values(&*self)
+      .on_conflict(settings::id) // singleton table; id = 1 and should always conflict
+      .do_update()
+      .set(&*self)
+      .execute(&mut conn)
+      .inspect_err(|error| error!("Database error while trying to save Settings: {error}"))?
+      == 1
+    {
+      debug!("Saved Settings");
     }
+
+    Ok(())
+  }
+
+  /// Create data directory.
+  pub fn create_app_dirs_if_not_exist() -> Result<()> {
+    if !&APP_DATA_DIR.exists() {
+      fs::create_dir(&*APP_DATA_DIR)?;
+    }
+    Ok(())
+  }
 }

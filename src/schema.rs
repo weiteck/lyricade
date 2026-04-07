@@ -11,6 +11,23 @@ diesel::table! {
 }
 
 diesel::table! {
+    settings (id) {
+        id -> Integer,
+        prefer_iso_timestamps -> Bool,
+        prefer_lyrics_type -> Text,
+        scan_new_files_only -> Bool,
+        upgrade_lyrics_tag_on_scan -> Bool,
+        delete_sidecar_files_on_scan -> Bool,
+        keep_one_sidecar_file_on_scan -> Bool,
+        ignore_plain_lyrics_on_fetch -> Bool,
+        update_lyrics_tag_on_fetch -> Bool,
+        save_sidecar_file_on_fetch -> Bool,
+        added_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     tracks (id) {
         id -> Integer,
         library_id -> Integer,
@@ -36,5 +53,6 @@ diesel::joinable!(tracks -> libraries (library_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     libraries,
+    settings,
     tracks,
 );
