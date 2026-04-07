@@ -701,6 +701,7 @@ impl AppModel {
         track.duration as u32 % 60,
       ));
       pg.container_add(&ar);
+      let ar = adw::ActionRow::new();
       ar.set_title("File Date");
       ar.set_subtitle(&util::ndt_utc_to_ui_string(track.file_modified_at));
       pg.container_add(&ar);
