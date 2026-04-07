@@ -42,7 +42,7 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 /// Maximum concurrent HTTP connections.
 pub const CONNECTION_LIMIT: usize = 20;
 
-#[derive(Debug, Default, Clone, Queryable, Selectable, Identifiable, Insertable, AsChangeset)]
+#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::settings)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Settings {
@@ -84,12 +84,7 @@ impl Settings {
         diesel::result::Error::NotFound => {
           info!("Initialising default settings");
 
-          let mut settings = Settings {
-            id: 1,
-            added_at: now(),
-            ..Default::default()
-          };
-
+          let mut settings = Settings::default();
           settings.save()?;
 
           Ok(settings)
@@ -130,5 +125,25 @@ impl Settings {
       fs::create_dir(&*APP_DATA_DIR)?;
     }
     Ok(())
+  }
+}
+
+impl Default for Settings {
+  fn default() -> Self {
+    let now = now();
+    Self {
+      id: 1,
+      prefer_iso_timestamps: false,
+      prefer_lyrics_type: LyricsType::Sync,
+      scan_new_files_only: false,
+      upgrade_lyrics_tag_on_scan: false,
+      delete_sidecar_files_on_scan: false,
+      keep_one_sidecar_file_on_scan: false,
+      ignore_plain_lyrics_on_fetch: false,
+      update_lyrics_tag_on_fetch: false,
+      save_sidecar_file_on_fetch: true,
+      added_at: now,
+      updated_at: now,
+    }
   }
 }
