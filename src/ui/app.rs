@@ -10,7 +10,7 @@ use tracing::{debug, error, trace};
 
 use crate::settings::APP_NAME_PRETTY;
 use crate::ui::about::AboutModel;
-use crate::ui::prefs::PrefsModel;
+use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
@@ -50,6 +50,8 @@ pub enum AppMsg {
   LoadLibraries,
   /// Scan library paths for changes.
   RefreshLibraries,
+  /// Update the table with the tracks in `AppModel`.
+  BuildTracksTable,
   ShowAbout,
   SearchQueryChanged(String),
   ShowSearch(bool),
@@ -326,12 +328,17 @@ impl Component for AppModel {
           TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
         });
+    let prefs_widget = PrefsModel::builder()
+      .launch(())
+      .forward(sender.input_sender(), |msg| match msg {
+        PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
+      });
 
     let model = AppModel {
       libraries: vec![],
       tracks: vec![],
       tracks_table_widget,
-      prefs_widget: PrefsModel::builder().launch(()).detach(),
+      prefs_widget,
       about_widget: AboutModel::builder().launch(()).detach(),
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       toaster: Toaster::default(),
@@ -467,25 +474,32 @@ impl Component for AppModel {
           .is_ok()
         {
           // Update the table view
-          self.tracks_table_widget.sender().emit(
-            super::tracks_table::TracksTableMsg::ClearAndAppend(self.tracks.clone()),
-          );
+          sender.input(AppMsg::BuildTracksTable);
 
           self.no_tracks = self.tracks.is_empty();
 
           sender.input(AppMsg::ShowToast(format!(
-            "Loaded {} music librar{} with {} track{}",
+            "Loaded {} music {} with {} {}",
             self.libraries.len(),
             if self.libraries.len() <= 1 {
-              "y"
+              "library"
             } else {
-              "ies"
+              "libraries"
             },
             self.tracks.len(),
-            if self.tracks.len() == 1 { "" } else { "s" }
+            if self.tracks.len() == 1 {
+              "track"
+            } else {
+              "tracks"
+            }
           )));
         }
       }
+
+      AppMsg::BuildTracksTable => self
+        .tracks_table_widget
+        .sender()
+        .emit(TracksTableMsg::ClearAndAppend(self.tracks.clone())),
 
       AppMsg::RefreshLibraries => todo!(),
 

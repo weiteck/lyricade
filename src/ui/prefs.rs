@@ -20,6 +20,11 @@ pub enum PrefsMsg {
 }
 
 #[derive(Debug)]
+pub enum PrefsOutput {
+  RebuildTracksTable,
+}
+
+#[derive(Debug)]
 pub enum ExposedSetting {
   PreferLyricsType(LyricsType),
   PreferIsoTimestamps(bool),
@@ -42,7 +47,7 @@ pub enum HandleSidecarSetting {
 #[relm4::component(pub)]
 impl SimpleComponent for PrefsModel {
   type Input = PrefsMsg;
-  type Output = ();
+  type Output = PrefsOutput;
   type Init = ();
 
   view! {
@@ -217,7 +222,7 @@ impl SimpleComponent for PrefsModel {
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
     let model = {
-      let settings = SETTINGS.read().expect("settings lock was poisoned");
+      let settings = SETTINGS.read().expect("settings lock is poisoned");
       PrefsModel {
         settings_initial: settings.clone(),
         settings_current: settings.clone(),
@@ -228,7 +233,7 @@ impl SimpleComponent for PrefsModel {
     ComponentParts { model, widgets }
   }
 
-  fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
       PrefsMsg::DefaultSettings => {
         self.settings_current = self.settings_default.clone();
@@ -239,7 +244,7 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::SaveSettings => {
-        let mut settings = SETTINGS.write().expect("settings lock was poisoned");
+        let mut settings = SETTINGS.write().expect("settings lock is poisoned");
         *settings = self.settings_current.clone();
         settings
           .save()
@@ -255,6 +260,17 @@ impl SimpleComponent for PrefsModel {
         ExposedSetting::PreferIsoTimestamps(active) => {
           debug!("UpdateSetting: PreferIsoTimestamps: {active}");
           self.settings_current.prefer_iso_timestamps = active;
+
+          // We have to update the singleton immediately for the tracks table to reflect the change
+          {
+            let mut settings = SETTINGS.write().expect("settings lock is poisoned");
+            *settings = self.settings_current.clone();
+          }
+
+          // Trigger table rebuild
+          sender
+            .output(PrefsOutput::RebuildTracksTable)
+            .expect("PrefsOutput receiver dropped");
         }
         ExposedSetting::ScanNewFilesOnly(active) => {
           debug!("UpdateSetting: ScanNewFilesOnly: {active}");

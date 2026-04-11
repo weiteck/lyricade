@@ -6,6 +6,7 @@ use relm4::prelude::*;
 use relm4::typed_view::column::*;
 use tracing::{debug, trace};
 
+use crate::SETTINGS;
 use crate::track::Track;
 use crate::util::{self};
 
@@ -470,16 +471,24 @@ impl RelmColumn for TracksTableColumnChecked {
   }
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    let s = item
-      .last_api_check_at
-      .map(|ndt| util::ndt_utc_to_humanised_string(ndt))
-      .unwrap_or_else(|| "Never".into());
-    let tt = item
-      .last_api_check_at
-      .map(|ndt| util::ndt_utc_to_ui_string(ndt))
-      .unwrap_or_else(|| "Never Checked for Lyrics".into());
-    root.set_label(&s);
-    root.set_tooltip(&tt);
+    let (label, tooltip) = if let Some(ndt) = item.last_api_check_at {
+      let iso = &util::ndt_utc_to_ui_string(ndt);
+      let label = if SETTINGS
+        .read()
+        .expect("settings lock is poisoned")
+        .prefer_iso_timestamps
+      {
+        iso
+      } else {
+        &util::ndt_utc_to_humanised_string(ndt)
+      };
+      (label.to_string(), iso.to_string())
+    } else {
+      ("Never".into(), "Never Checked for Lyrics".into())
+    };
+
+    root.set_label(&label);
+    root.set_tooltip(&tooltip);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -506,8 +515,18 @@ impl RelmColumn for TracksTableColumnModified {
   }
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    root.set_label(&util::ndt_utc_to_humanised_string(item.file_modified_at));
-    root.set_tooltip(&util::ndt_utc_to_ui_string(item.file_modified_at));
+    let iso = &util::ndt_utc_to_ui_string(item.file_modified_at);
+    let label = if SETTINGS
+      .read()
+      .expect("settings lock is poisoned")
+      .prefer_iso_timestamps
+    {
+      iso
+    } else {
+      &util::ndt_utc_to_humanised_string(item.file_modified_at)
+    };
+    root.set_label(label);
+    root.set_tooltip(iso);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
