@@ -42,7 +42,9 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 /// Maximum concurrent HTTP connections.
 pub const CONNECTION_LIMIT: usize = 20;
 
-#[derive(Debug, Clone, Queryable, Selectable, Identifiable, Insertable, AsChangeset)]
+#[derive(
+  Debug, Clone, PartialEq, Eq, Queryable, Selectable, Identifiable, Insertable, AsChangeset,
+)]
 #[diesel(table_name = crate::schema::settings)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Settings {
