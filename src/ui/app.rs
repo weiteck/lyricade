@@ -1,6 +1,6 @@
 use std::collections::HashSet;
+use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
-use std::sync::{Arc, RwLock};
 
 use ::futures::stream::StreamExt;
 use camino::Utf8PathBuf;
@@ -18,10 +18,12 @@ use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
+use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsSource};
 use crate::util;
 use crate::{Result, library::Library, track::Track};
 
 struct AppModel {
+  sender: AsyncComponentSender<Self>,
   libraries: Vec<Library>,
   tracks: Vec<Track>,
 
@@ -56,21 +58,25 @@ struct AppModel {
 enum AppMsg {
   AddLibrary(Utf8PathBuf),
   FetchLyrics,
-  Quit,
   /// Load libraries and tracks from the database.
   LoadLibraries,
   /// Scan library paths for changes.
   RefreshLibraries,
   /// Update the table with the tracks in `AppModel`.
   BuildTracksTable,
+  Quit,
+
   ShowAbout,
-  SearchQueryChanged(String),
   ShowSearch(bool),
   ShowPrefsWindow,
   ShowToast(String),
-  SetSearchFilter((TracksTableFilter, bool)),
+
   ShowTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
+  ShowLyrics(ViewLyricsSource),
+
+  SearchQueryChanged(String),
+  SetSearchFilter((TracksTableFilter, bool)),
   UpdateSelection(HashSet<i32>),
 
   ProgressStart(String),
@@ -126,7 +132,7 @@ impl AsyncComponent for AppModel {
       pack_end = &gtk::ToggleButton {
         set_label: "Info",
         set_tooltip_text: Some("Pin Track Details"),
-        set_icon_name: "info-outline-symbolic",
+        set_icon_name: "sidebar-show-right-symbolic",
         #[watch]
         set_visible: !model.no_tracks,
         connect_toggled[sender] => move |btn| {
@@ -408,6 +414,7 @@ impl AsyncComponent for AppModel {
       });
 
     let model = AppModel {
+      sender: sender.clone(),
       libraries: vec![],
       tracks: vec![],
       tracks_table_widget,
@@ -572,6 +579,23 @@ impl AsyncComponent for AppModel {
         window.set_transient_for(Some(root));
         window.set_hide_on_close(true);
         window.present();
+      }
+
+      AppMsg::ShowLyrics(source) => {
+        if let Some(track) = self
+          .selected_track_id
+          .and_then(|idx| self.tracks.iter().find(|track| track.id == idx))
+        {
+          debug!("Showing lyrics type \"{source:?}\" for {track}");
+
+          let controller = ViewLyricsModel::builder()
+            .launch((track.clone(), source))
+            .detach();
+
+          let window = controller.widget();
+          window.set_transient_for(Some(root));
+          window.present();
+        }
       }
 
       // TODO: Use alert dialog to show errors
@@ -868,6 +892,20 @@ impl AppModel {
 
       root.set_halign(gtk::Align::Fill);
 
+      // Helper function for button to view lyrics
+      let view_lyrics_button = |src| {
+        let btn = gtk::Button::new();
+        btn.add_css_class("flat");
+        btn.set_valign(gtk::Align::Center);
+        btn.set_icon_name("view-reveal-symbolic");
+        btn.set_tooltip("View Lyrics");
+        let sender = self.sender.clone();
+        btn.connect_clicked(move |_| {
+          sender.input(AppMsg::ShowLyrics(src));
+        });
+        btn
+      };
+
       // General track info
       let pg = adw::PreferencesGroup::new();
       pg.set_title("Track Details");
@@ -904,11 +942,13 @@ impl AppModel {
       pg.set_title("Lyrics");
       let ar = adw::ActionRow::new();
       ar.set_title("Lyrics Tag");
-      ar.set_subtitle(if track.lyrics.is_some() {
-        "Present"
+      if track.lyrics.is_some() {
+        let btn = view_lyrics_button(ViewLyricsSource::Tag);
+        ar.add_suffix(&btn);
+        ar.set_subtitle("Present");
       } else {
-        "Missing"
-      });
+        ar.set_subtitle("Missing");
+      }
       pg.container_add(&ar);
       if track.lyrics.is_some() {
         let ar = adw::ActionRow::new();
@@ -922,19 +962,28 @@ impl AppModel {
       }
       inner.append(&pg);
 
-      if track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some() {
-        let mut sidecar_formats = vec![];
-        if track.lyrics_sidecar_lrc_file.is_some() {
-          sidecar_formats.push("LRC");
-        }
-        if track.lyrics_sidecar_txt_file.is_some() {
-          sidecar_formats.push("TXT");
-        }
-
+      if track.lyrics_sidecar_lrc_file.is_some() {
         let pg = adw::PreferencesGroup::new();
         let ar = adw::ActionRow::new();
         ar.set_title("Sidecar File");
-        ar.set_subtitle(&sidecar_formats.join(", "));
+        ar.set_subtitle("LRC format");
+
+        let btn = view_lyrics_button(ViewLyricsSource::Lrc);
+        ar.add_suffix(&btn);
+
+        pg.container_add(&ar);
+        inner.append(&pg);
+      }
+
+      if track.lyrics_sidecar_txt_file.is_some() {
+        let pg = adw::PreferencesGroup::new();
+        let ar = adw::ActionRow::new();
+        ar.set_title("Sidecar File");
+        ar.set_subtitle("TXT format");
+
+        let btn = view_lyrics_button(ViewLyricsSource::Txt);
+        ar.add_suffix(&btn);
+
         pg.container_add(&ar);
         inner.append(&pg);
       }
