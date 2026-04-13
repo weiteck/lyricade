@@ -70,7 +70,6 @@ enum AppMsg {
   ShowToast(String),
   SetSearchFilter((TracksTableFilter, bool)),
   ShowTrackDetailsSidebar,
-  HideTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
   UpdateSelection(HashSet<i32>),
 
@@ -177,6 +176,32 @@ impl AsyncComponent for AppModel {
             set_margin_bottom: 4,
 
             gtk::ToggleButton {
+              set_label: "no lyrics",
+              set_hexpand: false,
+              set_margin_end: 4,
+              set_css_classes: &["pill", "caption"],
+              inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyrics),
+              connect_toggled[sender] => move |btn| {
+                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
+              },
+            },
+
+            gtk::ToggleButton {
+              set_label: "no lyrics tag",
+              set_hexpand: false,
+              set_margin_end: 4,
+              set_css_classes: &["pill", "caption"],
+              inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyricsTag),
+              connect_toggled[sender] => move |btn| {
+                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyricsTag, btn.is_active())));
+              },
+            },
+
+            gtk::ToggleButton {
               set_label: "lrc file",
               set_hexpand: false,
               set_margin_end: 4,
@@ -199,19 +224,6 @@ impl AsyncComponent for AppModel {
               set_active: model.active_search_filters.contains(&TracksTableFilter::Txt),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
-              },
-            },
-
-            gtk::ToggleButton {
-              set_label: "no lyrics",
-              set_hexpand: false,
-              set_margin_end: 4,
-              set_css_classes: &["pill", "caption"],
-              inline_css: "padding: 0 0.75rem",
-              #[watch]
-              set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyrics),
-              connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
               },
             },
 
@@ -641,28 +653,53 @@ impl AsyncComponent for AppModel {
 
       AppMsg::SetSearchFilter((filter, active)) => {
         debug!("Search filter \"{:?}\" active: {}", &filter, active);
-        self
-          .tracks_table_widget
-          .sender()
-          .emit(TracksTableMsg::SetFilter((filter, active)));
+
+        let transformed_filter = match filter {
+          TracksTableFilter::Lrc
+            if self.active_search_filters.contains(&TracksTableFilter::Txt) =>
+          {
+            // Restore other filter if one becomes inactive
+            if !active {
+              self
+                .tracks_table_widget
+                .sender()
+                .emit(TracksTableMsg::SetFilter((TracksTableFilter::Txt, true)));
+            }
+            TracksTableFilter::EitherLrcOrTxt
+          }
+
+          TracksTableFilter::Txt
+            if self.active_search_filters.contains(&TracksTableFilter::Lrc) =>
+          {
+            // Restore other filter if one becomes inactive
+            if !active {
+              self
+                .tracks_table_widget
+                .sender()
+                .emit(TracksTableMsg::SetFilter((TracksTableFilter::Lrc, true)));
+            }
+            TracksTableFilter::EitherLrcOrTxt
+          }
+
+          _ => filter,
+        };
 
         if active {
           self.active_search_filters.insert(filter);
         } else {
           self.active_search_filters.remove(&filter);
         }
+
+        self
+          .tracks_table_widget
+          .sender()
+          .emit(TracksTableMsg::SetFilter((transformed_filter, active)));
       }
 
       AppMsg::ShowTrackDetailsSidebar => {
         debug!("Showing sidebar");
         self.is_sidebar_revealed = true;
         self.rebuild_sidebar_widget();
-      }
-
-      AppMsg::HideTrackDetailsSidebar => {
-        debug!("Hiding sidebar");
-        self.is_sidebar_revealed = false;
-        self.is_sidebar_pinned = false;
       }
 
       AppMsg::PinTrackDetailsSidebar(active) => {

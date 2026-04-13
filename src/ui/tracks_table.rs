@@ -39,10 +39,12 @@ pub enum TracksTableOutput {
 pub enum TracksTableFilter {
   NeverChecked = 0,
   NoLyrics = 1,
-  NotInstrumental = 2,
-  NotSync = 3,
-  Lrc = 4,
-  Txt = 5,
+  NoLyricsTag = 2,
+  NotInstrumental = 3,
+  NotSync = 4,
+  Lrc = 5,
+  Txt = 6,
+  EitherLrcOrTxt = 7,
 }
 
 #[relm4::component(pub)]
@@ -103,22 +105,32 @@ impl SimpleComponent for TracksTableModel {
     });
     table.set_filter_status(1, false);
 
-    // 2 = NotInstrumental
-    table
-      .add_filter(|track| track.instrumental.is_none() || track.instrumental.is_some_and(|b| !b));
+    // 2 = NoLyricsTag
+    table.add_filter(|track| track.lyrics.is_none());
     table.set_filter_status(2, false);
 
-    // 3 = NotSync
-    table.add_filter(|track| !track.lyrics_synchronised && track.lyrics_sidecar_lrc_file.is_none());
+    // 3 = NotInstrumental
+    table
+      .add_filter(|track| track.instrumental.is_none() || track.instrumental.is_some_and(|b| !b));
     table.set_filter_status(3, false);
 
-    // 4 = Lrc
-    table.add_filter(|track| track.lyrics_sidecar_lrc_file.is_some());
+    // 4 = NotSync
+    table.add_filter(|track| !track.lyrics_synchronised && track.lyrics_sidecar_lrc_file.is_none());
     table.set_filter_status(4, false);
 
-    // 5 = Txt
-    table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
+    // 5 = Lrc
+    table.add_filter(|track| track.lyrics_sidecar_lrc_file.is_some());
     table.set_filter_status(5, false);
+
+    // 6 = Txt
+    table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
+    table.set_filter_status(6, false);
+
+    // 7 = EitherLrcOrTxt
+    table.add_filter(|track| {
+      track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some()
+    });
+    table.set_filter_status(7, false);
 
     // Handle row selection
     let sender_handle = sender.clone();
@@ -202,6 +214,13 @@ impl SimpleComponent for TracksTableModel {
         self.reset_rows_state();
       }
 
+      TracksTableMsg::Update(track) => {
+        if let Some(idx) = self.table.find(|row| row.id == track.id) {
+          self.table.remove(idx);
+          self.table.append(track);
+        }
+      }
+
       TracksTableMsg::Filter(query) => {
         // Clear all dynamically-added filters
         while self.table.filters_len() > self.preset_filters_len {
@@ -222,14 +241,15 @@ impl SimpleComponent for TracksTableModel {
         self.set_rows_visible();
       }
 
-      TracksTableMsg::Update(track) => {
-        if let Some(idx) = self.table.find(|row| row.id == track.id) {
-          self.table.remove(idx);
-          self.table.append(track);
-        }
-      }
-
       TracksTableMsg::SetFilter((filter, active)) => {
+        // First disable `Lrc` and `Txt` filters if we want to show both
+        if filter == TracksTableFilter::EitherLrcOrTxt && active {
+          self.table.set_filter_status(5, false);
+          self.table.set_filter_status(6, false);
+        }
+
+        debug!("Applying filter: {filter:?}");
+
         self.table.set_filter_status(filter as usize, active);
 
         // Are any rows visible after filtering?
