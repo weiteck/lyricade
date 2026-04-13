@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use relm4::gtk::prelude::{SelectionModelExt, WidgetExt};
-use relm4::gtk::{Bitset, BitsetIter, EventControllerKey};
+use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
 use tracing::{debug, trace};
@@ -153,6 +153,15 @@ impl SimpleComponent for TracksTableModel {
     });
     table.view.add_controller(controller);
 
+    // Apply default sorting
+    let artist_col = table
+      .get_columns()
+      .get("Artist")
+      .expect("TracksTable should have Artist column");
+    table
+      .view
+      .sort_by_column(Some(&artist_col), SortType::Ascending);
+
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
@@ -217,7 +226,7 @@ impl SimpleComponent for TracksTableModel {
       TracksTableMsg::Update(track) => {
         if let Some(idx) = self.table.find(|row| row.id == track.id) {
           self.table.remove(idx);
-          self.table.append(track);
+          self.table.insert(idx, track);
         }
       }
 

@@ -1,7 +1,5 @@
 use adw::prelude::*;
-use gtk::prelude::*;
 use relm4::prelude::*;
-use tracing::{debug, error};
 
 use crate::track::Track;
 
@@ -50,7 +48,7 @@ impl SimpleComponent for ViewLyricsModel {
   fn init(
     (track, lyrics_source): Self::Init,
     root: Self::Root,
-    sender: ComponentSender<Self>,
+    _sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
     let lyrics = match lyrics_source {
       ViewLyricsSource::Tag => track
@@ -73,6 +71,4 @@ impl SimpleComponent for ViewLyricsModel {
 
     ComponentParts { model, widgets }
   }
-
-  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {}
 }
