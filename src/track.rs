@@ -1,5 +1,3 @@
-use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock, time::Duration};
-
 use anyhow::anyhow;
 use bon::bon;
 use camino::Utf8PathBuf;
@@ -11,6 +9,7 @@ use lofty::{
   probe::Probe,
   tag::{self, TagExt},
 };
+use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock, time::Duration};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -346,9 +345,10 @@ impl Track {
 
   /// Does nothing but sleeps for 1s.
   #[builder]
-  pub async fn fetch_lyrics_test(&mut self, _options: FetchLyricsOptions) -> Result<bool> {
+  pub async fn fetch_lyrics_test(&mut self, _options: Option<FetchLyricsOptions>) -> Result<bool> {
     self.last_api_check_at = Some(now());
-    std::thread::sleep(Duration::from_secs(1));
+    debug!("Running fetch_lyrics_test -- sleeping 200ms");
+    tokio::time::sleep(Duration::from_millis(200)).await;
     Ok(false)
   }
 

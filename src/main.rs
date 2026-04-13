@@ -59,5 +59,5 @@ async fn main() -> anyhow::Result<()> {
   // _library.refresh().options(refresh_opts).call()?;
   // _library.fetch_lyrics().options(fetch_opts).call().await?;
 
-  ui::start()
+  ui::app::start()
 }

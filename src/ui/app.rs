@@ -1,14 +1,18 @@
 use std::collections::HashSet;
+use std::sync::atomic::AtomicUsize;
+use std::sync::{Arc, RwLock};
 
+use ::futures::stream::StreamExt;
 use camino::Utf8PathBuf;
 use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
+use relm4::prelude::*;
 use relm4::*;
 use tracing::{debug, error, trace};
 
-use crate::settings::APP_NAME_PRETTY;
+use crate::settings::{APP_NAME_PRETTY, CONNECTION_LIMIT};
 use crate::ui::about::AboutModel;
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
@@ -17,7 +21,7 @@ use crate::ui::tracks_table::{
 use crate::util;
 use crate::{Result, library::Library, track::Track};
 
-pub struct AppModel {
+struct AppModel {
   libraries: Vec<Library>,
   tracks: Vec<Track>,
 
@@ -39,10 +43,17 @@ pub struct AppModel {
 
   is_search_revealed: bool,
   search_query: Option<String>,
+  active_search_filters: HashSet<TracksTableFilter>,
+
+  /// Name of the task being tracked.
+  progress_task: Option<String>,
+  /// The current step or state of the task.
+  progress_step: Option<String>,
+  progress: f64,
 }
 
 #[derive(Debug)]
-pub enum AppMsg {
+enum AppMsg {
   AddLibrary(Utf8PathBuf),
   FetchLyrics,
   Quit,
@@ -62,22 +73,32 @@ pub enum AppMsg {
   HideTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
   UpdateSelection(HashSet<i32>),
+
+  ProgressStart(String),
+  ProgressUpdate(ProgressUpdate),
+  ProgressComplete,
 }
 
 #[derive(Debug)]
-pub enum AppCommand {
+enum AppCommand {
   TrackUpdated(Track),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SelectionState {
+enum SelectionState {
   None,
   Single,
   Multi,
 }
 
-#[relm4::component(pub)]
-impl Component for AppModel {
+#[derive(Debug)]
+struct ProgressUpdate {
+  step: Option<String>,
+  progress: f64,
+}
+
+#[relm4::component(async)]
+impl AsyncComponent for AppModel {
   type Input = AppMsg;
   type Output = ();
   type Init = ();
@@ -90,6 +111,8 @@ impl Component for AppModel {
         set_label: "Search",
         set_tooltip_text: Some("Filter Tracks"),
         set_icon_name: "edit-find-symbolic",
+        #[watch]
+        set_active: model.is_search_revealed,
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::ShowSearch(btn.is_active()));
         },
@@ -159,6 +182,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::Lrc),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Lrc, btn.is_active())));
               },
@@ -170,6 +195,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::Txt),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
               },
@@ -181,6 +208,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyrics),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
               },
@@ -192,6 +221,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NotSync),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotSync, btn.is_active())));
               },
@@ -203,6 +234,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NeverChecked),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NeverChecked, btn.is_active())));
               },
@@ -214,6 +247,8 @@ impl Component for AppModel {
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
               inline_css: "padding: 0 0.75rem",
+              #[watch]
+              set_active: model.active_search_filters.contains(&TracksTableFilter::NotInstrumental),
               connect_toggled[sender] => move |btn| {
                   sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotInstrumental, btn.is_active())));
               },
@@ -256,36 +291,62 @@ impl Component for AppModel {
                 }
               }
               false => {
-                adw::OverlaySplitView {
-                  #[watch]
-                  set_show_sidebar: model.is_sidebar_revealed,
-                  #[watch]
-                  set_collapsed: !model.is_sidebar_pinned,
-                  set_sidebar_position: gtk::PackType::End,
-                  set_enable_hide_gesture: true,
-                  set_sidebar_width_fraction: 0.5,
+                gtk::Box {
+                  set_orientation: gtk::Orientation::Vertical,
 
-                  // Tracks table view
-                  #[wrap(Some)]
-                  set_content = &gtk::ScrolledWindow {
-                    set_hexpand: true,
+                  adw::OverlaySplitView {
+                    #[watch]
+                    set_show_sidebar: model.is_sidebar_revealed,
+                    #[watch]
+                    set_collapsed: !model.is_sidebar_pinned,
+                    set_sidebar_position: gtk::PackType::End,
+                    set_enable_hide_gesture: true,
+                    set_sidebar_width_fraction: 0.5,
 
-                    #[local_ref]
-                    tracks_table -> gtk::Overlay {}
+                    // Tracks table view
+                    #[wrap(Some)]
+                    set_content = &gtk::ScrolledWindow {
+                      set_hexpand: true,
+
+                      #[local_ref]
+                      tracks_table -> gtk::Overlay {}
+                    },
+
+                    // Sidebar
+                    #[wrap(Some)]
+                    set_sidebar = &gtk::ScrolledWindow {
+                      set_hscrollbar_policy: gtk::PolicyType::Never,
+                      add_css_class: "sidebar-pane",
+
+                      #[name = "sidebar_viewport"]
+                      gtk::Viewport {
+                        #[watch]
+                        set_child: Some(&model.sidebar_widget),
+                      },
+                    },
                   },
 
-                  // Sidebar
-                  #[wrap(Some)]
-                  set_sidebar = &gtk::ScrolledWindow {
-                    set_hscrollbar_policy: gtk::PolicyType::Never,
-                    add_css_class: "sidebar-pane",
+                  // Status bar / progress bar
+                  gtk::Box {
+                    set_orientation: gtk::Orientation::Horizontal,
+                    set_align: gtk::Align::Center,
+                    set_margin_all: 12,
 
-                    #[name = "sidebar_viewport"]
-                    gtk::Viewport {
+                    #[watch]
+                    set_visible: model.progress_task.is_some(),
+
+                    gtk::ProgressBar {
+                      set_align: gtk::Align::Center,
+                      set_ellipsize: gtk::pango::EllipsizeMode::End,
+
                       #[watch]
-                      set_child: Some(&model.sidebar_widget),
-                    }
-                  }
+                      set_show_text: model.progress_step.is_some(),
+                      #[watch]
+                      set_text: model.progress_step.as_deref(),
+                      #[watch]
+                      set_fraction: model.progress,
+                    },
+                  },
                 }
               }
             },
@@ -310,11 +371,11 @@ impl Component for AppModel {
     }
   }
 
-  fn init(
+  async fn init(
     init: Self::Init,
     root: Self::Root,
-    sender: relm4::ComponentSender<Self>,
-  ) -> relm4::ComponentParts<Self> {
+    sender: relm4::AsyncComponentSender<Self>,
+  ) -> AsyncComponentParts<Self> {
     let app_title = if cfg!(debug_assertions) {
       format!("{APP_NAME_PRETTY} (DEBUG)")
     } else {
@@ -346,11 +407,15 @@ impl Component for AppModel {
       is_search_revealed: false,
       search_query: None,
       selection_state: SelectionState::None,
+      active_search_filters: HashSet::new(),
       last_selection_state: SelectionState::None,
       selected_track_id: None,
       selected_track_ids: HashSet::new(),
       is_sidebar_pinned: false,
       is_sidebar_revealed: false,
+      progress_task: None,
+      progress_step: None,
+      progress: 0.0,
     };
 
     let toast_overlay = model.toaster.overlay_widget();
@@ -429,20 +494,55 @@ impl Component for AppModel {
     // Register menu/keyboard actions for main window
     actions_group.register_for_widget(&widgets.main_window);
 
-    ComponentParts { model, widgets }
+    AsyncComponentParts { model, widgets }
   }
 
-  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
+  async fn update(
+    &mut self,
+    message: Self::Input,
+    sender: AsyncComponentSender<Self>,
+    root: &Self::Root,
+  ) {
     match message {
       AppMsg::AddLibrary(path) => todo!(),
 
       AppMsg::FetchLyrics => {
-        self.tracks.iter_mut().for_each(|track| {
-          let mut track = track.clone();
-          sender.oneshot_command(async {
-            let _ = track.fetch_lyrics().call().await;
-            AppCommand::TrackUpdated(track)
-          });
+        // Display progress
+        sender.input(AppMsg::ProgressStart("Fetching Lyrics".into()));
+        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+          step: Some("Fetching Lyrics".into()),
+          progress: 0.0,
+        }));
+
+        let total = self.tracks.len();
+        let completed = Arc::new(AtomicUsize::new(0));
+        let stream = ::futures::stream::iter(self.tracks.clone());
+
+        // Batch process tracks and update progress
+        tokio::spawn(async move {
+          stream
+            .for_each_concurrent((CONNECTION_LIMIT as f64 * 1.5) as usize, |mut track| {
+              let sender = sender.clone();
+              let completed = Arc::clone(&completed);
+
+              async move {
+                let _ = track.fetch_lyrics().call().await;
+
+                let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
+                sender
+                  .command_sender()
+                  .emit(AppCommand::TrackUpdated(track));
+
+                sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+                  step: Some(format!("Processed Track {} / {}", completed, total)),
+                  progress: completed as f64 / total as f64,
+                }))
+              }
+            })
+            .await;
+
+          // End display progress
+          sender.input(AppMsg::ProgressComplete);
         });
       }
 
@@ -516,7 +616,7 @@ impl Component for AppModel {
 
       AppMsg::ShowToast(msg) => {
         debug!("Emit toast notification: \"{}\"", &msg);
-        let toast = adw::Toast::builder().title(msg).timeout(5).build();
+        let toast = adw::Toast::builder().title(msg).timeout(3).build();
         self.toaster.add_toast(toast);
       }
 
@@ -525,7 +625,15 @@ impl Component for AppModel {
           debug!("Search bar revealed");
         } else {
           debug!("Search bar hidden");
+
           self.search_query = None;
+
+          self
+            .tracks_table_widget
+            .sender()
+            .emit(TracksTableMsg::ClearFilters);
+
+          self.active_search_filters.clear();
         }
 
         self.is_search_revealed = active;
@@ -537,6 +645,12 @@ impl Component for AppModel {
           .tracks_table_widget
           .sender()
           .emit(TracksTableMsg::SetFilter((filter, active)));
+
+        if active {
+          self.active_search_filters.insert(filter);
+        } else {
+          self.active_search_filters.remove(&filter);
+        }
       }
 
       AppMsg::ShowTrackDetailsSidebar => {
@@ -582,6 +696,33 @@ impl Component for AppModel {
         }
       }
 
+      AppMsg::ProgressStart(task_name) => {
+        debug!("Progress task start: \"{task_name}\"");
+        self.progress_task = Some(task_name);
+      }
+
+      AppMsg::ProgressComplete => {
+        debug!(
+          "Progress task complete: \"{}\"",
+          &self.progress_task.as_deref().unwrap_or_default()
+        );
+        self.progress_task = None;
+      }
+
+      AppMsg::ProgressUpdate(pu) => {
+        debug!(
+          "Progress task update: {:02} % of task \"{}\" at step \"{:?}\"",
+          &pu.progress * 100.0,
+          &self.progress_task.as_deref().unwrap_or_default(),
+          &pu.step
+        );
+
+        if self.progress_step != pu.step {
+          self.progress_step = pu.step;
+        }
+        self.progress = pu.progress;
+      }
+
       AppMsg::Quit => {
         let app = relm4::main_application();
         app.quit();
@@ -589,10 +730,10 @@ impl Component for AppModel {
     }
   }
 
-  fn update_cmd(
+  async fn update_cmd(
     &mut self,
     message: Self::CommandOutput,
-    sender: ComponentSender<Self>,
+    sender: AsyncComponentSender<Self>,
     root: &Self::Root,
   ) {
     match message {
@@ -838,4 +979,9 @@ impl AppModel {
       self.rebuild_sidebar_widget();
     }
   }
+}
+
+pub fn start() -> Result<()> {
+  let app = RelmApp::new("io.github.weiteck.lrc-lyrics");
+  Ok(app.run_async::<AppModel>(()))
 }

@@ -39,10 +39,18 @@ pub fn ndt_utc_to_humanised_string(ndt_utc: NaiveDateTime) -> String {
   } else {
     // Humanise recent dates
     let ht = chrono_humanize::HumanTime::from(local_dt);
-    ht.to_text_en(
+    let s = ht.to_text_en(
       chrono_humanize::Accuracy::Rough,
       chrono_humanize::Tense::Past,
-    )
+    );
+
+    // Clean up `chrono-humanize` output
+    // TODO: Consider a different crate
+    if &s == "now ago" {
+      "Just now".into()
+    } else {
+      s
+    }
   }
 }
 

@@ -18,6 +18,7 @@ diesel = { version = "2.3", features = [
 ] }
 diesel_migrations = { version = "2.3", features = ["sqlite"] }
 directories = "6.0"
+futures = "0.3"
 leaky-bucket = { version = "1.1", features = ["tracing"] }
 # diesel currently supports <= v0.36 as of v2.3.7
 libsqlite3-sys = { version = "0.36", features = ["bundled"] }

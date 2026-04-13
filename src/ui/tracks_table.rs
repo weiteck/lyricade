@@ -23,6 +23,7 @@ pub enum TracksTableMsg {
   Update(Track),
   Filter(Option<String>),
   SetFilter((TracksTableFilter, bool)),
+  ClearFilters,
   HandleRowActivated,
   HandleRowSelection(Bitset),
   ClearSelection,
@@ -34,7 +35,7 @@ pub enum TracksTableOutput {
   RowActivated,
 }
 
-#[derive(Debug, Clone, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
 pub enum TracksTableFilter {
   NeverChecked = 0,
   NoLyrics = 1,
@@ -230,6 +231,15 @@ impl SimpleComponent for TracksTableModel {
 
       TracksTableMsg::SetFilter((filter, active)) => {
         self.table.set_filter_status(filter as usize, active);
+
+        // Are any rows visible after filtering?
+        self.set_rows_visible();
+      }
+
+      TracksTableMsg::ClearFilters => {
+        for idx in 0..self.table.filters_len() {
+          self.table.set_filter_status(idx, false);
+        }
 
         // Are any rows visible after filtering?
         self.set_rows_visible();

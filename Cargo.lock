@@ -1564,6 +1564,7 @@ dependencies = [
  "diesel",
  "diesel_migrations",
  "directories",
+ "futures",
  "leaky-bucket",
  "libsqlite3-sys",
  "lofty",
