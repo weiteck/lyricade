@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use gtk::prelude::*;
-use relm4::prelude::*;
-use tracing::{debug, error};
+use relm4::{gtk::EventControllerKey, prelude::*};
+use tracing::{debug, error, trace};
 
 use crate::{
   SETTINGS,
@@ -27,6 +27,7 @@ pub enum PrefsMsg {
 #[derive(Debug)]
 pub enum PrefsOutput {
   RebuildTracksTable,
+  Close,
 }
 
 #[derive(Debug)]
@@ -293,6 +294,19 @@ impl SimpleComponent for PrefsModel {
       }
     };
     let widgets = view_output!();
+
+    // Handle key presses
+    let sender_handle = sender.clone();
+    let controller = EventControllerKey::new();
+    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
+      trace!("Prefs key event: key {key} + {:?}", modifier);
+      if key == gtk::gdk::Key::Escape {
+        sender_handle.output(PrefsOutput::Close);
+      }
+      gtk::glib::Propagation::Proceed
+    });
+    root.add_controller(controller);
+
     ComponentParts { model, widgets }
   }
 

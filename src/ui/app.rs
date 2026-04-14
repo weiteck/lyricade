@@ -18,7 +18,7 @@ use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
-use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsSource};
+use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::util;
 use crate::{Result, library::Library, track::Track};
 
@@ -30,6 +30,7 @@ struct AppModel {
   tracks_table_widget: Controller<TracksTableModel>,
   prefs_widget: Controller<PrefsModel>,
   about_widget: Controller<AboutModel>,
+  view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
   sidebar_widget: gtk::Box,
   toaster: Toaster,
 
@@ -69,11 +70,13 @@ enum AppMsg {
   ShowAbout,
   ShowSearch(bool),
   ShowPrefsWindow,
+  ClosePrefsWindow,
   ShowToast(String),
+  ShowLyricsWindow(ViewLyricsSource),
+  CloseLyricsWindow,
 
   ShowTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
-  ShowLyrics(ViewLyricsSource),
 
   SearchQueryChanged(String),
   SetSearchFilter((TracksTableFilter, bool)),
@@ -411,6 +414,7 @@ impl AsyncComponent for AppModel {
       .launch(())
       .forward(sender.input_sender(), |msg| match msg {
         PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
+        PrefsOutput::Close => AppMsg::ClosePrefsWindow,
       });
 
     let model = AppModel {
@@ -421,6 +425,7 @@ impl AsyncComponent for AppModel {
       prefs_widget,
       about_widget: AboutModel::builder().launch(()).detach(),
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
+      view_lyrics_widget: None,
       toaster: Toaster::default(),
       no_tracks: false,
       is_search_revealed: false,
@@ -581,20 +586,39 @@ impl AsyncComponent for AppModel {
         window.present();
       }
 
-      AppMsg::ShowLyrics(source) => {
+      AppMsg::ClosePrefsWindow => {
+        debug!("Closing Preferences window");
+        self.prefs_widget.widget().close();
+      }
+
+      AppMsg::ShowLyricsWindow(source) => {
         if let Some(track) = self
           .selected_track_id
           .and_then(|idx| self.tracks.iter().find(|track| track.id == idx))
         {
-          debug!("Showing lyrics type \"{source:?}\" for {track}");
+          debug!("Showing ViewLyrics window with lyrics type \"{source:?}\" for {track}");
 
           let controller = ViewLyricsModel::builder()
             .launch((track.clone(), source))
-            .detach();
+            .forward(sender.input_sender(), |msg| match msg {
+              ViewLyricsOutput::Close => AppMsg::CloseLyricsWindow,
+            });
 
           let window = controller.widget();
           window.set_transient_for(Some(root));
           window.present();
+
+          self.view_lyrics_widget = Some(controller);
+        } else {
+          error!("Tried to show ViewLyrics window but could not reference Track");
+        }
+      }
+
+      AppMsg::CloseLyricsWindow => {
+        if let Some(controller) = self.view_lyrics_widget.as_ref() {
+          debug!("Closing ViewLyrics window");
+          controller.widget().close();
+          self.view_lyrics_widget = None;
         }
       }
 
@@ -901,7 +925,7 @@ impl AppModel {
         btn.set_tooltip("View Lyrics");
         let sender = self.sender.clone();
         btn.connect_clicked(move |_| {
-          sender.input(AppMsg::ShowLyrics(src));
+          sender.input(AppMsg::ShowLyricsWindow(src));
         });
         btn
       };

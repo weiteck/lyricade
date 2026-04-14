@@ -1,11 +1,17 @@
 use adw::prelude::*;
-use relm4::prelude::*;
+use relm4::{gtk::EventControllerKey, prelude::*};
+use tracing::trace;
 
 use crate::track::Track;
 
 pub struct ViewLyricsModel {
   track: Track,
   lyrics: String,
+}
+
+#[derive(Debug)]
+pub enum ViewLyricsOutput {
+  Close,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -18,7 +24,7 @@ pub enum ViewLyricsSource {
 #[relm4::component(pub)]
 impl SimpleComponent for ViewLyricsModel {
   type Input = ();
-  type Output = ();
+  type Output = ViewLyricsOutput;
   type Init = (Track, ViewLyricsSource);
 
   view! {
@@ -48,7 +54,7 @@ impl SimpleComponent for ViewLyricsModel {
   fn init(
     (track, lyrics_source): Self::Init,
     root: Self::Root,
-    _sender: ComponentSender<Self>,
+    sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
     let lyrics = match lyrics_source {
       ViewLyricsSource::Tag => track
@@ -68,6 +74,18 @@ impl SimpleComponent for ViewLyricsModel {
     let model = ViewLyricsModel { track, lyrics };
 
     let widgets = view_output!();
+
+    // Handle key presses
+    let sender_handle = sender.clone();
+    let controller = EventControllerKey::new();
+    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
+      trace!("ViewLyrics key event: key {key} + {:?}", modifier);
+      if key == gtk::gdk::Key::Escape {
+        sender_handle.output(ViewLyricsOutput::Close);
+      }
+      gtk::glib::Propagation::Proceed
+    });
+    root.add_controller(controller);
 
     ComponentParts { model, widgets }
   }
