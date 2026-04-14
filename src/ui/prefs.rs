@@ -301,7 +301,9 @@ impl SimpleComponent for PrefsModel {
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("Prefs key event: key {key} + {:?}", modifier);
       if key == gtk::gdk::Key::Escape {
-        sender_handle.output(PrefsOutput::Close);
+        sender_handle
+          .output(PrefsOutput::Close)
+          .expect("PrefsOutput receiver dropped");
       }
       gtk::glib::Propagation::Proceed
     });

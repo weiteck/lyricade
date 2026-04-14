@@ -1,13 +1,22 @@
-use relm4::prelude::*;
+use relm4::{
+  gtk::{EventControllerKey, prelude::WidgetExt},
+  prelude::*,
+};
+use tracing::trace;
 
 use crate::settings::APP_NAME_PRETTY;
 
 pub struct AboutModel;
 
+#[derive(Debug)]
+pub enum AboutOutput {
+  Close,
+}
+
 #[relm4::component(pub)]
 impl SimpleComponent for AboutModel {
   type Input = ();
-  type Output = ();
+  type Output = AboutOutput;
   type Init = ();
 
   view! {
@@ -30,10 +39,25 @@ impl SimpleComponent for AboutModel {
   fn init(
     _init: Self::Init,
     root: Self::Root,
-    _sender: ComponentSender<Self>,
+    sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
     let model = AboutModel;
     let widgets = view_output!();
+
+    // Handle key presses
+    let sender_handle = sender.clone();
+    let controller = EventControllerKey::new();
+    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
+      trace!("About key event: key {key} + {:?}", modifier);
+      if key == gtk::gdk::Key::Escape {
+        sender_handle
+          .output(AboutOutput::Close)
+          .expect("AboutOutput receiver dropped");
+      }
+      gtk::glib::Propagation::Proceed
+    });
+    root.add_controller(controller);
+
     ComponentParts { model, widgets }
   }
 }

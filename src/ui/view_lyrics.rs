@@ -81,7 +81,9 @@ impl SimpleComponent for ViewLyricsModel {
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("ViewLyrics key event: key {key} + {:?}", modifier);
       if key == gtk::gdk::Key::Escape {
-        sender_handle.output(ViewLyricsOutput::Close);
+        sender_handle
+          .output(ViewLyricsOutput::Close)
+          .expect("ViewLyricsOutput receiver dropped");
       }
       gtk::glib::Propagation::Proceed
     });

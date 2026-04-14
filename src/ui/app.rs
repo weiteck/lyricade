@@ -13,7 +13,7 @@ use relm4::*;
 use tracing::{debug, error, trace};
 
 use crate::settings::{APP_NAME_PRETTY, CONNECTION_LIMIT};
-use crate::ui::about::AboutModel;
+use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
@@ -67,7 +67,8 @@ enum AppMsg {
   BuildTracksTable,
   Quit,
 
-  ShowAbout,
+  ShowAboutWindow,
+  CloseAboutWindow,
   ShowSearch(bool),
   ShowPrefsWindow,
   ClosePrefsWindow,
@@ -281,7 +282,7 @@ impl AsyncComponent for AppModel {
 
     #[root]
     main_window = adw::ApplicationWindow {
-      set_default_size: (800, 800),
+      set_default_size: (1100, 800),
       set_title: Some(&app_title),
 
       #[local_ref]
@@ -410,11 +411,18 @@ impl AsyncComponent for AppModel {
           TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
         });
+
     let prefs_widget = PrefsModel::builder()
       .launch(())
       .forward(sender.input_sender(), |msg| match msg {
         PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
         PrefsOutput::Close => AppMsg::ClosePrefsWindow,
+      });
+
+    let about_widget = AboutModel::builder()
+      .launch(())
+      .forward(sender.input_sender(), |msg| match msg {
+        AboutOutput::Close => AppMsg::CloseAboutWindow,
       });
 
     let model = AppModel {
@@ -423,7 +431,7 @@ impl AsyncComponent for AppModel {
       tracks: vec![],
       tracks_table_widget,
       prefs_widget,
-      about_widget: AboutModel::builder().launch(()).detach(),
+      about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
       toaster: Toaster::default(),
@@ -442,8 +450,10 @@ impl AsyncComponent for AppModel {
       progress: 0.0,
     };
 
+    // References used in `view` macro
     let toast_overlay = model.toaster.overlay_widget();
     let tracks_table = model.tracks_table_widget.widget();
+
     let widgets = view_output!();
 
     // Load libraries and tracks and populate table view
@@ -475,7 +485,7 @@ impl AsyncComponent for AppModel {
     let action_about: RelmAction<ActionAbout> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowAbout);
+        sender.input(AppMsg::ShowAboutWindow);
       })
     };
     actions_group.add_action(action_about);
@@ -570,12 +580,17 @@ impl AsyncComponent for AppModel {
         });
       }
 
-      AppMsg::ShowAbout => {
+      AppMsg::ShowAboutWindow => {
         debug!("Showing About window");
         let window = self.about_widget.widget();
         window.set_transient_for(Some(root));
         window.set_hide_on_close(true);
         window.present();
+      }
+
+      AppMsg::CloseAboutWindow => {
+        debug!("Closing About window");
+        self.about_widget.widget().close();
       }
 
       AppMsg::ShowPrefsWindow => {
