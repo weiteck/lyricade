@@ -380,6 +380,7 @@ impl AsyncComponent for AppModel {
 
   menu! {
     main_menu: {
+      "Refresh Libraries" => ActionRefreshLibraries,
       "Fetch Lyrics" => ActionFetchLyrics,
       "Preferences" => ActionPrefs,
       section! {
@@ -463,6 +464,19 @@ impl AsyncComponent for AppModel {
     relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
     let mut actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
 
+    relm4::new_stateless_action!(
+      ActionRefreshLibraries,
+      MainMenuActionGroup,
+      "refresh_libraries"
+    );
+    let action_refresh_libraries: RelmAction<ActionRefreshLibraries> = {
+      let sender = sender.clone();
+      RelmAction::new_stateless(move |_| {
+        sender.input(AppMsg::RefreshLibraries);
+      })
+    };
+    actions_group.add_action(action_refresh_libraries);
+
     relm4::new_stateless_action!(ActionFetchLyrics, MainMenuActionGroup, "fetch_lyrics");
     let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
       let sender = sender.clone();
@@ -490,14 +504,13 @@ impl AsyncComponent for AppModel {
     };
     actions_group.add_action(action_about);
 
+    relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
     let action_test_toast: RelmAction<ActionTestToast> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
         sender.input(AppMsg::ShowToast("Testing toast notification".into()));
       })
     };
-
-    relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
     actions_group.add_action(action_test_toast);
 
     // Keyboard actions
@@ -676,7 +689,30 @@ impl AsyncComponent for AppModel {
         .sender()
         .emit(TracksTableMsg::ClearAndAppend(self.tracks.clone())),
 
-      AppMsg::RefreshLibraries => todo!(),
+      AppMsg::RefreshLibraries => {
+        let total_libs = self.libraries.len();
+
+        sender.input(AppMsg::ProgressStart("Refresh Libraries".into()));
+        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+          step: Some(format!("Refreshing Library 1 / {}", total_libs)),
+          progress: 0.0,
+        }));
+
+        // TODO: Show errors with a dialog
+        for (idx, lib) in self.libraries.iter().enumerate() {
+          let _ = lib.refresh().call();
+
+          sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+            step: Some(format!("Refreshing Library {} / {}", idx + 1, total_libs)),
+            progress: (idx + 1) as f64 / total_libs as f64,
+          }));
+        }
+
+        // Reload tracks
+        sender.input(AppMsg::LoadLibraries);
+
+        sender.input(AppMsg::ProgressComplete);
+      }
 
       AppMsg::SearchQueryChanged(query) => {
         debug!("Searching for: {}", &query);
