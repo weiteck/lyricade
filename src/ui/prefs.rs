@@ -3,7 +3,12 @@ use gtk::prelude::*;
 use relm4::prelude::*;
 use tracing::{debug, error};
 
-use crate::{SETTINGS, lyrics::LyricsType, settings::Settings};
+use crate::{
+  SETTINGS,
+  lyrics::LyricsType,
+  settings::Settings,
+  util::{self, now},
+};
 
 pub struct PrefsModel {
   settings_initial: Settings,
@@ -86,43 +91,47 @@ impl SimpleComponent for PrefsModel {
           set_spacing: 24,
 
           adw::PreferencesGroup {
-            set_title: "General",
+            set_title: "Preferred Lyrics Format",
+            set_description: Some("Choose what lyrics format to prefer when fetching lyrics online or cleaning up multiple sidecar files."),
 
-            adw::ComboRow {
-              set_title: "Preferred Lyrics Format",
-              set_subtitle: "Favour synchronous or plain lyrics format, where available, when fetching lyrics or managing sidecar files",
-              set_model: Some(&gtk::StringList::new(&[
-                "Sync",
-                "Plain",
-              ])),
-              #[watch]
-              set_selected: if model.settings_current.prefer_lyrics_type == LyricsType::Sync { 0 } else { 1 },
-              connect_selected_item_notify[sender] => move |row| {
-                let prefers = if row.selected() == 0 {
-                  LyricsType::Sync
-                } else {
-                  LyricsType::Plain
-                };
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(prefers)));
-              },
-            },
+            gtk::ListBox {
+              add_css_class: "boxed-list",
 
-            adw::ComboRow {
-              set_title: "Date and Time Style",
-              #[watch]
-              set_subtitle: if model.settings_current.prefer_iso_timestamps {
-                "Example: “2026-01-30 18:05:10”"
-              } else {
-                "Example: “3 weeks ago”"
+              adw::ActionRow {
+                set_title: "Synchronous",
+                set_subtitle: "Prefer LRC format lyrics",
+                set_selectable: false,
+
+                set_activatable_widget: Some(&group_lyrics_type_button_sync),
+                #[name = "group_lyrics_type_button_sync"]
+                add_prefix = &gtk::CheckButton {
+                  #[watch]
+                  set_active: model.settings_current.prefer_lyrics_type == LyricsType::Sync,
+                  connect_toggled[sender] => move |btn| {
+                    if btn.is_active() {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Sync)));
+                    }
+                  },
+                },
               },
-              set_model: Some(&gtk::StringList::new(&[
-                "Simple",
-                "Accurate",
-              ])),
-              #[watch]
-              set_selected: if model.settings_current.prefer_iso_timestamps { 1 } else { 0 },
-              connect_selected_item_notify[sender] => move |row| {
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(row.selected() == 1)));
+
+              adw::ActionRow {
+                set_title: "Plain",
+                set_subtitle: "Prefer TXT format lyrics",
+                set_selectable: false,
+
+                set_activatable_widget: Some(&group_lyrics_type_button_plain),
+                #[name = "group_lyrics_type_button_plain"]
+                add_prefix = &gtk::CheckButton {
+                  set_group: Some(&group_lyrics_type_button_sync),
+                  #[watch]
+                  set_active: model.settings_current.prefer_lyrics_type == LyricsType::Plain,
+                  connect_toggled[sender] => move |btn| {
+                    if btn.is_active() {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Plain)));
+                    }
+                  },
+                },
               },
             },
           },
@@ -188,7 +197,7 @@ impl SimpleComponent for PrefsModel {
 
           adw::PreferencesGroup {
             set_title: "Fetch Lyrics",
-            set_description: Some("What to do with the lyrics sourced from <i>lrclib.net</i>"),
+            set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
 
             adw::SwitchRow {
               set_title: "Write to Lyrics Tag",
@@ -211,6 +220,48 @@ impl SimpleComponent for PrefsModel {
 
             },
           },
+
+          adw::PreferencesGroup {
+            set_title: "Date and Time Format",
+            set_description: Some("Choose how dates and times and displayed in the track list view."),
+
+            gtk::ListBox {
+              add_css_class: "boxed-list",
+
+              adw::ActionRow {
+                set_title: "Simple",
+                set_subtitle: &format!("Example: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
+                set_selectable: false,
+
+                set_activatable_widget: Some(&group_datetime_format_button_simple),
+                #[name = "group_datetime_format_button_simple"]
+                add_prefix = &gtk::CheckButton {
+                  #[watch]
+                  set_active: !model.settings_current.prefer_iso_timestamps,
+                  connect_toggled[sender] => move |btn| {
+                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(!btn.is_active())));
+                  },
+                },
+              },
+
+              adw::ActionRow {
+                set_title: "Accurate",
+                set_subtitle: &format!("Example: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
+                set_selectable: false,
+
+                set_activatable_widget: Some(&group_datetime_format_button_accurate),
+                #[name = "group_datetime_format_button_accurate"]
+                add_prefix = &gtk::CheckButton {
+                  set_group: Some(&group_datetime_format_button_simple),
+                  #[watch]
+                  set_active: model.settings_current.prefer_iso_timestamps,
+                  connect_toggled[sender] => move |btn| {
+                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(btn.is_active())));
+                  },
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -221,6 +272,18 @@ impl SimpleComponent for PrefsModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
+    // Recent datetime to use as example in interface
+    let ndt = now()
+      .checked_sub_days(chrono::Days::new(3))
+      .expect("should be a valid date");
+    let example_datetime_simple1 = util::ndt_utc_to_humanised_string(ndt);
+    let example_datetime_accurate1 = util::ndt_utc_to_ui_string(ndt);
+    let ndt = ndt
+      .checked_sub_days(chrono::Days::new(50))
+      .expect("should be a valid date");
+    let example_datetime_simple2 = util::ndt_utc_to_humanised_string(ndt);
+    let example_datetime_accurate2 = util::ndt_utc_to_ui_string(ndt);
+
     let model = {
       let settings = SETTINGS.read().expect("settings lock is poisoned");
       PrefsModel {
