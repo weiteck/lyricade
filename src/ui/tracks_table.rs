@@ -1,5 +1,6 @@
 use std::collections::HashSet;
 
+use relm4::gtk::gio::prelude::ListModelExt;
 use relm4::gtk::prelude::{SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
@@ -33,6 +34,7 @@ pub enum TracksTableMsg {
 pub enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
   RowActivated,
+  UpdateFilteredTrackCount(u32),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -132,6 +134,17 @@ impl SimpleComponent for TracksTableModel {
     });
     table.set_filter_status(7, false);
 
+    // Update filtered track count
+    let sender_handle = sender.clone();
+    table
+      .selection_model
+      .connect_items_changed(move |selection_model, _, _, _| {
+        let count = selection_model.n_items();
+        sender_handle
+          .output(TracksTableOutput::UpdateFilteredTrackCount(count))
+          .expect("TracksTableOutput receiver dropped");
+      });
+
     // Handle row selection
     let sender_handle = sender.clone();
     table
@@ -169,7 +182,7 @@ impl SimpleComponent for TracksTableModel {
       table,
     };
 
-    // Ref of the view to use in `view!` macro
+    // Ref of the view to use in `view` macro
     let tracks_table_view = &model.table.view;
 
     let widgets = view_output!();

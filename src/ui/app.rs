@@ -35,6 +35,8 @@ struct AppModel {
   toaster: Toaster,
 
   no_tracks: bool,
+  track_count: u32,
+  filtered_track_count: Option<u32>,
 
   selection_state: SelectionState,
   last_selection_state: SelectionState,
@@ -82,6 +84,7 @@ enum AppMsg {
   SearchQueryChanged(String),
   SetSearchFilter((TracksTableFilter, bool)),
   UpdateSelection(HashSet<i32>),
+  UpdateFilteredTrackCount(u32),
 
   ProgressStart(String),
   ProgressUpdate(ProgressUpdate),
@@ -348,25 +351,67 @@ impl AsyncComponent for AppModel {
                     },
                   },
 
-                  // Status bar / progress bar
+                  // Status bar
                   gtk::Box {
                     set_orientation: gtk::Orientation::Horizontal,
-                    set_align: gtk::Align::Center,
+                    set_halign: gtk::Align::Fill,
+                    set_valign: gtk::Align::Center,
+                    set_hexpand: true,
                     set_margin_all: 12,
+                    set_spacing: 12,
 
-                    #[watch]
-                    set_visible: model.progress_task.is_some(),
-
-                    gtk::ProgressBar {
-                      set_align: gtk::Align::Center,
-                      set_ellipsize: gtk::pango::EllipsizeMode::End,
+                    // Progress bar
+                    gtk::Box {
+                      set_orientation: gtk::Orientation::Horizontal,
+                      set_align: gtk::Align::Start,
+                      set_valign: gtk::Align::Center,
+                      set_hexpand: true,
+                      set_spacing: 12,
 
                       #[watch]
-                      set_show_text: model.progress_step.is_some(),
-                      #[watch]
-                      set_text: model.progress_step.as_deref(),
-                      #[watch]
-                      set_fraction: model.progress,
+                      set_visible: model.progress_task.is_some(),
+
+                      gtk::ProgressBar {
+                        set_halign: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
+                        set_ellipsize: gtk::pango::EllipsizeMode::End,
+
+                        // #[watch]
+                        // set_show_text: model.progress_step.is_some(),
+                        // #[watch]
+                        // set_text: model.progress_step.as_deref(),
+                        set_show_text: false,
+                        #[watch]
+                        set_fraction: model.progress,
+                      },
+
+                      gtk::Label {
+                        add_css_class: "caption",
+                        #[watch]
+                        set_text: model.progress_step.as_deref().unwrap_or_default(),
+                      }
+                    },
+
+                    // Track count
+                    gtk::Box {
+                      set_orientation: gtk::Orientation::Horizontal,
+                      set_halign: gtk::Align::End,
+                      set_valign: gtk::Align::Center,
+                      set_hexpand: true,
+                      set_spacing: 12,
+
+                      gtk::Label {
+                        add_css_class: "caption",
+                        #[watch]
+                        set_label: &format!("{} Tracks", model.track_count),
+                      },
+                      gtk::Label {
+                        add_css_class: "caption",
+                        #[watch]
+                        set_visible: model.filtered_track_count.is_some(),
+                        #[watch]
+                        set_label: &format!("({} Filtered)", model.filtered_track_count.unwrap_or_default()),
+                      },
                     },
                   },
                 }
@@ -411,6 +456,9 @@ impl AsyncComponent for AppModel {
         .forward(sender.input_sender(), |msg| match msg {
           TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
+          TracksTableOutput::UpdateFilteredTrackCount(count) => {
+            AppMsg::UpdateFilteredTrackCount(count)
+          }
         });
 
     let prefs_widget = PrefsModel::builder()
@@ -437,6 +485,8 @@ impl AsyncComponent for AppModel {
       view_lyrics_widget: None,
       toaster: Toaster::default(),
       no_tracks: false,
+      track_count: 0,
+      filtered_track_count: None,
       is_search_revealed: false,
       search_query: None,
       selection_state: SelectionState::None,
@@ -832,6 +882,16 @@ impl AsyncComponent for AppModel {
         }
       }
 
+      AppMsg::UpdateFilteredTrackCount(count) => {
+        if count != self.track_count {
+          debug!("Filtered Track Count: {count}");
+          self.filtered_track_count = Some(count);
+        } else {
+          debug!("No tracks filtered");
+          self.filtered_track_count = None;
+        }
+      }
+
       AppMsg::ProgressStart(task_name) => {
         debug!("Progress task start: \"{task_name}\"");
         self.progress_task = Some(task_name);
@@ -917,20 +977,6 @@ impl AppModel {
     Ok(())
   }
 
-  fn refresh_libraries(&mut self) -> Result<()> {
-    debug!("Refreshing Libraries ...");
-
-    self.libraries = Library::get_all()?;
-    for lib in &self.libraries {
-      lib.refresh().call()?;
-    }
-    self.load_tracks()?;
-
-    debug!("Refreshed {} Libraries", self.libraries.len());
-
-    Ok(())
-  }
-
   fn load_tracks(&mut self) -> Result<()> {
     debug!("Loading Tracks from {} Libraries ...", self.libraries.len());
 
@@ -946,6 +992,8 @@ impl AppModel {
       })
       .flatten()
       .collect::<Vec<_>>();
+
+    self.track_count = self.tracks.len() as u32;
 
     debug!(
       "Loaded {} Tracks from {} Libraries",
