@@ -120,9 +120,6 @@ impl Library {
 
     info!("Inserted {}", &inserted_library);
 
-    // Add tracks with metadata
-    inserted_library.refresh().call()?;
-
     Ok(inserted_library)
   }
 
