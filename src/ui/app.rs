@@ -28,7 +28,7 @@ struct AppModel {
   tracks: Vec<Track>,
 
   tracks_table_widget: Controller<TracksTableModel>,
-  prefs_widget: Controller<PrefsModel>,
+  prefs_widget: Option<Controller<PrefsModel>>,
   about_widget: Controller<AboutModel>,
   view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
   sidebar_widget: gtk::Box,
@@ -71,16 +71,17 @@ enum AppMsg {
 
   ShowAboutWindow,
   CloseAboutWindow,
-  ShowSearch(bool),
-  ShowPrefsWindow,
-  ClosePrefsWindow,
-  ShowToast(String),
   ShowLyricsWindow(ViewLyricsSource),
   CloseLyricsWindow,
+  ShowPrefsWindow,
+  ClosePrefsWindow,
+
+  ShowToast(String),
 
   ShowTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
 
+  ShowSearch(bool),
   SearchQueryChanged(String),
   SetSearchFilter((TracksTableFilter, bool)),
   UpdateSelection(HashSet<i32>),
@@ -121,7 +122,7 @@ impl AsyncComponent for AppModel {
     &adw::HeaderBar {
       pack_start = &gtk::ToggleButton {
         set_label: "Search",
-        set_tooltip_text: Some("Filter Tracks"),
+        set_tooltip_text: Some("Search"),
         set_icon_name: "edit-find-symbolic",
         #[watch]
         set_active: model.is_search_revealed,
@@ -133,6 +134,7 @@ impl AsyncComponent for AppModel {
       pack_end = &gtk::MenuButton {
         set_icon_name: "open-menu-symbolic",
         set_primary: true,
+        set_tooltip: "Main Menu",
         set_menu_model: Some(&main_menu),
       },
 
@@ -285,7 +287,8 @@ impl AsyncComponent for AppModel {
 
     #[root]
     main_window = adw::ApplicationWindow {
-      set_default_size: (1100, 800),
+      // TODO: Save and restore last window size from settings
+      set_default_size: (1000, 600),
       set_title: Some(&app_title),
 
       #[local_ref]
@@ -427,14 +430,15 @@ impl AsyncComponent for AppModel {
     main_menu: {
       "Refresh Libraries" => ActionRefreshLibraries,
       "Fetch Lyrics" => ActionFetchLyrics,
-      "Preferences" => ActionPrefs,
       section! {
-        "About" => ActionAbout,
+        "Preferences" => ActionPrefs,
+        &format!("About {}", APP_NAME_PRETTY) => ActionAbout,
         },
+      // TODO: Hide in release build
       section! {
         "Debug" {
           "Test Toast" => ActionTestToast,
-        },
+        }
       }
     }
   }
@@ -461,13 +465,6 @@ impl AsyncComponent for AppModel {
           }
         });
 
-    let prefs_widget = PrefsModel::builder()
-      .launch(())
-      .forward(sender.input_sender(), |msg| match msg {
-        PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
-        PrefsOutput::Close => AppMsg::ClosePrefsWindow,
-      });
-
     let about_widget = AboutModel::builder()
       .launch(())
       .forward(sender.input_sender(), |msg| match msg {
@@ -479,7 +476,7 @@ impl AsyncComponent for AppModel {
       libraries: vec![],
       tracks: vec![],
       tracks_table_widget,
-      prefs_widget,
+      prefs_widget: None,
       about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
@@ -658,15 +655,60 @@ impl AsyncComponent for AppModel {
 
       AppMsg::ShowPrefsWindow => {
         debug!("Showing Preferences window");
-        let window = self.prefs_widget.widget();
+
+        let prefs_widget = PrefsModel::builder()
+          .launch(self.libraries.clone())
+          .forward(sender.input_sender(), |msg| match msg {
+            PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
+            PrefsOutput::Close => AppMsg::ClosePrefsWindow,
+          });
+
+        let window = prefs_widget.widget();
         window.set_transient_for(Some(root));
         window.set_hide_on_close(true);
         window.present();
+
+        self.prefs_widget = Some(prefs_widget);
       }
 
       AppMsg::ClosePrefsWindow => {
         debug!("Closing Preferences window");
-        self.prefs_widget.widget().close();
+
+        self
+          .prefs_widget
+          .as_ref()
+          .inspect(|ctrl| ctrl.widget().close());
+        self.prefs_widget = None;
+
+        let current_libraries = Library::get_all().expect("failed to get Libraries");
+        if self
+          .libraries
+          .iter()
+          .map(|lib| lib.path.clone())
+          .collect::<HashSet<_>>()
+          != current_libraries
+            .iter()
+            .map(|lib| lib.path.clone())
+            .collect::<HashSet<_>>()
+        {
+          debug!("Libraries changed; refreshing");
+
+          // Scan newly-added libraries
+          current_libraries
+            .iter()
+            .filter(|&lib| !self.libraries.contains(lib))
+            .for_each(|lib| {
+              lib
+                .refresh()
+                .call()
+                .expect("failed to refresh newly-added {lib}");
+            });
+
+          self.libraries = current_libraries;
+          self.load_tracks().expect("failed to load Tracks");
+
+          sender.input(AppMsg::BuildTracksTable);
+        }
       }
 
       AppMsg::ShowLyricsWindow(source) => {
@@ -693,11 +735,12 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::CloseLyricsWindow => {
-        if let Some(controller) = self.view_lyrics_widget.as_ref() {
-          debug!("Closing ViewLyrics window");
-          controller.widget().close();
-          self.view_lyrics_widget = None;
-        }
+        debug!("Closing ViewLyrics window");
+        self
+          .view_lyrics_widget
+          .as_ref()
+          .inspect(|ctrl| ctrl.widget().close());
+        self.view_lyrics_widget = None;
       }
 
       // TODO: Use alert dialog to show errors
@@ -1000,6 +1043,8 @@ impl AppModel {
       self.tracks.len(),
       self.libraries.len()
     );
+
+    self.no_tracks = self.tracks.is_empty();
 
     Ok(())
   }

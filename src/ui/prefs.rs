@@ -1,18 +1,31 @@
+use std::{collections::HashSet, path::PathBuf};
+
 use adw::prelude::*;
+use camino::Utf8PathBuf;
 use relm4::{gtk::EventControllerKey, prelude::*};
-use tracing::{debug, error, trace};
+use relm4_components::open_dialog::*;
+use tracing::{debug, trace};
 
 use crate::{
   SETTINGS,
+  library::Library,
   lyrics::LyricsType,
   settings::Settings,
+  ui::prefs::library_row::{LibraryRow, LibraryRowOutput},
   util::{self, now},
 };
 
+mod library_row;
+
 pub struct PrefsModel {
+  libraries: HashSet<Library>,
+  library_rows: FactoryVecDeque<LibraryRow>,
+
   settings_initial: Settings,
   settings_current: Settings,
   settings_default: Settings,
+
+  file_dialog: Controller<OpenDialog>,
 }
 
 #[derive(Debug)]
@@ -21,12 +34,20 @@ pub enum PrefsMsg {
   RevertSettings,
   SaveSettings,
   UpdateSetting(ExposedSetting),
+
+  OpenFileDialogRequest,
+  OpenFileDialogResponse(PathBuf),
+
+  EditLibrary(DynamicIndex),
+  DeleteLibrary(DynamicIndex),
+
+  NoOp,
 }
 
 #[derive(Debug)]
 pub enum PrefsOutput {
   RebuildTracksTable,
-  Close,
+  Close, // request parent window to close Prefs window
 }
 
 #[derive(Debug)]
@@ -53,24 +74,24 @@ pub enum HandleSidecarSetting {
 impl SimpleComponent for PrefsModel {
   type Input = PrefsMsg;
   type Output = PrefsOutput;
-  type Init = ();
+  type Init = Vec<Library>;
 
   view! {
-    gtk::Window {
+    prefs_window = gtk::Window {
       set_title: Some("Preferences"),
-      set_default_size: (600, 700),
+      set_default_size: (600, 600),
 
       #[wrap(Some)]
       set_titlebar = &adw::HeaderBar {
         pack_end = &gtk::Button {
-          set_tooltip: "Undo Changes",
+          set_tooltip: "Restore Settings",
           set_icon_name: "document-revert-symbolic",
           #[watch]
           set_sensitive: model.settings_current != model.settings_initial,
           connect_clicked => PrefsMsg::RevertSettings,
         },
         pack_end = &gtk::Button {
-          set_tooltip: "Use Defaults",
+          set_tooltip: "Apply Default Settings",
           set_icon_name: "folder-documents-symbolic",
           #[watch]
           set_sensitive: model.settings_current != model.settings_default,
@@ -87,8 +108,71 @@ impl SimpleComponent for PrefsModel {
       gtk::ScrolledWindow {
         gtk::Box {
           set_orientation: gtk::Orientation::Vertical,
-          set_margin_all: 24,
+          set_margin_vertical: 24,
+          set_margin_horizontal: 48,
           set_spacing: 24,
+
+          adw::PreferencesGroup {
+            set_title: "Music Libraries",
+            set_description: Some("Add, remove or edit Music Libraries. A Music Library is just a path on which to search for audio files."),
+
+            #[local_ref]
+            libraries_list_box -> gtk::ListBox {
+              add_css_class: "boxed-list",
+
+              // // Placeholder
+              // adw::ActionRow {
+              //   #[watch]
+              //   set_visible: model.library_rows.is_empty(),
+              //   set_activatable: false,
+              //   set_focusable: false,
+              //   set_can_focus: false,
+              //   set_sensitive: false,
+              //   inline_css: "background: transparent",
+              //   add_css_class: "dim-label",
+
+              //   #[wrap(Some)]
+              //   set_child = &gtk::Box {
+              //     set_orientation: gtk::Orientation::Vertical,
+              //     set_halign: gtk::Align::Center,
+              //     set_margin_all: 12,
+
+              //     gtk::Label {
+              //       set_label: "No Libraries",
+              //       add_css_class: "title",
+              //     },
+              //   },
+              // },
+
+              // Add library button
+              adw::ActionRow {
+                set_title: "Add Music Library",
+                set_halign: gtk::Align::Fill,
+                set_hexpand: true,
+                set_activatable: false,
+                set_sensitive: true,
+                set_css_classes: &["activatable", "button"],
+                set_activatable_widget: Some(&add_row_widget),
+                connect_activated => PrefsMsg::OpenFileDialogRequest,
+
+                #[wrap(Some)]
+                #[name = "add_row_widget"]
+                set_child = &gtk::Box {
+                  set_align: gtk::Align::Center,
+                  set_margin_all: 2,
+                  set_spacing: 4,
+
+                  gtk::Image {
+                    set_icon_name: Some("list-add-symbolic"),
+                  },
+                  gtk::Label {
+                    set_label: "Add Music Library",
+                    add_css_class: "title",
+                  }
+                },
+              },
+            },
+          },
 
           adw::PreferencesGroup {
             set_title: "Preferred Lyrics Format",
@@ -230,7 +314,7 @@ impl SimpleComponent for PrefsModel {
 
               adw::ActionRow {
                 set_title: "Simple",
-                set_subtitle: &format!("Example: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
+                set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
                 set_selectable: false,
 
                 set_activatable_widget: Some(&group_datetime_format_button_simple),
@@ -246,7 +330,7 @@ impl SimpleComponent for PrefsModel {
 
               adw::ActionRow {
                 set_title: "Accurate",
-                set_subtitle: &format!("Example: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
+                set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
                 set_selectable: false,
 
                 set_activatable_widget: Some(&group_datetime_format_button_accurate),
@@ -268,7 +352,7 @@ impl SimpleComponent for PrefsModel {
   }
 
   fn init(
-    _init: Self::Init,
+    libraries: Self::Init,
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
@@ -284,14 +368,49 @@ impl SimpleComponent for PrefsModel {
     let example_datetime_simple2 = util::ndt_utc_to_humanised_string(ndt);
     let example_datetime_accurate2 = util::ndt_utc_to_ui_string(ndt);
 
+    let libraries = libraries.into_iter().collect::<HashSet<_>>();
+
+    let mut library_rows = FactoryVecDeque::builder()
+      .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
+      .forward(sender.input_sender(), |msg| match msg {
+        LibraryRowOutput::Delete(idx) => PrefsMsg::DeleteLibrary(idx),
+        LibraryRowOutput::Edit(idx) => PrefsMsg::EditLibrary(idx),
+      });
+
+    {
+      let mut guard = library_rows.guard();
+      libraries.clone().into_iter().for_each(|lib| {
+        guard.push_back(lib);
+      });
+    }
+
+    // Create file dialog
+    let mut file_dialog_settings = OpenDialogSettings::default();
+    file_dialog_settings.create_folders = false;
+    file_dialog_settings.folder_mode = true;
+    file_dialog_settings.is_modal = true;
+    file_dialog_settings.accept_label = "Add Folder".into();
+    let file_dialog = OpenDialog::builder()
+      .transient_for_native(&root)
+      .launch(file_dialog_settings)
+      .forward(sender.input_sender(), |resp| match resp {
+        OpenDialogResponse::Accept(path) => PrefsMsg::OpenFileDialogResponse(path),
+        OpenDialogResponse::Cancel => PrefsMsg::NoOp,
+      });
+
     let model = {
       let settings = SETTINGS.read().expect("settings lock is poisoned");
       PrefsModel {
+        libraries,
+        library_rows,
         settings_initial: settings.clone(),
         settings_current: settings.clone(),
         settings_default: Settings::default(),
+        file_dialog,
       }
     };
+
+    let libraries_list_box = model.library_rows.widget();
     let widgets = view_output!();
 
     // Handle key presses
@@ -314,20 +433,23 @@ impl SimpleComponent for PrefsModel {
   fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
       PrefsMsg::DefaultSettings => {
+        debug!("Setting default settings");
         self.settings_current = self.settings_default.clone();
       }
 
       PrefsMsg::RevertSettings => {
+        debug!("Restoring changed settings");
         self.settings_current = self.settings_initial.clone();
       }
 
       PrefsMsg::SaveSettings => {
         let mut settings = SETTINGS.write().expect("settings lock is poisoned");
         *settings = self.settings_current.clone();
-        settings
-          .save()
-          .inspect_err(|e| error!("Error saving updated Settings: {e}"))
-          .unwrap();
+        settings.save().expect("unable to save settings");
+
+        sender
+          .output(PrefsOutput::Close)
+          .expect("PrefsOutput receiver dropped");
       }
 
       PrefsMsg::UpdateSetting(setting) => match setting {
@@ -384,6 +506,48 @@ impl SimpleComponent for PrefsModel {
           self.settings_current.save_sidecar_file_on_fetch = active;
         }
       },
+
+      PrefsMsg::OpenFileDialogRequest => {
+        debug!("Opening file dialog");
+        self.file_dialog.emit(OpenDialogMsg::Open);
+      }
+
+      // TODO: Use alert dialog for errors
+      PrefsMsg::OpenFileDialogResponse(path) => {
+        debug!("Adding library path: {}", path.to_string_lossy());
+        if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
+          let added = Library::add(&path).expect("unable to add library");
+          self.library_rows.guard().push_back(added.clone());
+          self.libraries.insert(added);
+        }
+      }
+
+      PrefsMsg::EditLibrary(idx) => {
+        debug!("EditLibrary called for item at index {idx:?}");
+      }
+
+      // TODO: Show toast with 'undo' button
+      PrefsMsg::DeleteLibrary(idx) => {
+        debug!("DeleteLibrary called for item at index {idx:?}");
+
+        if let Some(id) = self
+          .library_rows
+          .iter()
+          .find(|&lr| lr.index == idx)
+          .map(|lr| lr.library.id)
+        {
+          if let Some(lib) = self.libraries.iter().find(|lib| lib.id == id) {
+            lib.remove().expect("failed to delete {lib}");
+            debug!("Deleted {lib}");
+
+            self.libraries.retain(|lib| lib.id != id);
+          }
+        }
+
+        self.library_rows.guard().remove(idx.current_index());
+      }
+
+      PrefsMsg::NoOp => {}
     }
   }
 }

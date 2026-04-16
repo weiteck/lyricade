@@ -1,4 +1,4 @@
-use std::{collections::HashSet, fmt::Display, time::Instant};
+use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
 
 use anyhow::anyhow;
 use bon::bon;
@@ -19,7 +19,7 @@ use crate::{
 };
 
 /// Represents a library path.
-#[derive(Debug, Default, Clone, Queryable, Selectable, Identifiable)]
+#[derive(Debug, Default, Clone, Eq, Queryable, Selectable, Identifiable)]
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Library {
@@ -28,6 +28,19 @@ pub struct Library {
   pub name: Option<String>,
   pub added_at: NaiveDateTime,
   pub updated_at: NaiveDateTime,
+}
+
+impl PartialEq for Library {
+  fn eq(&self, other: &Self) -> bool {
+    self.id == other.id && self.path == other.path
+  }
+}
+
+impl Hash for Library {
+  fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    self.id.hash(state);
+    self.path.hash(state);
+  }
 }
 
 #[derive(Debug, Default, Clone, Insertable)]
@@ -372,8 +385,8 @@ impl Library {
   }
 
   /// Remove a library path and all `Track`s belonging to it (unless the `Track` exists in another
-  /// library path). Consumes the `Library`.
-  pub fn remove(self) -> Result<()> {
+  /// library path).
+  pub fn remove(&self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     // Delete the library
