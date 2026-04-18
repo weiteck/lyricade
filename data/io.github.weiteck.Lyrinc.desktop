@@ -1,0 +1,11 @@
+[Desktop Entry]
+Name=Lyrinc
+GenericName=Lyrics Downloader
+Comment=
+Exec=lyrinc
+Icon=io.github.weiteck.Lyrinc
+Terminal=false
+Type=Application
+Categories=Music;GNOME;GTK;
+Keywords=lyrics;lrc;sync;synchronous;synchronize;synchronized;music;song;download;
+X-SingleMainWindow=true

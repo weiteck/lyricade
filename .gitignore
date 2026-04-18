@@ -1,5 +1,4 @@
 /target
 db.*
-settings.toml
 config
-data
+dev-data

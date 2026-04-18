@@ -13,7 +13,7 @@ static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
 
 pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {
-    Utf8PathBuf::from("./data") // use project dir
+    Utf8PathBuf::from("./dev-data") // use project dir
   } else {
     let path = PROJECT_DIRS
       .as_ref()
@@ -25,11 +25,13 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   }
 });
 
+pub const APP_ID: &str = "io.github.weiteck.Lyrinc";
+
 /// Application name used in paths, etc.
-pub const APP_NAME: &str = env!("CARGO_PKG_NAME");
+pub const APP_NAME: &str = "lyrinc";
 
 /// Application name presented in UI.
-pub const APP_NAME_PRETTY: &str = "Untitled Lyrics App";
+pub const APP_NAME_PRETTY: &str = "Lyrinc";
 
 pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {

@@ -12,7 +12,7 @@ use relm4::prelude::*;
 use relm4::*;
 use tracing::{debug, error, trace};
 
-use crate::settings::{APP_NAME_PRETTY, CONNECTION_LIMIT};
+use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
 use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
@@ -499,6 +499,7 @@ impl AsyncComponent for AppModel {
       APP_NAME_PRETTY.to_string()
     };
     widgets.main_window.set_title(Some(&app_title));
+    widgets.main_window.set_widget_name("Test");
 
     // Restore previous window size
     let (width, height) = {
@@ -1252,6 +1253,6 @@ impl AppModel {
 }
 
 pub fn start() -> Result<()> {
-  let app = RelmApp::new("io.github.weiteck.lrc-lyrics");
+  let app = RelmApp::new(APP_ID);
   Ok(app.run_async::<AppModel>(()))
 }
