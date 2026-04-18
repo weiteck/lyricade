@@ -22,6 +22,8 @@ diesel::table! {
         ignore_plain_lyrics_on_fetch -> Bool,
         update_lyrics_tag_on_fetch -> Bool,
         save_sidecar_file_on_fetch -> Bool,
+        window_width -> Integer,
+        window_height -> Integer,
         added_at -> Timestamp,
         updated_at -> Timestamp,
     }

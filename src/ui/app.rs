@@ -19,8 +19,8 @@ use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
 use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::util;
 use crate::{Result, library::Library, track::Track};
+use crate::{SETTINGS, util};
 
 struct AppModel {
   sender: AsyncComponentSender<Self>,
@@ -287,9 +287,11 @@ impl AsyncComponent for AppModel {
 
     #[root]
     main_window = adw::ApplicationWindow {
-      // TODO: Save and restore last window size from settings
-      set_default_size: (1000, 600),
-      set_title: Some(&app_title),
+      // Ensure settings are saved on close
+      connect_close_request[sender] => move |window| {
+        sender.input(AppMsg::Quit);
+        gtk::glib::Propagation::Proceed
+      },
 
       #[local_ref]
       toast_overlay -> adw::ToastOverlay {
@@ -311,7 +313,7 @@ impl AsyncComponent for AppModel {
                     set_width_request: 200,
                     #[wrap(Some)]
                     set_child = &gtk::Button {
-                      set_label: "Add Library...",
+                      set_label: "Add Music Library...",
                       set_css_classes: &["pill", "suggested-action"],
                       connect_clicked => AppMsg::ShowPrefsWindow,
                     },
@@ -378,11 +380,6 @@ impl AsyncComponent for AppModel {
                         set_halign: gtk::Align::Start,
                         set_valign: gtk::Align::Center,
                         set_ellipsize: gtk::pango::EllipsizeMode::End,
-
-                        // #[watch]
-                        // set_show_text: model.progress_step.is_some(),
-                        // #[watch]
-                        // set_text: model.progress_step.as_deref(),
                         set_show_text: false,
                         #[watch]
                         set_fraction: model.progress,
@@ -406,14 +403,11 @@ impl AsyncComponent for AppModel {
                       gtk::Label {
                         add_css_class: "caption",
                         #[watch]
-                        set_label: &format!("{} Tracks", model.track_count),
-                      },
-                      gtk::Label {
-                        add_css_class: "caption",
-                        #[watch]
-                        set_visible: model.filtered_track_count.is_some(),
-                        #[watch]
-                        set_label: &format!("({} Filtered)", model.filtered_track_count.unwrap_or_default()),
+                        set_label: &format!(
+                          "{}{} Tracks",
+                          model.filtered_track_count.map(|n| format!("Showing {n} / ")).unwrap_or_default(),
+                          model.track_count
+                        ),
                       },
                     },
                   },
@@ -448,12 +442,6 @@ impl AsyncComponent for AppModel {
     root: Self::Root,
     sender: relm4::AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
-    let app_title = if cfg!(debug_assertions) {
-      format!("{APP_NAME_PRETTY} (DEBUG)")
-    } else {
-      APP_NAME_PRETTY.to_string()
-    };
-
     let tracks_table_widget =
       TracksTableModel::builder()
         .launch(())
@@ -503,6 +491,24 @@ impl AsyncComponent for AppModel {
     let tracks_table = model.tracks_table_widget.widget();
 
     let widgets = view_output!();
+
+    // Set window title
+    let app_title = if cfg!(debug_assertions) {
+      format!("{APP_NAME_PRETTY} (DEBUG)")
+    } else {
+      APP_NAME_PRETTY.to_string()
+    };
+    widgets.main_window.set_title(Some(&app_title));
+
+    // Restore previous window size
+    let (width, height) = {
+      let guard = SETTINGS.read().expect("settings lock is poisoned");
+      (
+        guard.window_width.clamp(400, 3840),
+        guard.window_height.clamp(400, 3840),
+      )
+    };
+    widgets.main_window.set_default_size(width, height);
 
     // Load libraries and tracks and populate table view
     sender.input(AppMsg::LoadLibraries);
@@ -963,6 +969,14 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::Quit => {
+        // Save window size
+        let (width, height) = (root.default_width(), root.default_height());
+        let mut guard = SETTINGS.write().expect("settings lock is poisoned");
+        guard.window_width = width;
+        guard.window_height = height;
+        debug!("Persisted window size {width}x{height} to Settings");
+        let _ = guard.save();
+
         let app = relm4::main_application();
         app.quit();
       }

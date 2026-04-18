@@ -62,6 +62,9 @@ pub struct Settings {
   pub update_lyrics_tag_on_fetch: bool,
   pub save_sidecar_file_on_fetch: bool,
 
+  pub window_width: i32,
+  pub window_height: i32,
+
   #[diesel(skip_update)]
   pub added_at: NaiveDateTime,
   pub updated_at: NaiveDateTime,
@@ -144,6 +147,8 @@ impl Default for Settings {
       ignore_plain_lyrics_on_fetch: false,
       update_lyrics_tag_on_fetch: false,
       save_sidecar_file_on_fetch: true,
+      window_width: 1000,
+      window_height: 600,
       added_at: now,
       updated_at: now,
     }

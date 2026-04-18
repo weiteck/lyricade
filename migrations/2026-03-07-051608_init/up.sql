@@ -34,6 +34,7 @@ CREATE TABLE IF NOT EXISTS tracks (
 CREATE INDEX idx_tracks_library_id ON tracks (library_id);
 
 CREATE TABLE IF NOT EXISTS settings (
+  -- Singleton table
   id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
 
   prefer_iso_timestamps BOOLEAN NOT NULL DEFAULT 0,
@@ -51,6 +52,10 @@ CREATE TABLE IF NOT EXISTS settings (
   ignore_plain_lyrics_on_fetch BOOLEAN NOT NULL DEFAULT 0,
   update_lyrics_tag_on_fetch BOOLEAN NOT NULL DEFAULT 0,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
+
+  -- Window size
+  window_width INTEGER NOT NULL DEFAULT 1000,
+  window_height INTEGER NOT NULL DEFAULT 600,
 
   added_at DATETIME NOT NULL DEFAULT 'now',
   updated_at DATETIME NOT NULL DEFAULT 'now'
