@@ -765,21 +765,23 @@ impl AsyncComponent for AppModel {
 
           self.no_tracks = self.tracks.is_empty();
 
-          sender.input(AppMsg::ShowToast(format!(
-            "Loaded {} music {} with {} {}",
-            self.libraries.len(),
-            if self.libraries.len() <= 1 {
-              "library"
-            } else {
-              "libraries"
-            },
-            self.tracks.len(),
-            if self.tracks.len() == 1 {
-              "track"
-            } else {
-              "tracks"
-            }
-          )));
+          if !self.no_tracks {
+            sender.input(AppMsg::ShowToast(format!(
+              "Loaded {} music {} with {} {}",
+              self.libraries.len(),
+              if self.libraries.len() <= 1 {
+                "library"
+              } else {
+                "libraries"
+              },
+              self.tracks.len(),
+              if self.tracks.len() == 1 {
+                "track"
+              } else {
+                "tracks"
+              }
+            )));
+          }
         }
       }
 

@@ -118,40 +118,16 @@ impl SimpleComponent for PrefsModel {
 
             #[local_ref]
             libraries_list_box -> gtk::ListBox {
+              set_selection_mode: gtk::SelectionMode::None,
               add_css_class: "boxed-list",
-
-              // // Placeholder
-              // adw::ActionRow {
-              //   #[watch]
-              //   set_visible: model.library_rows.is_empty(),
-              //   set_activatable: false,
-              //   set_focusable: false,
-              //   set_can_focus: false,
-              //   set_sensitive: false,
-              //   inline_css: "background: transparent",
-              //   add_css_class: "dim-label",
-
-              //   #[wrap(Some)]
-              //   set_child = &gtk::Box {
-              //     set_orientation: gtk::Orientation::Vertical,
-              //     set_halign: gtk::Align::Center,
-              //     set_margin_all: 12,
-
-              //     gtk::Label {
-              //       set_label: "No Libraries",
-              //       add_css_class: "title",
-              //     },
-              //   },
-              // },
 
               // Add library button
               adw::ActionRow {
                 set_title: "Add Music Library",
                 set_halign: gtk::Align::Fill,
                 set_hexpand: true,
-                set_activatable: false,
-                set_sensitive: true,
-                set_css_classes: &["activatable", "button"],
+                set_activatable: true,
+                add_css_class: "button",
                 set_activatable_widget: Some(&add_row_widget),
                 connect_activated => PrefsMsg::OpenFileDialogRequest,
 
