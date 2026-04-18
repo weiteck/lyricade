@@ -3,7 +3,6 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
 use ::futures::stream::StreamExt;
-use camino::Utf8PathBuf;
 use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
@@ -59,7 +58,6 @@ struct AppModel {
 
 #[derive(Debug)]
 enum AppMsg {
-  AddLibrary(Utf8PathBuf),
   FetchLyrics,
   /// Load libraries and tracks from the database.
   LoadLibraries,
@@ -288,7 +286,7 @@ impl AsyncComponent for AppModel {
     #[root]
     main_window = adw::ApplicationWindow {
       // Ensure settings are saved on close
-      connect_close_request[sender] => move |window| {
+      connect_close_request[sender] => move |_| {
         sender.input(AppMsg::Quit);
         gtk::glib::Propagation::Proceed
       },
@@ -438,7 +436,7 @@ impl AsyncComponent for AppModel {
   }
 
   async fn init(
-    init: Self::Init,
+    _init: Self::Init,
     root: Self::Root,
     sender: relm4::AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
@@ -605,8 +603,6 @@ impl AsyncComponent for AppModel {
     root: &Self::Root,
   ) {
     match message {
-      AppMsg::AddLibrary(path) => todo!(),
-
       AppMsg::FetchLyrics => {
         // Display progress
         sender.input(AppMsg::ProgressStart("Fetching Lyrics".into()));
@@ -989,8 +985,8 @@ impl AsyncComponent for AppModel {
   async fn update_cmd(
     &mut self,
     message: Self::CommandOutput,
-    sender: AsyncComponentSender<Self>,
-    root: &Self::Root,
+    _sender: AsyncComponentSender<Self>,
+    _root: &Self::Root,
   ) {
     match message {
       AppCommand::TrackUpdated(track) => {
@@ -1015,17 +1011,6 @@ impl AsyncComponent for AppModel {
 }
 
 impl AppModel {
-  fn add_libraries(&mut self) -> Result<()> {
-    debug!("Loading Libraries and Tracks ...");
-
-    self.libraries = Library::get_all()?;
-    self.load_tracks()?;
-
-    debug!("Loaded {} Libraries", self.libraries.len());
-
-    Ok(())
-  }
-
   fn load_libraries(&mut self) -> Result<()> {
     debug!("Loading Libraries and Tracks ...");
 
