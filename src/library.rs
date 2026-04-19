@@ -162,12 +162,18 @@ impl Library {
 
   #[builder]
   /// Read metadata for new and existing files in `Library` path and update database.
-  pub fn refresh(&self, options: Option<RefreshOptions>) -> Result<usize> {
+  pub fn refresh<F>(&self, options: Option<RefreshOptions>, on_progress: F) -> Result<usize>
+  where
+    F: Fn(usize) + Send + 'static,
+  {
     let options = {
       let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
       options.unwrap_or_else(|| RefreshOptions::from(settings))
     };
     info!("{} refresh: Started with options: {:?}", &self, options);
+
+    // Make sure progress is shown without delay
+    on_progress(0);
 
     let start = Instant::now();
     let mut conn = DB_POOL.get()?;
@@ -235,6 +241,11 @@ impl Library {
         {
           new_tracks.push(track);
           new_refreshed_count += 1;
+
+          // Report back progress
+          if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+            on_progress(new_refreshed_count + existing_refreshed_count);
+          }
         } else {
           errored_new_tracks.push(track);
         }
@@ -253,6 +264,11 @@ impl Library {
               .is_ok()
             {
               existing_refreshed_count += 1;
+
+              // Report back progress
+              if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+                on_progress(new_refreshed_count + existing_refreshed_count);
+              }
             };
           }
         }
@@ -267,6 +283,11 @@ impl Library {
             .is_ok()
           {
             existing_refreshed_count += 1;
+
+            // Report back progress
+            if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+              on_progress(new_refreshed_count + existing_refreshed_count);
+            }
           };
         }
       }
@@ -397,7 +418,12 @@ impl Library {
     Ok(())
   }
 
-  pub fn default_name(&self) -> String {
+  /// The `Library`'s short name.
+  pub fn name(&self) -> String {
+    self.name.clone().unwrap_or_else(|| self.default_name())
+  }
+
+  fn default_name(&self) -> String {
     self.path().file_name().unwrap_or("(invalid)").into()
   }
 

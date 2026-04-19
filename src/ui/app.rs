@@ -54,6 +54,8 @@ struct AppModel {
   /// The current step or state of the task.
   progress_step: Option<String>,
   progress: f64,
+
+  spinner_reason: Option<String>,
 }
 
 #[derive(Debug)]
@@ -88,6 +90,9 @@ enum AppMsg {
   ProgressStart(String),
   ProgressUpdate(ProgressUpdate),
   ProgressComplete,
+
+  ShowSpinner(String),
+  HideSpinner,
 }
 
 #[derive(Debug)]
@@ -297,120 +302,152 @@ impl AsyncComponent for AppModel {
           add_top_bar: &header_bar,
           add_top_bar: &search_bar,
 
-          gtk::Box {
-            #[transition = "Crossfade"]
-            match model.no_tracks {
-              true => {
-                gtk::Box {
-                  set_align: gtk::Align::Center,
+          // Overlay for spinner
+          gtk::Overlay {
 
-                  adw::StatusPage {
-                    set_title: "No Tracks",
-                    set_description: Some("Open Preferences to add a music library"),
-                    set_icon_name: Some("edit-find-symbolic"),
-                    set_width_request: 200,
-                    #[wrap(Some)]
-                    set_child = &gtk::Button {
-                      set_label: "Add Music Library...",
-                      set_css_classes: &["pill", "suggested-action"],
-                      connect_clicked => AppMsg::ShowPrefsWindow,
-                    },
-                  },
-                }
-              }
-              false => {
-                gtk::Box {
-                  set_orientation: gtk::Orientation::Vertical,
+            add_overlay = &gtk::Box {
+              #[watch]
+              set_visible: model.spinner_reason.is_some(),
+              set_orientation: gtk::Orientation::Vertical,
+              set_align: gtk::Align::Fill,
+              set_spacing: 12,
+              add_css_class: "fade-overlay",
 
-                  adw::OverlaySplitView {
-                    #[watch]
-                    set_show_sidebar: model.is_sidebar_revealed,
-                    #[watch]
-                    set_collapsed: !model.is_sidebar_pinned,
-                    set_sidebar_position: gtk::PackType::End,
-                    set_enable_hide_gesture: true,
-                    set_sidebar_width_fraction: 0.5,
+              gtk::Spinner {
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::End,
+                set_vexpand: true,
+                set_size_request: (32, 32),
+                set_spinning: true,
+              },
 
-                    // Tracks table view
-                    #[wrap(Some)]
-                    set_content = &gtk::ScrolledWindow {
-                      set_hexpand: true,
+              gtk::Label {
+                set_halign: gtk::Align::Center,
+                set_valign: gtk::Align::Start,
+                set_vexpand: true,
+                #[watch]
+                set_label: if model.spinner_reason.is_some() { model.spinner_reason.as_ref().unwrap() } else { "" },
+              },
+            },
 
-                      #[local_ref]
-                      tracks_table -> gtk::Overlay {}
-                    },
-
-                    // Sidebar
-                    #[wrap(Some)]
-                    set_sidebar = &gtk::ScrolledWindow {
-                      set_hscrollbar_policy: gtk::PolicyType::Never,
-                      add_css_class: "sidebar-pane",
-
-                      #[name = "sidebar_viewport"]
-                      gtk::Viewport {
-                        #[watch]
-                        set_child: Some(&model.sidebar_widget),
-                      },
-                    },
-                  },
-
-                  // Status bar
+            #[wrap(Some)]
+            set_child = &gtk::Box {
+              #[transition = "Crossfade"]
+              match model.no_tracks {
+                true => {
                   gtk::Box {
-                    set_orientation: gtk::Orientation::Horizontal,
-                    set_halign: gtk::Align::Fill,
-                    set_valign: gtk::Align::Center,
-                    set_hexpand: true,
-                    set_margin_all: 12,
-                    set_spacing: 12,
+                    #[watch]
+                    set_visible: model.spinner_reason.is_none(),
+                    set_align: gtk::Align::Center,
 
-                    // Progress bar
-                    gtk::Box {
-                      set_orientation: gtk::Orientation::Horizontal,
-                      set_align: gtk::Align::Start,
-                      set_valign: gtk::Align::Center,
-                      set_hexpand: true,
-                      set_spacing: 12,
-
-                      #[watch]
-                      set_visible: model.progress_task.is_some(),
-
-                      gtk::ProgressBar {
-                        set_halign: gtk::Align::Start,
-                        set_valign: gtk::Align::Center,
-                        set_ellipsize: gtk::pango::EllipsizeMode::End,
-                        set_show_text: false,
-                        #[watch]
-                        set_fraction: model.progress,
-                      },
-
-                      gtk::Label {
-                        add_css_class: "caption",
-                        #[watch]
-                        set_text: model.progress_step.as_deref().unwrap_or_default(),
-                      }
-                    },
-
-                    // Track count
-                    gtk::Box {
-                      set_orientation: gtk::Orientation::Horizontal,
-                      set_halign: gtk::Align::End,
-                      set_valign: gtk::Align::Center,
-                      set_hexpand: true,
-                      set_spacing: 12,
-
-                      gtk::Label {
-                        add_css_class: "caption",
-                        #[watch]
-                        set_label: &format!(
-                          "{}{} Tracks",
-                          model.filtered_track_count.map(|n| format!("Showing {n} / ")).unwrap_or_default(),
-                          model.track_count
-                        ),
+                    adw::StatusPage {
+                      set_title: "No Tracks",
+                      set_description: Some("Open Preferences to add a music library"),
+                      set_icon_name: Some("edit-find-symbolic"),
+                      set_width_request: 200,
+                      #[wrap(Some)]
+                      set_child = &gtk::Button {
+                        set_label: "Add Music Library...",
+                        set_css_classes: &["pill", "suggested-action"],
+                        connect_clicked => AppMsg::ShowPrefsWindow,
                       },
                     },
-                  },
+                  }
                 }
-              }
+                false => {
+                  gtk::Box {
+                    set_orientation: gtk::Orientation::Vertical,
+
+                    adw::OverlaySplitView {
+                      #[watch]
+                      set_show_sidebar: model.is_sidebar_revealed,
+                      #[watch]
+                      set_collapsed: !model.is_sidebar_pinned,
+                      set_sidebar_position: gtk::PackType::End,
+                      set_enable_hide_gesture: true,
+                      set_sidebar_width_fraction: 0.5,
+
+                      // Tracks table view
+                      #[wrap(Some)]
+                      set_content = &gtk::ScrolledWindow {
+                        set_hexpand: true,
+
+                        #[local_ref]
+                        tracks_table -> gtk::Overlay {}
+                      },
+
+                      // Sidebar
+                      #[wrap(Some)]
+                      set_sidebar = &gtk::ScrolledWindow {
+                        set_hscrollbar_policy: gtk::PolicyType::Never,
+                        add_css_class: "sidebar-pane",
+
+                        #[name = "sidebar_viewport"]
+                        gtk::Viewport {
+                          #[watch]
+                          set_child: Some(&model.sidebar_widget),
+                        },
+                      },
+                    },
+
+                    // Status bar
+                    gtk::Box {
+                      set_orientation: gtk::Orientation::Horizontal,
+                      set_halign: gtk::Align::Fill,
+                      set_valign: gtk::Align::Center,
+                      set_hexpand: true,
+                      set_margin_all: 12,
+                      set_spacing: 12,
+
+                      // Progress bar
+                      gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_align: gtk::Align::Start,
+                        set_valign: gtk::Align::Center,
+                        set_hexpand: true,
+                        set_spacing: 12,
+
+                        #[watch]
+                        set_visible: model.progress_task.is_some(),
+
+                        gtk::ProgressBar {
+                          set_halign: gtk::Align::Start,
+                          set_valign: gtk::Align::Center,
+                          set_ellipsize: gtk::pango::EllipsizeMode::End,
+                          set_show_text: false,
+                          #[watch]
+                          set_fraction: model.progress,
+                        },
+
+                        gtk::Label {
+                          add_css_class: "caption",
+                          #[watch]
+                          set_text: model.progress_step.as_deref().unwrap_or_default(),
+                        }
+                      },
+
+                      // Track count
+                      gtk::Box {
+                        set_orientation: gtk::Orientation::Horizontal,
+                        set_halign: gtk::Align::End,
+                        set_valign: gtk::Align::Center,
+                        set_hexpand: true,
+                        set_spacing: 12,
+
+                        gtk::Label {
+                          add_css_class: "caption",
+                          #[watch]
+                          set_label: &format!(
+                            "{}{} Tracks",
+                            model.filtered_track_count.map(|n| format!("Showing {n} / ")).unwrap_or_default(),
+                            model.track_count
+                          ),
+                        },
+                      },
+                    },
+                  }
+                }
+              },
             },
           },
         },
@@ -430,6 +467,7 @@ impl AsyncComponent for AppModel {
       section! {
         "Debug" {
           "Test Toast" => ActionTestToast,
+          "Test Spinner" => ActionTestSpinner,
         }
       }
     }
@@ -482,6 +520,7 @@ impl AsyncComponent for AppModel {
       progress_task: None,
       progress_step: None,
       progress: 0.0,
+      spinner_reason: None,
     };
 
     // References used in `view` macro
@@ -564,6 +603,15 @@ impl AsyncComponent for AppModel {
       })
     };
     actions_group.add_action(action_test_toast);
+
+    relm4::new_stateless_action!(ActionTestSpinner, MainMenuActionGroup, "test_spinner");
+    let action_test_spinner: RelmAction<ActionTestSpinner> = {
+      let sender = sender.clone();
+      RelmAction::new_stateless(move |_| {
+        sender.input(AppMsg::ShowSpinner("I'm spinning around...".into()));
+      })
+    };
+    actions_group.add_action(action_test_spinner);
 
     // Keyboard actions
     relm4::new_stateless_action!(ActionQuit, MainMenuActionGroup, "quit");
@@ -683,34 +731,41 @@ impl AsyncComponent for AppModel {
           .inspect(|ctrl| ctrl.widget().close());
         self.prefs_widget = None;
 
-        let current_libraries = Library::get_all().expect("failed to get Libraries");
-        if self
-          .libraries
+        let current_libs = Library::get_all().expect("failed to get Libraries");
+        let new_libs = current_libs
           .iter()
-          .map(|lib| lib.path.clone())
-          .collect::<HashSet<_>>()
-          != current_libraries
-            .iter()
-            .map(|lib| lib.path.clone())
-            .collect::<HashSet<_>>()
-        {
+          .filter(|&lib| !self.libraries.contains(lib))
+          .cloned()
+          .collect::<Vec<_>>();
+
+        self.libraries = current_libs;
+
+        // Scan newly-added libraries
+        if !new_libs.is_empty() {
           debug!("Libraries changed; refreshing");
 
-          // Scan newly-added libraries
-          current_libraries
-            .iter()
-            .filter(|&lib| !self.libraries.contains(lib))
-            .for_each(|lib| {
+          let sender_handle = sender.clone();
+          let _ = tokio::task::spawn_blocking(move || {
+            for lib in new_libs {
+              let name = lib.name();
+              let progress_sender = sender_handle.clone();
+              let progress_callback = move |count| {
+                progress_sender.input(AppMsg::ShowSpinner(format!(
+                  "Scanning new library \"{name}\"... ({count} tracks)"
+                )));
+              };
+
               lib
                 .refresh()
+                .on_progress(progress_callback.clone())
                 .call()
                 .expect("failed to refresh newly-added {lib}");
-            });
+            }
 
-          self.libraries = current_libraries;
-          self.load_tracks().expect("failed to load Tracks");
-
-          sender.input(AppMsg::BuildTracksTable);
+            sender_handle.input(AppMsg::LoadLibraries);
+            sender_handle.input(AppMsg::BuildTracksTable);
+            sender_handle.input(AppMsg::HideSpinner);
+          });
         }
       }
 
@@ -788,28 +843,29 @@ impl AsyncComponent for AppModel {
         .emit(TracksTableMsg::ClearAndAppend(self.tracks.clone())),
 
       AppMsg::RefreshLibraries => {
-        let total_libs = self.libraries.len();
+        let libs = self.libraries.clone();
+        let sender_handle = sender.clone();
+        let _ = tokio::task::spawn_blocking(move || {
+          for lib in libs {
+            let name = lib.name();
+            let progress_sender = sender_handle.clone();
+            let progress_callback = move |count| {
+              progress_sender.input(AppMsg::ShowSpinner(format!(
+                "Scanning library \"{name}\"... ({count} tracks)"
+              )));
+            };
 
-        sender.input(AppMsg::ProgressStart("Refresh Libraries".into()));
-        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("Refreshing Library 1 / {}", total_libs)),
-          progress: 0.0,
-        }));
+            lib
+              .refresh()
+              .on_progress(progress_callback.clone())
+              .call()
+              .expect("failed to refresh newly-added {lib}");
+          }
 
-        // TODO: Show errors with a dialog
-        for (idx, lib) in self.libraries.iter().enumerate() {
-          let _ = lib.refresh().call();
-
-          sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-            step: Some(format!("Refreshing Library {} / {}", idx + 1, total_libs)),
-            progress: (idx + 1) as f64 / total_libs as f64,
-          }));
-        }
-
-        // Reload tracks
-        sender.input(AppMsg::LoadLibraries);
-
-        sender.input(AppMsg::ProgressComplete);
+          sender_handle.input(AppMsg::LoadLibraries);
+          sender_handle.input(AppMsg::BuildTracksTable);
+          sender_handle.input(AppMsg::HideSpinner);
+        });
       }
 
       AppMsg::SearchQueryChanged(query) => {
@@ -965,6 +1021,16 @@ impl AsyncComponent for AppModel {
           self.progress_step = pu.step;
         }
         self.progress = pu.progress;
+      }
+
+      AppMsg::ShowSpinner(reason) => {
+        debug!("Showing spinner: \"{reason}\"");
+        self.spinner_reason = Some(reason);
+      }
+
+      AppMsg::HideSpinner => {
+        debug!("Hiding spinner");
+        self.spinner_reason = None;
       }
 
       AppMsg::Quit => {
@@ -1239,5 +1305,21 @@ impl AppModel {
 
 pub fn start() -> Result<()> {
   let app = RelmApp::new(APP_ID);
+
+  // Inject CSS
+  let provider = gtk::CssProvider::new();
+  provider.load_from_string(
+    "
+    .fade-overlay {
+      background-color: alpha(@window_bg_color, 0.67);
+    }
+    ",
+  );
+  gtk::style_context_add_provider_for_display(
+    &gtk::gdk::Display::default().expect("could not connect to display"),
+    &provider,
+    gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
+  );
+
   Ok(app.run_async::<AppModel>(()))
 }

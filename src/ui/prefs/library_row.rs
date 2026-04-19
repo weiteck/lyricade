@@ -76,16 +76,10 @@ impl FactoryComponent for LibraryRow {
   }
 
   fn init_model(library: Self::Init, index: &Self::Index, _sender: FactorySender<Self>) -> Self {
-    let name = library
-      .name
-      .as_ref()
-      .cloned()
-      .unwrap_or_else(|| library.default_name().to_string());
-
     Self {
       index: index.clone(),
+      name: library.name(),
       library,
-      name,
     }
   }
 
