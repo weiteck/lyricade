@@ -2,9 +2,9 @@ use std::{collections::HashSet, path::PathBuf};
 
 use adw::prelude::*;
 use camino::Utf8PathBuf;
-use relm4::{gtk::EventControllerKey, prelude::*};
+use relm4::{abstractions::Toaster, gtk::EventControllerKey, prelude::*};
 use relm4_components::open_dialog::*;
-use tracing::{debug, trace};
+use tracing::{debug, trace, warn};
 
 use crate::{
   SETTINGS,
@@ -26,6 +26,7 @@ pub struct PrefsModel {
   settings_default: Settings,
 
   file_dialog: Controller<OpenDialog>,
+  toaster: Toaster,
 }
 
 #[derive(Debug)]
@@ -40,6 +41,8 @@ pub enum PrefsMsg {
 
   EditLibrary(DynamicIndex),
   DeleteLibrary(DynamicIndex),
+
+  ShowToast(String),
 
   NoOp,
 }
@@ -105,218 +108,221 @@ impl SimpleComponent for PrefsModel {
         gtk::glib::Propagation::Proceed
       },
 
-      gtk::ScrolledWindow {
-        gtk::Box {
-          set_orientation: gtk::Orientation::Vertical,
-          set_margin_vertical: 24,
-          set_margin_horizontal: 48,
-          set_spacing: 24,
+      #[local_ref]
+      toast_overlay -> adw::ToastOverlay {
+        gtk::ScrolledWindow {
+          gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_margin_vertical: 24,
+            set_margin_horizontal: 48,
+            set_spacing: 24,
 
-          adw::PreferencesGroup {
-            set_title: "Music Libraries",
-            set_description: Some("Add, remove or edit Music Libraries. A Music Library is just a path on which to search for audio files."),
+            adw::PreferencesGroup {
+              set_title: "Music Libraries",
+              set_description: Some("Add, remove or edit Music Libraries. A Music Library is just a path on which to search for audio files."),
 
-            #[local_ref]
-            libraries_list_box -> gtk::ListBox {
-              set_selection_mode: gtk::SelectionMode::None,
-              add_css_class: "boxed-list",
+              #[local_ref]
+              libraries_list_box -> gtk::ListBox {
+                set_selection_mode: gtk::SelectionMode::None,
+                add_css_class: "boxed-list",
 
-              // Add library button
-              adw::ActionRow {
-                set_title: "Add Music Library",
-                set_halign: gtk::Align::Fill,
-                set_hexpand: true,
-                set_activatable: true,
-                add_css_class: "button",
-                set_activatable_widget: Some(&add_row_widget),
-                connect_activated => PrefsMsg::OpenFileDialogRequest,
+                // Add library button
+                adw::ActionRow {
+                  set_title: "Add Music Library",
+                  set_halign: gtk::Align::Fill,
+                  set_hexpand: true,
+                  set_activatable: true,
+                  add_css_class: "button",
+                  set_activatable_widget: Some(&add_row_widget),
+                  connect_activated => PrefsMsg::OpenFileDialogRequest,
 
-                #[wrap(Some)]
-                #[name = "add_row_widget"]
-                set_child = &gtk::Box {
-                  set_align: gtk::Align::Center,
-                  set_margin_all: 2,
-                  set_spacing: 4,
+                  #[wrap(Some)]
+                  #[name = "add_row_widget"]
+                  set_child = &gtk::Box {
+                    set_align: gtk::Align::Center,
+                    set_margin_all: 2,
+                    set_spacing: 4,
 
-                  gtk::Image {
-                    set_icon_name: Some("list-add-symbolic"),
-                  },
-                  gtk::Label {
-                    set_label: "Add Music Library",
-                    add_css_class: "title",
-                  }
-                },
-              },
-            },
-          },
-
-          adw::PreferencesGroup {
-            set_title: "Preferred Lyrics Format",
-            set_description: Some("Choose what lyrics format to prefer when fetching lyrics online or cleaning up multiple sidecar files."),
-
-            gtk::ListBox {
-              add_css_class: "boxed-list",
-
-              adw::ActionRow {
-                set_title: "Synchronous",
-                set_subtitle: "Prefer LRC format lyrics",
-                set_selectable: false,
-
-                set_activatable_widget: Some(&group_lyrics_type_button_sync),
-                #[name = "group_lyrics_type_button_sync"]
-                add_prefix = &gtk::CheckButton {
-                  #[watch]
-                  set_active: model.settings_current.prefer_lyrics_type == LyricsType::Sync,
-                  connect_toggled[sender] => move |btn| {
-                    if btn.is_active() {
-                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Sync)));
-                    }
-                  },
-                },
-              },
-
-              adw::ActionRow {
-                set_title: "Plain",
-                set_subtitle: "Prefer TXT format lyrics",
-                set_selectable: false,
-
-                set_activatable_widget: Some(&group_lyrics_type_button_plain),
-                #[name = "group_lyrics_type_button_plain"]
-                add_prefix = &gtk::CheckButton {
-                  set_group: Some(&group_lyrics_type_button_sync),
-                  #[watch]
-                  set_active: model.settings_current.prefer_lyrics_type == LyricsType::Plain,
-                  connect_toggled[sender] => move |btn| {
-                    if btn.is_active() {
-                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Plain)));
+                    gtk::Image {
+                      set_icon_name: Some("list-add-symbolic"),
+                    },
+                    gtk::Label {
+                      set_label: "Add Music Library",
+                      add_css_class: "title",
                     }
                   },
                 },
               },
             },
-          },
 
-          adw::PreferencesGroup {
-            set_title: "Scan Files",
-            set_description: Some("How audio and lyrics files are scanned and managed."),
+            adw::PreferencesGroup {
+              set_title: "Preferred Lyrics Format",
+              set_description: Some("Choose what lyrics format to prefer when fetching lyrics online or cleaning up multiple sidecar files."),
 
-            adw::SwitchRow {
-              set_title: "Ignore Unchanged",
-              set_subtitle: "Only scan new or modified files",
-              #[watch]
-              set_active: model.settings_current.scan_new_files_only,
-              connect_active_notify[sender] => move |btn| {
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ScanNewFilesOnly(btn.is_active())));
-              }
-            },
+              gtk::ListBox {
+                add_css_class: "boxed-list",
 
-            adw::SwitchRow {
-              set_title: "Upgrade Lyrics Tag From Sidecar",
-              set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format exists",
-              #[watch]
-              set_active: model.settings_current.upgrade_lyrics_tag_on_scan,
-              connect_active_notify[sender] => move |btn| {
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpgradeLyricsTagOnScan(btn.is_active())));
-              }
-            },
+                adw::ActionRow {
+                  set_title: "Synchronous",
+                  set_subtitle: "Prefer LRC format lyrics",
+                  set_selectable: false,
 
-            adw::ComboRow {
-              set_title: "Clean Up Sidecar Files",
-              #[watch]
-              set_subtitle: if model.settings_current.delete_sidecar_files_on_scan {
-                "All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
-              } else if model.settings_current.keep_one_sidecar_file_on_scan  {
-                "Keep only the preferred lyrics format if both sync and plain sidecar files are present"
-              } else {
-                "Keep all sidecar files"
+                  set_activatable_widget: Some(&group_lyrics_type_button_sync),
+                  #[name = "group_lyrics_type_button_sync"]
+                  add_prefix = &gtk::CheckButton {
+                    #[watch]
+                    set_active: model.settings_current.prefer_lyrics_type == LyricsType::Sync,
+                    connect_toggled[sender] => move |btn| {
+                      if btn.is_active() {
+                        sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Sync)));
+                      }
+                    },
+                  },
+                },
+
+                adw::ActionRow {
+                  set_title: "Plain",
+                  set_subtitle: "Prefer TXT format lyrics",
+                  set_selectable: false,
+
+                  set_activatable_widget: Some(&group_lyrics_type_button_plain),
+                  #[name = "group_lyrics_type_button_plain"]
+                  add_prefix = &gtk::CheckButton {
+                    set_group: Some(&group_lyrics_type_button_sync),
+                    #[watch]
+                    set_active: model.settings_current.prefer_lyrics_type == LyricsType::Plain,
+                    connect_toggled[sender] => move |btn| {
+                      if btn.is_active() {
+                        sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferLyricsType(LyricsType::Plain)));
+                      }
+                    },
+                  },
+                },
               },
-              set_model: Some(&gtk::StringList::new(&[
-                "Do Nothing",
-                "Keep One",
-                "Delete",
-              ])),
-              #[watch]
-              set_selected: if model.settings_current.delete_sidecar_files_on_scan { 2 }
-                else if model.settings_current.keep_one_sidecar_file_on_scan { 1 }
-                else { 0 },
-              connect_selected_item_notify[sender] => move |row| {
-                match row.selected() {
-                  1 => {
-                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::KeepOne)));
-                  }
-                  2 => {
-                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::Delete)));
-                  }
-                  _ => {
-                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::DoNothing)));
-                  }
+            },
+
+            adw::PreferencesGroup {
+              set_title: "Scan Files",
+              set_description: Some("How audio and lyrics files are scanned and managed."),
+
+              adw::SwitchRow {
+                set_title: "Ignore Unchanged",
+                set_subtitle: "Only scan new or modified files",
+                #[watch]
+                set_active: model.settings_current.scan_new_files_only,
+                connect_active_notify[sender] => move |btn| {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ScanNewFilesOnly(btn.is_active())));
                 }
               },
-            },
-          },
 
-          adw::PreferencesGroup {
-            set_title: "Fetch Lyrics",
-            set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
-
-            adw::SwitchRow {
-              set_title: "Write to Lyrics Tag",
-              set_subtitle: "Update audio file metadata with the found lyrics",
-              #[watch]
-              set_active: model.settings_current.update_lyrics_tag_on_fetch,
-              connect_active_notify[sender] => move |btn| {
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpdateLyricsTagOnFetch(btn.is_active())));
-              }
-            },
-
-            adw::SwitchRow {
-              set_title: "Write to Sidecar File",
-              set_subtitle: "Save a LRC or TXT file with the found lyrics alongside the audio file",
-              #[watch]
-              set_active: model.settings_current.save_sidecar_file_on_fetch,
-              connect_active_notify[sender] => move |btn| {
-                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
+              adw::SwitchRow {
+                set_title: "Upgrade Lyrics Tag From Sidecar",
+                set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format exists",
+                #[watch]
+                set_active: model.settings_current.upgrade_lyrics_tag_on_scan,
+                connect_active_notify[sender] => move |btn| {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpgradeLyricsTagOnScan(btn.is_active())));
+                }
               },
 
-            },
-          },
-
-          adw::PreferencesGroup {
-            set_title: "Date and Time Format",
-            set_description: Some("Choose how dates and times and displayed in the track list view."),
-
-            gtk::ListBox {
-              add_css_class: "boxed-list",
-
-              adw::ActionRow {
-                set_title: "Simple",
-                set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
-                set_selectable: false,
-
-                set_activatable_widget: Some(&group_datetime_format_button_simple),
-                #[name = "group_datetime_format_button_simple"]
-                add_prefix = &gtk::CheckButton {
-                  #[watch]
-                  set_active: !model.settings_current.prefer_iso_timestamps,
-                  connect_toggled[sender] => move |btn| {
-                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(!btn.is_active())));
-                  },
+              adw::ComboRow {
+                set_title: "Clean Up Sidecar Files",
+                #[watch]
+                set_subtitle: if model.settings_current.delete_sidecar_files_on_scan {
+                  "All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
+                } else if model.settings_current.keep_one_sidecar_file_on_scan  {
+                  "Keep only the preferred lyrics format if both sync and plain sidecar files are present"
+                } else {
+                  "Keep all sidecar files"
+                },
+                set_model: Some(&gtk::StringList::new(&[
+                  "Do Nothing",
+                  "Keep One",
+                  "Delete",
+                ])),
+                #[watch]
+                set_selected: if model.settings_current.delete_sidecar_files_on_scan { 2 }
+                  else if model.settings_current.keep_one_sidecar_file_on_scan { 1 }
+                  else { 0 },
+                connect_selected_item_notify[sender] => move |row| {
+                  match row.selected() {
+                    1 => {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::KeepOne)));
+                    }
+                    2 => {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::Delete)));
+                    }
+                    _ => {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::DoNothing)));
+                    }
+                  }
                 },
               },
+            },
 
-              adw::ActionRow {
-                set_title: "Accurate",
-                set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
-                set_selectable: false,
+            adw::PreferencesGroup {
+              set_title: "Fetch Lyrics",
+              set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
 
-                set_activatable_widget: Some(&group_datetime_format_button_accurate),
-                #[name = "group_datetime_format_button_accurate"]
-                add_prefix = &gtk::CheckButton {
-                  set_group: Some(&group_datetime_format_button_simple),
-                  #[watch]
-                  set_active: model.settings_current.prefer_iso_timestamps,
-                  connect_toggled[sender] => move |btn| {
-                    sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(btn.is_active())));
+              adw::SwitchRow {
+                set_title: "Write to Lyrics Tag",
+                set_subtitle: "Update audio file metadata with the found lyrics",
+                #[watch]
+                set_active: model.settings_current.update_lyrics_tag_on_fetch,
+                connect_active_notify[sender] => move |btn| {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpdateLyricsTagOnFetch(btn.is_active())));
+                }
+              },
+
+              adw::SwitchRow {
+                set_title: "Write to Sidecar File",
+                set_subtitle: "Save a LRC or TXT file with the found lyrics alongside the audio file",
+                #[watch]
+                set_active: model.settings_current.save_sidecar_file_on_fetch,
+                connect_active_notify[sender] => move |btn| {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
+                },
+
+              },
+            },
+
+            adw::PreferencesGroup {
+              set_title: "Date and Time Format",
+              set_description: Some("Choose how dates and times and displayed in the track list view."),
+
+              gtk::ListBox {
+                add_css_class: "boxed-list",
+
+                adw::ActionRow {
+                  set_title: "Simple",
+                  set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
+                  set_selectable: false,
+
+                  set_activatable_widget: Some(&group_datetime_format_button_simple),
+                  #[name = "group_datetime_format_button_simple"]
+                  add_prefix = &gtk::CheckButton {
+                    #[watch]
+                    set_active: !model.settings_current.prefer_iso_timestamps,
+                    connect_toggled[sender] => move |btn| {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(!btn.is_active())));
+                    },
+                  },
+                },
+
+                adw::ActionRow {
+                  set_title: "Accurate",
+                  set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
+                  set_selectable: false,
+
+                  set_activatable_widget: Some(&group_datetime_format_button_accurate),
+                  #[name = "group_datetime_format_button_accurate"]
+                  add_prefix = &gtk::CheckButton {
+                    set_group: Some(&group_datetime_format_button_simple),
+                    #[watch]
+                    set_active: model.settings_current.prefer_iso_timestamps,
+                    connect_toggled[sender] => move |btn| {
+                      sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(btn.is_active())));
+                    },
                   },
                 },
               },
@@ -383,9 +389,11 @@ impl SimpleComponent for PrefsModel {
         settings_current: settings.clone(),
         settings_default: Settings::default(),
         file_dialog,
+        toaster: Toaster::default(),
       }
     };
 
+    let toast_overlay = model.toaster.overlay_widget();
     let libraries_list_box = model.library_rows.widget();
     let widgets = view_output!();
 
@@ -492,9 +500,14 @@ impl SimpleComponent for PrefsModel {
       PrefsMsg::OpenFileDialogResponse(path) => {
         debug!("Adding library path: {}", path.to_string_lossy());
         if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
-          let added = Library::add(&path).expect("unable to add library");
-          self.library_rows.guard().push_back(added.clone());
-          self.libraries.insert(added);
+          if self.libraries.iter().any(|lib| lib.path() == path) {
+            warn!("Library path \"{path}\" already exists");
+            sender.input(PrefsMsg::ShowToast("Library path already exists".into()));
+          } else {
+            let added = Library::add(&path).expect("unable to add library");
+            self.library_rows.guard().push_back(added.clone());
+            self.libraries.insert(added);
+          }
         }
       }
 
@@ -521,6 +534,12 @@ impl SimpleComponent for PrefsModel {
         }
 
         self.library_rows.guard().remove(idx.current_index());
+      }
+
+      PrefsMsg::ShowToast(msg) => {
+        debug!("Emit toast notification: \"{}\"", &msg);
+        let toast = adw::Toast::builder().title(msg).timeout(3).build();
+        self.toaster.add_toast(toast);
       }
 
       PrefsMsg::NoOp => {}
