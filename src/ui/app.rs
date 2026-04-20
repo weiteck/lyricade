@@ -347,7 +347,7 @@ impl AsyncComponent for AppModel {
                       set_width_request: 200,
                       #[wrap(Some)]
                       set_child = &gtk::Button {
-                        set_label: "Add Music Library...",
+                        set_label: "Add Music Library…",
                         set_css_classes: &["pill", "suggested-action"],
                         connect_clicked => AppMsg::ShowPrefsWindow,
                       },
@@ -608,7 +608,7 @@ impl AsyncComponent for AppModel {
     let action_test_spinner: RelmAction<ActionTestSpinner> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowSpinner("I'm spinning around...".into()));
+        sender.input(AppMsg::ShowSpinner("I'm spinning around…".into()));
       })
     };
     actions_group.add_action(action_test_spinner);
@@ -710,7 +710,6 @@ impl AsyncComponent for AppModel {
         let prefs_widget = PrefsModel::builder()
           .launch(self.libraries.clone())
           .forward(sender.input_sender(), |msg| match msg {
-            PrefsOutput::RebuildTracksTable => AppMsg::BuildTracksTable,
             PrefsOutput::Close => AppMsg::ClosePrefsWindow,
           });
 
@@ -751,7 +750,7 @@ impl AsyncComponent for AppModel {
               let progress_sender = sender_handle.clone();
               let progress_callback = move |count| {
                 progress_sender.input(AppMsg::ShowSpinner(format!(
-                  "Scanning new library \"{name}\"... ({count} tracks)"
+                  "Scanning new library \"{name}\"… ({count} tracks)"
                 )));
               };
 
@@ -851,7 +850,7 @@ impl AsyncComponent for AppModel {
             let progress_sender = sender_handle.clone();
             let progress_callback = move |count| {
               progress_sender.input(AppMsg::ShowSpinner(format!(
-                "Scanning library \"{name}\"... ({count} tracks)"
+                "Scanning library \"{name}\"… ({count} tracks)"
               )));
             };
 
