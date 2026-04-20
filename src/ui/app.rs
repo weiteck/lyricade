@@ -49,6 +49,9 @@ struct AppModel {
   search_query: Option<String>,
   active_search_filters: HashSet<TracksTableFilter>,
 
+  is_fetching_lyrics: bool,
+  fetch_lyrics_abort_handle: Option<tokio::task::AbortHandle>,
+
   /// Name of the task being tracked.
   progress_task: Option<String>,
   /// The current step or state of the task.
@@ -61,6 +64,8 @@ struct AppModel {
 #[derive(Debug)]
 enum AppMsg {
   FetchLyrics,
+  CancelFetchLyrics,
+  FetchLyricsComplete,
   /// Load libraries and tracks from the database.
   LoadLibraries,
   /// Scan library paths for changes.
@@ -142,14 +147,35 @@ impl AsyncComponent for AppModel {
       },
 
       pack_end = &gtk::ToggleButton {
-        set_label: "Info",
         set_tooltip_text: Some("Pin Track Details"),
         set_icon_name: "sidebar-show-right-symbolic",
         #[watch]
-        set_visible: !model.no_tracks,
+        set_sensitive: !model.no_tracks,
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::PinTrackDetailsSidebar(btn.is_active()));
         },
+      },
+
+      // Cancel button shown if lyrics fetching in progress
+      pack_end = &gtk::Button {
+        set_label: "Cancel",
+        set_tooltip_text: Some("Cancel Get Lyrics"),
+        #[watch]
+        set_visible: model.is_fetching_lyrics,
+        connect_clicked => AppMsg::CancelFetchLyrics,
+      },
+
+      // Lyrics fetch button shown if fetching not in progress
+      pack_end = &gtk::Button {
+        set_label: "Get Lyrics",
+        set_tooltip_text: Some("Get Lyrics from lrclib.net"),
+        #[watch]
+        set_visible: !model.is_fetching_lyrics,
+        #[watch]
+        set_class_active: ("suggested-action", !model.no_tracks),
+        #[watch]
+        set_sensitive: !model.no_tracks,
+        connect_clicked => AppMsg::FetchLyrics,
       },
     },
 
@@ -410,6 +436,16 @@ impl AsyncComponent for AppModel {
                         #[watch]
                         set_visible: model.progress_task.is_some(),
 
+                        // Cancel fetch lyrics button
+                        gtk::Button {
+                          set_tooltip_text: Some("Cancel Get Lyrics"),
+                          set_icon_name: "window-close-symbolic",
+                          set_css_classes: &["flat", "circular", "mini-cancel"],
+                          #[watch]
+                          set_visible: model.is_fetching_lyrics,
+                          connect_clicked => AppMsg::CancelFetchLyrics,
+                        },
+
                         gtk::ProgressBar {
                           set_halign: gtk::Align::Start,
                           set_valign: gtk::Align::Center,
@@ -517,6 +553,8 @@ impl AsyncComponent for AppModel {
       selected_track_ids: HashSet::new(),
       is_sidebar_pinned: false,
       is_sidebar_revealed: false,
+      is_fetching_lyrics: false,
+      fetch_lyrics_abort_handle: None,
       progress_task: None,
       progress_step: None,
       progress: 0.0,
@@ -652,10 +690,12 @@ impl AsyncComponent for AppModel {
   ) {
     match message {
       AppMsg::FetchLyrics => {
+        self.is_fetching_lyrics = true;
+
         // Display progress
-        sender.input(AppMsg::ProgressStart("Fetching Lyrics".into()));
+        sender.input(AppMsg::ProgressStart("Getting Lyrics".into()));
         sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some("Fetching Lyrics".into()),
+          step: Some(format!("Processed Track 0 / {}…", self.track_count)),
           progress: 0.0,
         }));
 
@@ -664,14 +704,14 @@ impl AsyncComponent for AppModel {
         let stream = ::futures::stream::iter(self.tracks.clone());
 
         // Batch process tracks and update progress
-        tokio::spawn(async move {
+        let jh = tokio::spawn(async move {
           stream
             .for_each_concurrent((CONNECTION_LIMIT as f64 * 1.5) as usize, |mut track| {
               let sender = sender.clone();
               let completed = Arc::clone(&completed);
 
               async move {
-                let _ = track.fetch_lyrics().call().await;
+                let _ = track.fetch_lyrics_test().call().await;
 
                 let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 sender
@@ -679,7 +719,7 @@ impl AsyncComponent for AppModel {
                   .emit(AppCommand::TrackUpdated(track));
 
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                  step: Some(format!("Processed Track {} / {}", completed, total)),
+                  step: Some(format!("Processed Track {} / {}…", completed, total)),
                   progress: completed as f64 / total as f64,
                 }))
               }
@@ -687,8 +727,26 @@ impl AsyncComponent for AppModel {
             .await;
 
           // End display progress
-          sender.input(AppMsg::ProgressComplete);
+          sender.input(AppMsg::FetchLyricsComplete);
         });
+
+        self.fetch_lyrics_abort_handle = Some(jh.abort_handle());
+      }
+
+      AppMsg::CancelFetchLyrics => {
+        debug!("FetchLyrics cancelled");
+        if let Some(handle) = self.fetch_lyrics_abort_handle.take() {
+          handle.abort();
+        }
+        self.is_fetching_lyrics = false;
+        sender.input(AppMsg::ProgressComplete);
+      }
+
+      AppMsg::FetchLyricsComplete => {
+        debug!("FetchLyrics completed");
+        self.fetch_lyrics_abort_handle = None;
+        self.is_fetching_lyrics = false;
+        sender.input(AppMsg::ProgressComplete);
       }
 
       AppMsg::ShowAboutWindow => {
@@ -1316,8 +1374,20 @@ pub fn start() -> Result<()> {
     .fade-overlay {
       background-color: alpha(@window_bg_color, 0.67);
     }
+
     .window-bg-overlay {
       background-color: @window_bg_color;
+    }
+
+    button.circular.flat.mini-cancel {
+        min-height: 0;
+        min-width: 0;
+        padding: 2px;
+        margin: 0;
+    }
+
+    button.circular.flat.mini-cancel image {
+        -gtk-icon-size: 12px;
     }
     ",
   );
