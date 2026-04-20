@@ -311,7 +311,7 @@ impl AsyncComponent for AppModel {
               set_orientation: gtk::Orientation::Vertical,
               set_align: gtk::Align::Fill,
               set_spacing: 12,
-              add_css_class: "fade-overlay",
+              add_css_class: "window-bg-overlay",
 
               gtk::Spinner {
                 set_halign: gtk::Align::Center,
@@ -333,7 +333,7 @@ impl AsyncComponent for AppModel {
             #[wrap(Some)]
             set_child = &gtk::Box {
               #[transition = "Crossfade"]
-              match model.no_tracks {
+              match model.libraries.is_empty() {
                 true => {
                   gtk::Box {
                     #[watch]
@@ -341,10 +341,10 @@ impl AsyncComponent for AppModel {
                     set_align: gtk::Align::Center,
 
                     adw::StatusPage {
-                      set_title: "No Tracks",
+                      set_title: "No Music Libraries",
                       set_description: Some("Open Preferences to add a music library"),
                       set_icon_name: Some("edit-find-symbolic"),
-                      set_width_request: 200,
+                      set_width_request: 330,
                       #[wrap(Some)]
                       set_child = &gtk::Button {
                         set_label: "Add Music Library…",
@@ -1315,6 +1315,9 @@ pub fn start() -> Result<()> {
     "
     .fade-overlay {
       background-color: alpha(@window_bg_color, 0.67);
+    }
+    .window-bg-overlay {
+      background-color: @window_bg_color;
     }
     ",
   );
