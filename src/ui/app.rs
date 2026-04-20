@@ -736,6 +736,7 @@ impl AsyncComponent for AppModel {
           .filter(|&lib| !self.libraries.contains(lib))
           .cloned()
           .collect::<Vec<_>>();
+        let libs_have_been_removed = self.libraries.iter().any(|lib| !current_libs.contains(lib));
 
         self.libraries = current_libs;
 
@@ -765,6 +766,9 @@ impl AsyncComponent for AppModel {
             sender_handle.input(AppMsg::BuildTracksTable);
             sender_handle.input(AppMsg::HideSpinner);
           });
+        } else if libs_have_been_removed {
+          sender.input(AppMsg::LoadLibraries);
+          sender.input(AppMsg::BuildTracksTable);
         }
       }
 
