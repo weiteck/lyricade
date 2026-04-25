@@ -1,6 +1,7 @@
 words = [
     "lrc",
     "lrclib",
+    "lyricade",
     "ndt",
     "unsync",
 ]

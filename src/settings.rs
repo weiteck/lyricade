@@ -25,13 +25,13 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   }
 });
 
-pub const APP_ID: &str = "io.github.weiteck.Lyrinc";
+pub const APP_ID: &str = "io.github.weiteck.Lyricade";
 
 /// Application name used in paths, etc.
-pub const APP_NAME: &str = "lyrinc";
+pub const APP_NAME: &str = "lyricade";
 
 /// Application name presented in UI.
-pub const APP_NAME_PRETTY: &str = "Lyrinc";
+pub const APP_NAME_PRETTY: &str = "Lyricade";
 
 pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {

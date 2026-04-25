@@ -1,7 +1,7 @@
 use std::{collections::HashSet, io::Write};
 
 use camino::Utf8PathBuf;
-use lyrinc::lyrics::{LyricsFile, LyricsFileType, LyricsType};
+use lyricade::lyrics::{LyricsFile, LyricsFileType, LyricsType};
 use tracing::Level;
 use tracing_subscriber::FmtSubscriber;
 

@@ -1,9 +1,9 @@
 [Desktop Entry]
-Name=Lyrinc
+Name=Lyricade
 GenericName=Lyrics Downloader
-Comment=
-Exec=lyrinc
-Icon=io.github.weiteck.Lyrinc
+Comment=Download and manage lyrics for your music library
+Exec=lyricade
+Icon=io.github.weiteck.Lyricade
 Terminal=false
 Type=Application
 Categories=Music;GNOME;GTK;

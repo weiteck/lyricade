@@ -1,6 +1,6 @@
 [package]
 edition = "2024"
-name = "lyrinc"
+name = "lyricade"
 version = "0.1.0"
 
 [dependencies]

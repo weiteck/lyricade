@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg height="128px" viewBox="0 0 128 128" width="128px" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+    <radialGradient id="a" cx="64" cy="204" gradientTransform="matrix(0.750001 -0.00000001 0.00000002 0.750001 15.999961 -128.086666)" gradientUnits="userSpaceOnUse" r="31.999977">
+        <stop offset="0" stop-color="#ff6161"/>
+        <stop offset="1" stop-color="#e01b24"/>
+    </radialGradient>
+    <path d="m 17.117188 28.496094 h 93.765624 c 4.761719 0 8.621094 3.023437 8.621094 6.757812 v 73.492188 c 0 3.734375 -3.859375 6.757812 -8.621094 6.757812 h -93.765624 c -4.761719 0 -8.621094 -3.023437 -8.621094 -6.757812 v -73.492188 c 0 -3.734375 3.859375 -6.757812 8.621094 -6.757812 z m 0 0" fill="#f6f5f4"/>
+    <path d="m 116 66 c -12 0 -14 30 -14 30 s -7.03125 -30.46875 -19 -30.46875 s -19 30.46875 -19 30.46875 s -7.03125 -30.46875 -19 -30.46875 s -19 30.46875 -19 30.46875 s 0 -30 -14 -30" fill="none" stroke="#c0bfbc" stroke-dasharray="2 4" stroke-dashoffset="1" stroke-linecap="round" stroke-width="2"/>
+    <path d="m 22 102 h 8" fill="none" stroke="#9a9996" stroke-linecap="round" stroke-width="12"/>
+    <path d="m 96 44.496094 c 0 17.671875 -14.328125 32 -32 32 s -32 -14.328125 -32 -32 c 0 -17.675782 14.328125 -32 32 -32 s 32 14.324218 32 32 z m 0 0" fill="url(#a)"/>
+    <path d="m 48 102 h 32" fill="none" stroke="#9a9996" stroke-linecap="round" stroke-width="12"/>
+    <path d="m 98 102 h 8" fill="none" stroke="#9a9996" stroke-linecap="round" stroke-width="12"/>
+    <path d="m 72.332031 32 v 5.554688 h -5.554687 v 13.882812 c 0 3.070312 -2.496094 5.554688 -5.554688 5.554688 c -3.070312 0 -5.554687 -2.484376 -5.554687 -5.554688 s 2.484375 -5.554688 5.554687 -5.554688 c 0.964844 0 1.929688 0.261719 2.777344 0.75 v -14.632812 z m 0 0" fill="#f6f5f4"/>
+</svg>

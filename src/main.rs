@@ -1,7 +1,7 @@
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-use lyrinc::{init_app, ui};
+use lyricade::{init_app, ui};
 use mimalloc::MiMalloc;
 
 #[tokio::main]
