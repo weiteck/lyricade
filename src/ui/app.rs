@@ -367,10 +367,11 @@ impl AsyncComponent for AppModel {
                     set_align: gtk::Align::Center,
 
                     adw::StatusPage {
-                      set_title: "No Music Libraries",
-                      set_description: Some("Open Preferences to add a music library"),
-                      set_icon_name: Some("edit-find-symbolic"),
-                      set_width_request: 330,
+                      set_title: &format!("Welcome to {}", &APP_NAME_PRETTY),
+                      set_description: Some("Add a Music Library to get started"),
+                      // set_icon_name: Some("media-playback-start-symbolic"),
+                      set_icon_name: Some("Lyricade-symbolic"),
+                      set_width_request: 300,
                       #[wrap(Some)]
                       set_child = &gtk::Button {
                         set_label: "Add Music Library…",
@@ -1397,5 +1398,16 @@ pub fn start() -> Result<()> {
     gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
   );
 
+  // Custom icons
+  initialize_custom_icons();
+
   Ok(app.run_async::<AppModel>(()))
+}
+
+fn initialize_custom_icons() {
+  gtk::gio::resources_register_include!("icons.gresource").expect("failed to include gresources");
+
+  let display = gtk::gdk::Display::default().expect("could not connect to display");
+  let theme = gtk::IconTheme::for_display(&display);
+  theme.add_resource_path("/io/github/weiteck/Lyricade/icons");
 }

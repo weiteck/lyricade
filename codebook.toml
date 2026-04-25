@@ -1,4 +1,6 @@
 words = [
+    "gresource",
+    "gresources",
     "lrc",
     "lrclib",
     "lyricade",

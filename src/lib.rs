@@ -130,7 +130,7 @@ fn init_logging() -> WorkerGuard {
     log_dir
   ));
 
-  let file_appender = tracing_appender::rolling::weekly(log_dir, log_name);
+  let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
   let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
   tracing_subscriber::registry()
