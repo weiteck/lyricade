@@ -107,9 +107,6 @@ impl FactoryComponent for LibraryRow {
       })
     };
 
-    // TODO: Implement editing a library name and path
-    action_edit.set_enabled(false);
-
     actions_group.add_action(action_edit);
 
     let index = self.index.clone();

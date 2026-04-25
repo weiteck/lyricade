@@ -19,7 +19,9 @@ use crate::{
 };
 
 /// Represents a library path.
-#[derive(Debug, Default, Clone, Eq, Queryable, Selectable, Identifiable)]
+#[derive(
+  Debug, Default, Clone, Eq, Queryable, Selectable, Identifiable, Insertable, AsChangeset,
+)]
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Library {
@@ -459,6 +461,25 @@ impl Library {
       .first::<i64>(&mut conn)?;
 
     Ok(size as usize)
+  }
+
+  /// Insert or update library in database.
+  #[builder]
+  pub fn write_to_db(&mut self) -> Result<()> {
+    let mut conn = DB_POOL.get()?;
+
+    self.updated_at = now();
+
+    insert_into(libraries::table)
+      .values(&*self)
+      .on_conflict(libraries::id)
+      .do_update()
+      .set(&*self)
+      .execute(&mut conn)?;
+
+    trace!("Updated database entry for {}", &self);
+
+    Ok(())
   }
 }
 

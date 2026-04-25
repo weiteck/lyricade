@@ -23,6 +23,8 @@ pub struct PrefsModel {
   libraries: HashSet<Library>,
   library_rows: FactoryVecDeque<LibraryRow>,
 
+  editing_library: Option<DynamicIndex>,
+
   settings_initial: Settings,
   settings_current: Settings,
   settings_default: Settings,
@@ -343,7 +345,7 @@ impl SimpleComponent for PrefsModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    // Recent datetime to use as example in interface
+    // Recent datetime to use as example in UI
     let ndt = now()
       .checked_sub_days(chrono::Days::new(3))
       .expect("should be a valid date");
@@ -376,7 +378,7 @@ impl SimpleComponent for PrefsModel {
     file_dialog_settings.create_folders = false;
     file_dialog_settings.folder_mode = true;
     file_dialog_settings.is_modal = true;
-    file_dialog_settings.accept_label = "Add Folder".into();
+    file_dialog_settings.accept_label = "Use Folder".into();
     let file_dialog = OpenDialog::builder()
       .transient_for_native(&root)
       .launch(file_dialog_settings)
@@ -390,6 +392,7 @@ impl SimpleComponent for PrefsModel {
       PrefsModel {
         libraries,
         library_rows,
+        editing_library: None,
         settings_initial: settings.clone(),
         settings_current: settings.clone(),
         settings_default: Settings::default(),
@@ -496,21 +499,61 @@ impl SimpleComponent for PrefsModel {
 
       // TODO: Use alert dialog for errors
       PrefsMsg::OpenFileDialogResponse(path) => {
-        debug!("Adding library path: {}", path.to_string_lossy());
-        if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
-          if self.libraries.iter().any(|lib| lib.path() == path) {
-            warn!("Library path \"{path}\" already exists");
-            sender.input(PrefsMsg::ShowToast("Library path already exists".into()));
-          } else {
-            let added = Library::add(&path).expect("unable to add library");
-            self.library_rows.guard().push_back(added.clone());
-            self.libraries.insert(added);
+        if let Some(idx) = &self.editing_library {
+          // Editing existing library path
+          let id = self
+            .library_rows
+            .iter()
+            .find(|&lr| lr.index == *idx)
+            .map(|lr| lr.library.id)
+            .expect("should have LibraryRow at this index");
+
+          if let Some(lib) = self.libraries.iter().find(|lib| lib.id == id).cloned()
+            && let Ok(path) = Utf8PathBuf::from_path_buf(path)
+          {
+            let mut lib = self.libraries.take(&lib).expect("should have this Library");
+            let path = path.to_string();
+            debug!("Updating path for {lib} to: {}", path);
+            lib.path = path;
+            lib
+              .write_to_db()
+              .call()
+              .expect("failed to update Library in database");
+
+            // Update list
+            let mut guard = self.library_rows.guard();
+            guard.remove(idx.current_index());
+            guard.push_back(lib.clone());
+            self.editing_library = None;
+
+            self.libraries.insert(lib);
+
+            sender.input(PrefsMsg::ShowToast("Library updated".into()));
+          }
+        } else {
+          // Adding a new library
+          debug!("Adding library path: {}", path.to_string_lossy());
+          if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
+            if self.libraries.iter().any(|lib| lib.path() == path) {
+              warn!("Library path \"{path}\" already exists");
+              sender.input(PrefsMsg::ShowToast("Library path already exists".into()));
+            } else {
+              let lib = Library::add(&path).expect("unable to add library");
+              self.library_rows.guard().push_back(lib.clone());
+              self.libraries.insert(lib);
+
+              sender.input(PrefsMsg::ShowToast("Library added".into()));
+            }
           }
         }
       }
 
       PrefsMsg::EditLibrary(idx) => {
         debug!("EditLibrary called for item at index {idx:?}");
+
+        self.editing_library = Some(idx);
+
+        sender.input(PrefsMsg::OpenFileDialogRequest);
       }
 
       // TODO: Show toast with 'undo' button
