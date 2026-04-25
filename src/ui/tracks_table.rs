@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
 use relm4::gtk::gio::prelude::ListModelExt;
-use relm4::gtk::prelude::{SelectionModelExt, WidgetExt};
+use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
 use relm4::typed_view::column::*;
@@ -88,9 +88,7 @@ impl SimpleComponent for TracksTableModel {
     table.append_column::<TracksTableColumnArtist>();
     table.append_column::<TracksTableColumnAlbum>();
     table.append_column::<TracksTableColumnTrack>();
-    table.append_column::<TracksTableColumnInstrumental>();
     table.append_column::<TracksTableColumnLyricsTag>();
-    table.append_column::<TracksTableColumnLyricsSync>();
     table.append_column::<TracksTableColumnSidecar>();
     table.append_column::<TracksTableColumnChecked>();
     table.append_column::<TracksTableColumnModified>();
@@ -326,7 +324,12 @@ impl RelmColumn for TracksTableColumnArtist {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.artist_name.cmp(&b.artist_name)))
+    Some(Box::new(|a, b| {
+      a.artist_name
+        .cmp(&b.artist_name)
+        .then_with(|| a.album_name.cmp(&b.album_name))
+        .then_with(|| a.track_name.cmp(&b.track_name))
+    }))
   }
 }
 
@@ -353,30 +356,55 @@ impl RelmColumn for TracksTableColumnAlbum {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.album_name.cmp(&b.album_name)))
+    Some(Box::new(|a, b| {
+      a.album_name
+        .cmp(&b.album_name)
+        .then_with(|| a.track_name.cmp(&b.track_name))
+    }))
   }
 }
 
 struct TracksTableColumnTrack;
 impl RelmColumn for TracksTableColumnTrack {
+  type Root = gtk::Box;
+  type Widgets = (gtk::Label, gtk::Label);
   type Item = Track;
-  type Root = gtk::Label;
-  type Widgets = ();
 
   const COLUMN_NAME: &'static str = "Track";
-  const ENABLE_RESIZE: bool = true;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-    let label = gtk::Label::new(None);
-    label.set_align(gtk::Align::Start);
-    label.set_xalign(0.0);
-    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    (label, ())
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bx.set_valign(gtk::Align::Center);
+
+    let track_label = gtk::Label::new(None);
+    track_label.set_align(gtk::Align::Start);
+    track_label.set_xalign(0.0);
+    track_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+
+    let inst_tag = gtk::Label::new(None);
+    inst_tag.set_visible(false);
+
+    bx.append(&track_label);
+    bx.append(&inst_tag);
+
+    (bx, (track_label, inst_tag))
   }
 
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    root.set_label(&item.track_name);
+  fn bind(
+    item: &mut Self::Item,
+    (track_label, inst_tag): &mut Self::Widgets,
+    _root: &mut Self::Root,
+  ) {
+    track_label.set_label(&item.track_name);
+    track_label.set_tooltip(&item.path);
+
+    if item.instrumental.is_some_and(|b| b) {
+      inst_tag.set_label("INST");
+      inst_tag.set_tooltip("Instrumental Track");
+      inst_tag.add_css_class("caption");
+      inst_tag.inline_css("padding: 0 0.5em; background: @card_bg_color; border-radius: 6px");
+      inst_tag.set_visible(true);
+    }
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -384,83 +412,89 @@ impl RelmColumn for TracksTableColumnTrack {
   }
 }
 
-struct TracksTableColumnInstrumental;
-impl RelmColumn for TracksTableColumnInstrumental {
-  type Root = gtk::Image;
-  type Widgets = ();
-  type Item = Track;
-
-  const COLUMN_NAME: &'static str = "Inst";
-
-  fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-    let img = gtk::Image::new();
-    (img, ())
-  }
-
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    if item.instrumental.is_some_and(|b| b) {
-      root.set_icon_name(Some("checkmark-symbolic"));
-      root.set_tooltip("Marked as Instrumental");
-    }
-  }
-
-  fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.lyrics.is_some().cmp(&b.lyrics.is_some())))
-  }
-}
-
 struct TracksTableColumnLyricsTag;
 impl RelmColumn for TracksTableColumnLyricsTag {
-  type Root = gtk::Image;
-  type Widgets = ();
+  type Root = gtk::Box;
+  type Widgets = (gtk::Image, gtk::Label);
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Tag";
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-    let img = gtk::Image::new();
-    (img, ())
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+
+    let label = gtk::Label::new(None);
+    label.set_align(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+
+    let icon = gtk::Image::new();
+
+    bx.append(&icon);
+    bx.append(&label);
+
+    (bx, (icon, label))
   }
 
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    if item.lyrics.is_some() {
-      root.set_icon_name(Some("checkmark-symbolic"));
-      root.set_tooltip("Lyrics Tag Found");
+  fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+    if item.lyrics.is_some() && item.lyrics_synchronised {
+      label.set_label("Sync");
+      label.inline_css("font-weight: bold");
+      root.set_tooltip("Sync Lyrics Tag");
+      icon.set_icon_name(Some("audio-x-generic-symbolic"));
+    } else if item.lyrics.is_some() && !item.lyrics_synchronised {
+      label.set_label("Plain");
+      root.set_tooltip("Plain Lyrics Tag");
+      icon.set_icon_name(Some("audio-x-generic-symbolic"));
+      root.set_opacity(0.67);
     }
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.lyrics.is_some().cmp(&b.lyrics.is_some())))
+    Some(Box::new(|a, b| {
+      a.lyrics
+        .is_some()
+        .cmp(&b.lyrics.is_some())
+        .then_with(|| a.lyrics_synchronised.cmp(&b.lyrics_synchronised))
+    }))
   }
 }
 
 struct TracksTableColumnSidecar;
 impl RelmColumn for TracksTableColumnSidecar {
-  type Root = gtk::Label;
-  type Widgets = ();
+  type Root = gtk::Box;
+  type Widgets = (gtk::Image, gtk::Label);
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Sidecar";
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+    let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    (label, ())
+
+    let icon = gtk::Image::new();
+
+    bx.append(&icon);
+    bx.append(&label);
+
+    (bx, (icon, label))
   }
 
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    match (&item.lyrics_sidecar_lrc_file, &item.lyrics_sidecar_txt_file) {
-      (Some(_), _) => {
-        root.set_label("LRC");
-        root.set_tooltip("Lyrics Sidecar File Format");
-      }
-      (None, Some(_)) => {
-        root.set_label("TXT");
-        root.set_tooltip("Lyrics Sidecar File Format");
-      }
-      _ => (),
+  fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+    if item.lyrics_sidecar_lrc_file.is_some() {
+      label.set_label("Sync");
+      label.inline_css("font-weight: bold");
+      root.set_tooltip("Sync Sidecar File");
+      icon.set_icon_name(Some("text-x-generic-symbolic"));
+    } else if item.lyrics_sidecar_txt_file.is_some() {
+      label.set_label("Plain");
+      root.set_tooltip("Plain Sidecar File");
+      icon.set_icon_name(Some("text-x-generic-symbolic"));
+      root.set_opacity(0.67);
     }
   }
 
@@ -474,34 +508,6 @@ impl RelmColumn for TracksTableColumnSidecar {
             .is_some()
             .cmp(&b.lyrics_sidecar_txt_file.is_some())
         })
-    }))
-  }
-}
-
-struct TracksTableColumnLyricsSync;
-impl RelmColumn for TracksTableColumnLyricsSync {
-  type Root = gtk::Image;
-  type Widgets = ();
-  type Item = Track;
-
-  const COLUMN_NAME: &'static str = "Sync";
-
-  fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
-    let img = gtk::Image::new();
-    (img, ())
-  }
-
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    if item.lyrics_synchronised || item.lyrics_sidecar_lrc_file.is_some() {
-      root.set_icon_name(Some("checkmark-symbolic"));
-      root.set_tooltip("Lyrics Are Synchronised");
-    }
-  }
-
-  fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| {
-      (a.lyrics_synchronised || a.lyrics_sidecar_lrc_file.is_some())
-        .cmp(&(b.lyrics_synchronised || b.lyrics_sidecar_lrc_file.is_some()))
     }))
   }
 }

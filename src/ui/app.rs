@@ -711,7 +711,7 @@ impl AsyncComponent for AppModel {
               let completed = Arc::clone(&completed);
 
               async move {
-                let _ = track.fetch_lyrics_test().call().await;
+                let _ = track.fetch_lyrics().call().await;
 
                 let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 sender
