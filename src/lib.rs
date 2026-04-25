@@ -1,5 +1,6 @@
 use std::{
   fs,
+  path::Path,
   sync::{LazyLock, RwLock},
 };
 
@@ -11,7 +12,7 @@ use diesel::{
 };
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use libsqlite3_sys::SQLITE_VERSION;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 
@@ -33,6 +34,8 @@ pub type Result<T> = anyhow::Result<T>;
 pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
+
+const MAX_LOG_FILES: usize = 10;
 
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
 
@@ -102,7 +105,7 @@ Settings:
     &*APP_DB_FILE_PATH
       .canonicalize_utf8()
       .unwrap_or("(error while getting full path)".into()),
-    &*SETTINGS
+    &*SETTINGS.read().expect("settings lock is poisoned")
   );
 
   Ok(())
@@ -126,6 +129,7 @@ fn init_logging() -> WorkerGuard {
     "failed to create logging directory \"{}\"",
     log_dir
   ));
+
   let file_appender = tracing_appender::rolling::weekly(log_dir, log_name);
   let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
@@ -135,9 +139,39 @@ fn init_logging() -> WorkerGuard {
     .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
     .init();
 
-  // TODO: Clean up old log files
+  clean_up_log_files(&log_dir).expect("failed to clean up log files");
 
   guard
+}
+
+fn clean_up_log_files(log_dir: impl AsRef<Path>) -> Result<()> {
+  let prefix = format!("{}.log", &APP_NAME);
+  let mut files = fs::read_dir(log_dir)?
+    .filter_map(|de| de.ok())
+    .filter(|de| de.path().is_file() && de.file_name().to_string_lossy().starts_with(&prefix))
+    .collect::<Vec<_>>();
+  files.sort_by_cached_key(|de| {
+    de.metadata()
+      .expect("should be able to read log file metadata")
+      .modified()
+      .expect("should be able to read log file modified date")
+  });
+
+  debug!(
+    "Found {} existing log files (keeping: {MAX_LOG_FILES})",
+    files.len()
+  );
+
+  for file in files.iter().rev().skip(MAX_LOG_FILES) {
+    debug!(
+      "Deleting old log file \"{}\"",
+      file.file_name().to_string_lossy()
+    );
+
+    fs::remove_file(file.path())?;
+  }
+
+  Ok(())
 }
 
 fn init_db_pool() -> Result<()> {
