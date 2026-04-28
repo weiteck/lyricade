@@ -2,16 +2,20 @@ use std::{collections::HashSet, path::PathBuf};
 
 use adw::prelude::*;
 use camino::Utf8PathBuf;
-use relm4::{adw::PreferencesWindow, gtk::EventControllerKey, prelude::*};
+use relm4::{
+  adw::PreferencesWindow,
+  gtk::{EventControllerKey, gdk, glib},
+  prelude::*,
+};
 use relm4_components::open_dialog::*;
-use tracing::{debug, trace, warn};
+use tracing::{debug, trace};
 
 use crate::{
   SETTINGS,
   library::Library,
   lyrics::LyricsType,
   settings::Settings,
-  ui::prefs::library_row::{LibraryRow, LibraryRowOutput},
+  ui::prefs::library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
   util::{self, now},
 };
 
@@ -23,13 +27,14 @@ pub struct PrefsModel {
   libraries: HashSet<Library>,
   library_rows: FactoryVecDeque<LibraryRow>,
 
-  editing_library: Option<DynamicIndex>,
+  editing_library_row: Option<DynamicIndex>,
 
   settings_initial: Settings,
   settings_current: Settings,
   settings_default: Settings,
 
-  file_dialog: Controller<OpenDialog>,
+  add_library_file_dialog: Controller<OpenDialog>,
+  edit_library_file_dialog: Controller<OpenDialog>,
 }
 
 #[derive(Debug)]
@@ -39,13 +44,17 @@ pub enum PrefsMsg {
   SaveSettings,
   UpdateSetting(ExposedSetting),
 
-  OpenFileDialogRequest,
-  OpenFileDialogResponse(PathBuf),
+  AddLibraryFileDialogRequest,
+  AddLibraryFileDialogResponse(PathBuf),
 
-  EditLibrary(DynamicIndex),
-  DeleteLibrary(DynamicIndex),
+  EditLibraryFileDialogRequest(DynamicIndex),
+  EditLibraryFileDialogResponse(PathBuf),
 
-  ShowToast(String),
+  DeleteLibraryRow(DynamicIndex),
+
+  ShowToast(String, bool),
+
+  CloseRequested,
 
   NoOp,
 }
@@ -84,13 +93,15 @@ impl SimpleComponent for PrefsModel {
   view! {
     prefs_window = adw::PreferencesWindow {
       set_title: Some("Preferences"),
+      set_search_enabled: false,
+      set_size_request: (500, 300),
       set_default_size: (600, 600),
 
 
       // Update and save settings on close
       connect_close_request[sender] => move |_| {
         sender.input(PrefsMsg::SaveSettings);
-        gtk::glib::Propagation::Proceed
+        glib::Propagation::Proceed
       },
 
       add = &adw::PreferencesPage {
@@ -301,7 +312,7 @@ impl SimpleComponent for PrefsModel {
 
         adw::PreferencesGroup {
           set_title: "Music Libraries",
-          set_description: Some("Add, remove or edit Music Libraries. A Music Library is just a path on which to search for audio files."),
+          set_description: Some("Add, remove or edit Music Libraries. A Music Library is a path to search for audio files."),
 
           #[local_ref]
           libraries_list_box -> gtk::ListBox {
@@ -316,7 +327,7 @@ impl SimpleComponent for PrefsModel {
               set_activatable: true,
               add_css_class: "button",
               set_activatable_widget: Some(&add_row_widget),
-              connect_activated => PrefsMsg::OpenFileDialogRequest,
+              connect_activated => PrefsMsg::AddLibraryFileDialogRequest,
 
               #[wrap(Some)]
               #[name = "add_row_widget"]
@@ -359,31 +370,29 @@ impl SimpleComponent for PrefsModel {
 
     let libraries = libraries.into_iter().collect::<HashSet<_>>();
 
-    let mut library_rows = FactoryVecDeque::builder()
-      .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
-      .forward(sender.input_sender(), |msg| match msg {
-        LibraryRowOutput::Delete(idx) => PrefsMsg::DeleteLibrary(idx),
-        LibraryRowOutput::Edit(idx) => PrefsMsg::EditLibrary(idx),
-      });
+    // Build library rows
+    let library_rows = build_library_rows(libraries.clone(), sender.clone());
 
-    {
-      let mut guard = library_rows.guard();
-      libraries.clone().into_iter().for_each(|lib| {
-        guard.push_back(lib);
+    // Create file dialogs
+    let file_dialog_settings = OpenDialogSettings {
+      folder_mode: true,
+      accept_label: "Use Folder".into(),
+      create_folders: false,
+      is_modal: true,
+      ..Default::default()
+    };
+    let add_library_file_dialog = OpenDialog::builder()
+      .transient_for_native(&root)
+      .launch(file_dialog_settings.clone())
+      .forward(sender.input_sender(), |resp| match resp {
+        OpenDialogResponse::Accept(path) => PrefsMsg::AddLibraryFileDialogResponse(path),
+        OpenDialogResponse::Cancel => PrefsMsg::NoOp,
       });
-    }
-
-    // Create file dialog
-    let mut file_dialog_settings = OpenDialogSettings::default();
-    file_dialog_settings.create_folders = false;
-    file_dialog_settings.folder_mode = true;
-    file_dialog_settings.is_modal = true;
-    file_dialog_settings.accept_label = "Use Folder".into();
-    let file_dialog = OpenDialog::builder()
+    let edit_library_file_dialog = OpenDialog::builder()
       .transient_for_native(&root)
       .launch(file_dialog_settings)
       .forward(sender.input_sender(), |resp| match resp {
-        OpenDialogResponse::Accept(path) => PrefsMsg::OpenFileDialogResponse(path),
+        OpenDialogResponse::Accept(path) => PrefsMsg::EditLibraryFileDialogResponse(path),
         OpenDialogResponse::Cancel => PrefsMsg::NoOp,
       });
 
@@ -392,11 +401,12 @@ impl SimpleComponent for PrefsModel {
       PrefsModel {
         libraries,
         library_rows,
-        editing_library: None,
+        editing_library_row: None,
         settings_initial: settings.clone(),
         settings_current: settings.clone(),
         settings_default: Settings::default(),
-        file_dialog,
+        add_library_file_dialog,
+        edit_library_file_dialog,
         root: root.clone(),
       }
     };
@@ -404,17 +414,17 @@ impl SimpleComponent for PrefsModel {
     let libraries_list_box = model.library_rows.widget();
     let widgets = view_output!();
 
-    // Handle key presses
+    // Esc, Ctrl-W key presses close the window
     let sender_handle = sender.clone();
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("Prefs key event: key {key} + {:?}", modifier);
-      if key == gtk::gdk::Key::Escape {
-        sender_handle
-          .output(PrefsOutput::Close)
-          .expect("PrefsOutput receiver dropped");
+      if key == gdk::Key::Escape
+        || (key.to_upper() == gdk::Key::W && modifier.contains(gdk::ModifierType::CONTROL_MASK))
+      {
+        sender_handle.input(PrefsMsg::CloseRequested);
       }
-      gtk::glib::Propagation::Proceed
+      glib::Propagation::Proceed
     });
     root.add_controller(controller);
 
@@ -492,72 +502,53 @@ impl SimpleComponent for PrefsModel {
         }
       },
 
-      PrefsMsg::OpenFileDialogRequest => {
-        debug!("Opening file dialog");
-        self.file_dialog.emit(OpenDialogMsg::Open);
+      PrefsMsg::AddLibraryFileDialogRequest => {
+        debug!("Opening add library file dialog");
+
+        self.add_library_file_dialog.emit(OpenDialogMsg::Open);
       }
 
-      // TODO: Use alert dialog for errors
-      PrefsMsg::OpenFileDialogResponse(path) => {
-        if let Some(idx) = &self.editing_library {
-          // Editing existing library path
-          let id = self
-            .library_rows
-            .iter()
-            .find(|&lr| lr.index == *idx)
-            .map(|lr| lr.library.id)
-            .expect("should have LibraryRow at this index");
+      PrefsMsg::AddLibraryFileDialogResponse(path) => {
+        debug!("Adding library path: {}", path.to_string_lossy());
 
-          if let Some(lib) = self.libraries.iter().find(|lib| lib.id == id).cloned()
-            && let Ok(path) = Utf8PathBuf::from_path_buf(path)
-          {
-            let mut lib = self.libraries.take(&lib).expect("should have this Library");
-            let path = path.to_string();
-            debug!("Updating path for {lib} to: {}", path);
-            lib.path = path;
-            lib
-              .write_to_db()
-              .call()
-              .expect("failed to update Library in database");
-
-            // Update list
-            let mut guard = self.library_rows.guard();
-            guard.remove(idx.current_index());
-            guard.push_back(lib.clone());
-            self.editing_library = None;
-
-            self.libraries.insert(lib);
-
-            sender.input(PrefsMsg::ShowToast("Library updated".into()));
-          }
-        } else {
-          // Adding a new library
-          debug!("Adding library path: {}", path.to_string_lossy());
-          if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
-            if self.libraries.iter().any(|lib| lib.path() == path) {
-              warn!("Library path \"{path}\" already exists");
-              sender.input(PrefsMsg::ShowToast("Library path already exists".into()));
-            } else {
-              let lib = Library::add(&path).expect("unable to add library");
+        if let Ok(path) = Utf8PathBuf::from_path_buf(path) {
+          match Library::add(&path) {
+            Ok(lib) => {
               self.library_rows.guard().push_back(lib.clone());
               self.libraries.insert(lib);
 
-              sender.input(PrefsMsg::ShowToast("Library added".into()));
+              sender.input(PrefsMsg::ShowToast("Library added".into(), false));
             }
+            Err(error) => sender.input(PrefsMsg::ShowToast(error.to_string(), true)),
           }
         }
       }
 
-      PrefsMsg::EditLibrary(idx) => {
-        debug!("EditLibrary called for item at index {idx:?}");
+      PrefsMsg::EditLibraryFileDialogRequest(idx) => {
+        debug!("Opening edit library file dialog");
 
-        self.editing_library = Some(idx);
+        self.editing_library_row = Some(idx);
+        self.edit_library_file_dialog.emit(OpenDialogMsg::Open);
+      }
 
-        sender.input(PrefsMsg::OpenFileDialogRequest);
+      PrefsMsg::EditLibraryFileDialogResponse(path) => {
+        debug!("Selected library path: {}", path.to_string_lossy());
+
+        if let Some(idx) = &self.editing_library_row
+          && let Some(lib_row) = self
+            .library_rows
+            .iter()
+            .find(|&lr| lr.index.current_index() == idx.current_index())
+          && let Ok(path) = Utf8PathBuf::from_path_buf(path)
+        {
+          lib_row.sender.input(LibraryRowMsg::UpdatePath(path));
+        }
+
+        self.editing_library_row = None;
       }
 
       // TODO: Show toast with 'undo' button
-      PrefsMsg::DeleteLibrary(idx) => {
+      PrefsMsg::DeleteLibraryRow(idx) => {
         debug!("DeleteLibrary called for item at index {idx:?}");
 
         if let Some(id) = self
@@ -566,24 +557,56 @@ impl SimpleComponent for PrefsModel {
           .find(|&lr| lr.index == idx)
           .map(|lr| lr.library.id)
         {
-          if let Some(lib) = self.libraries.iter().find(|lib| lib.id == id) {
-            lib.remove().expect("failed to delete {lib}");
-            debug!("Deleted {lib}");
-
-            self.libraries.retain(|lib| lib.id != id);
-          }
+          self.libraries.retain(|lib| lib.id != id);
         }
 
         self.library_rows.guard().remove(idx.current_index());
       }
 
-      PrefsMsg::ShowToast(msg) => {
+      PrefsMsg::ShowToast(msg, is_error) => {
         debug!("Emit toast notification: \"{}\"", &msg);
-        let toast = adw::Toast::builder().title(msg).timeout(3).build();
+
+        // Add error styling
+        // Note: Unicode symbol may not be visible in IDE
+        let (msg, timeout) = if is_error {
+          (format!("<span foreground='#e01b24'>⚠</span> {msg}"), 5)
+        } else {
+          (msg, 3)
+        };
+
+        let toast = adw::Toast::builder().title(msg).timeout(timeout).build();
         self.root.add_toast(toast);
+      }
+
+      PrefsMsg::CloseRequested => {
+        sender
+          .output(PrefsOutput::Close)
+          .expect("PrefsOutput receiver dropped");
       }
 
       PrefsMsg::NoOp => {}
     }
   }
+}
+
+fn build_library_rows(
+  libs: impl IntoIterator<Item = Library>,
+  sender: ComponentSender<PrefsModel>,
+) -> FactoryVecDeque<LibraryRow> {
+  let mut library_rows = FactoryVecDeque::builder()
+    .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
+    .forward(sender.input_sender(), |msg| match msg {
+      LibraryRowOutput::Delete(idx) => PrefsMsg::DeleteLibraryRow(idx),
+      LibraryRowOutput::FileDialogRequest(idx) => PrefsMsg::EditLibraryFileDialogRequest(idx),
+      LibraryRowOutput::ShowToast(msg, is_error) => PrefsMsg::ShowToast(msg, is_error),
+    });
+
+  {
+    let mut guard = library_rows.guard();
+    libs.into_iter().for_each(|lib| {
+      guard.push_back(lib);
+    });
+  }
+
+  library_rows
 }

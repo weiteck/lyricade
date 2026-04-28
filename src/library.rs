@@ -6,7 +6,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use chrono::NaiveDateTime;
 use diesel::{dsl::insert_into, prelude::*};
 
-use tracing::{error, info, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
 use crate::{
@@ -23,6 +23,7 @@ use crate::{
   Debug, Default, Clone, Eq, Queryable, Selectable, Identifiable, Insertable, AsChangeset,
 )]
 #[diesel(table_name = crate::schema::libraries)]
+#[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
 pub struct Library {
   pub id: i32,
@@ -82,10 +83,8 @@ impl Library {
 
     // Check if path is a directory
     if !path.is_dir() {
-      return Err(anyhow!(
-        "Library path \"{}\" is not a valid directory",
-        &path
-      ));
+      error!("Library path \"{}\" is not a valid directory", &path);
+      return Err(anyhow!("Invalid path"));
     }
 
     let existing_libraries = libraries::table.load::<Library>(&mut conn)?;
@@ -95,10 +94,8 @@ impl Library {
       .iter()
       .find(|&lib| lib.path().as_path() == path)
     {
-      return Err(anyhow!(
-        "Library path already exists as {}",
-        existing_library
-      ));
+      error!("Library path already exists as {}", existing_library);
+      return Err(anyhow!("A library with this path already exists"));
     }
 
     // Check if this path is a subdirectory of an existing `Library`
@@ -106,10 +103,11 @@ impl Library {
       .iter()
       .find(|lib| path.starts_with(&lib.path))
     {
-      return Err(anyhow!(
-        "Path cannot be a subdirectory an existing Library. Conflicts with {}",
+      error!(
+        "Path cannot be a subdirectory of an existing Library. Conflicts with {}",
         existing_library
-      ));
+      );
+      return Err(anyhow!("Cannot be a subdirectory of an existing Library"));
     }
 
     // Check if this path is a parent directory of an existing `Library`
@@ -117,10 +115,11 @@ impl Library {
       .iter()
       .find(|lib| lib.path().starts_with(path))
     {
-      return Err(anyhow!(
+      error!(
         "Path cannot be a parent directory of an existing Library. Conflicts with {}",
         existing_library
-      ));
+      );
+      return Err(anyhow!("Cannot be a parent directory an existing Library"));
     }
 
     let now = now();
@@ -420,18 +419,63 @@ impl Library {
     Ok(())
   }
 
-  /// The `Library`'s short name.
+  /// Get the `Library`'s name. Returns the `default_name` if none is set.
   pub fn name(&self) -> String {
     self.name.clone().unwrap_or_else(|| self.default_name())
   }
 
-  fn default_name(&self) -> String {
+  /// The `Library`'s directory name.
+  pub fn default_name(&self) -> String {
     self.path().file_name().unwrap_or("(invalid)").into()
   }
 
-  /// The `Library`'s path.
+  /// Get the `Library`'s path.
   pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
+  }
+
+  /// Set the `Library`'s path.
+  pub fn set_path(&mut self, new_path: &Utf8Path) -> Result<()> {
+    let mut conn = DB_POOL.get()?;
+
+    let existing_libraries = libraries::table.load::<Library>(&mut conn)?;
+
+    // Check for existing `Library` with this path
+    if let Some(existing_library) = existing_libraries
+      .iter()
+      .find(|&lib| lib.id != self.id && lib.path().as_path() == new_path)
+    {
+      error!("Path conflicts with existing Library: {}", existing_library);
+      return Err(anyhow!("A library with this path already exists"));
+    }
+
+    // Check if this path is a subdirectory of an existing `Library`
+    if let Some(existing_library) = existing_libraries
+      .iter()
+      .find(|&lib| lib.id != self.id && new_path.starts_with(&lib.path))
+    {
+      error!(
+        "Path cannot be a subdirectory of an existing Library. Conflicts with {}",
+        existing_library
+      );
+      return Err(anyhow!("Cannot be a subdirectory of an existing Library"));
+    }
+
+    // Check if this path is a parent directory of an existing `Library`
+    if let Some(existing_library) = existing_libraries
+      .iter()
+      .find(|&lib| lib.id != self.id && lib.path().starts_with(new_path))
+    {
+      error!(
+        "Path cannot be a parent directory of an existing Library. Conflicts with {}",
+        existing_library
+      );
+      return Err(anyhow!("Cannot be a parent directory an existing Library"));
+    }
+
+    self.path = new_path.to_string();
+
+    Ok(())
   }
 
   /// All audio file paths within this `Library`'s path.
@@ -477,7 +521,7 @@ impl Library {
       .set(&*self)
       .execute(&mut conn)?;
 
-    trace!("Updated database entry for {}", &self);
+    debug!("Updated database entry for {}", &self);
 
     Ok(())
   }
