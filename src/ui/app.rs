@@ -19,7 +19,7 @@ use crate::ui::tracks_table::{
 };
 use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::{Result, library::Library, track::Track};
-use crate::{SETTINGS, util};
+use crate::{SETTINGS, init_app, util};
 
 struct AppModel {
   sender: AsyncComponentSender<Self>,
@@ -515,6 +515,9 @@ impl AsyncComponent for AppModel {
     root: Self::Root,
     sender: relm4::AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
+    // Prepare logging, database and settings
+    init_app().await.expect("Failed to initialise app");
+
     let tracks_table_widget =
       TracksTableModel::builder()
         .launch(())
@@ -1104,8 +1107,11 @@ impl AsyncComponent for AppModel {
         debug!("Persisted window size {width}x{height} to Settings");
         let _ = guard.save();
 
-        let app = relm4::main_application();
-        app.quit();
+        // TODO: Abort/shutdown background tasks before quitting (req rate logger)
+
+        gtk::glib::idle_add_local_once(move || {
+          relm4::main_adw_application().quit();
+        });
       }
     }
   }

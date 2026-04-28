@@ -1,11 +1,9 @@
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-use lyricade::{init_app, ui};
+use lyricade::ui;
 use mimalloc::MiMalloc;
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-  init_app().await?;
+fn main() -> anyhow::Result<()> {
   ui::app::start()
 }
