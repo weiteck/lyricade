@@ -825,11 +825,12 @@ impl AsyncComponent for AppModel {
             }
 
             sender_handle.input(AppMsg::LoadLibraries);
-            sender_handle.input(AppMsg::BuildTracksTable);
             sender_handle.input(AppMsg::HideSpinner);
           });
         } else if libs_have_been_removed {
           sender.input(AppMsg::LoadLibraries);
+        } else {
+          // Refresh table if no changes to libraries in case datetime format changed
           sender.input(AppMsg::BuildTracksTable);
         }
       }
