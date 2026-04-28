@@ -10,6 +10,7 @@ use std::{
 use anyhow::anyhow;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
+use tokio::task::AbortHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -19,6 +20,13 @@ use crate::{
   track::Track,
   util::now,
 };
+
+#[derive(Debug, Clone)]
+pub struct LrcLibLyricsResponse {
+  pub instrumental: bool,
+  pub plain_lyrics: Option<Lyrics>,
+  pub synced_lyrics: Option<Lyrics>,
+}
 
 #[derive(Debug, Clone, Deserialize)]
 #[allow(unused)]
@@ -49,13 +57,7 @@ pub struct LrcLibClient {
   limiter: Arc<leaky_bucket::RateLimiter>,
   semaphore: Arc<tokio::sync::Semaphore>,
   completed_requests: Arc<AtomicUsize>,
-}
-
-#[derive(Debug, Clone)]
-pub struct LrcLibLyricsResponse {
-  pub instrumental: bool,
-  pub plain_lyrics: Option<Lyrics>,
-  pub synced_lyrics: Option<Lyrics>,
+  req_rate_logger_abort_handle: AbortHandle,
 }
 
 impl LrcLibClient {
@@ -82,12 +84,21 @@ impl LrcLibClient {
         .build(),
     );
 
+    let completed_requests = Arc::new(AtomicUsize::new(0));
+
+    let req_rate_logger_abort_handle = spawn_request_rate_logger(Arc::clone(&completed_requests));
+
     Self {
       http_client,
       limiter,
       semaphore: Arc::new(tokio::sync::Semaphore::new(CONNECTION_LIMIT)),
-      completed_requests: Arc::new(AtomicUsize::new(0)),
+      completed_requests,
+      req_rate_logger_abort_handle,
     }
+  }
+
+  pub fn default() -> Self {
+    Self::new()
   }
 
   pub async fn lyrics_from_track_signature(
@@ -192,29 +203,33 @@ impl LrcLibClient {
     Err(anyhow!("{error}"))
   }
 
-  /// Spawn background worker to log HTTP request rate.
-  pub async fn spawn_request_rate_logger(&self) {
-    let counter = Arc::clone(&self.completed_requests);
-
-    tokio::spawn(async move {
-      let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
-      let mut last_count = 0;
-
-      loop {
-        interval.tick().await;
-        trace!("Tick: LrcLibClient request_rate_logger");
-
-        let count = counter.load(std::sync::atomic::Ordering::Relaxed);
-        let delta = count.saturating_sub(last_count);
-        last_count = count;
-
-        if delta > 0 {
-          debug!(
-            "Current completed request rate: {} req/sec ({} total requests)",
-            delta, count
-          );
-        }
-      }
-    });
+  pub fn shutdown_request_rate_logger(&self) {
+    self.req_rate_logger_abort_handle.abort();
+    trace!("Aborted LrcLibClient request_rate_logger task");
   }
+}
+
+/// Spawn background worker to log HTTP request rate.
+fn spawn_request_rate_logger(counter: Arc<AtomicUsize>) -> AbortHandle {
+  tokio::spawn(async move {
+    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+    let mut last_count = 0;
+
+    loop {
+      interval.tick().await;
+      trace!("Tick: LrcLibClient request_rate_logger");
+
+      let count = counter.load(std::sync::atomic::Ordering::Relaxed);
+      let delta = count.saturating_sub(last_count);
+      last_count = count;
+
+      if delta > 0 {
+        debug!(
+          "Current completed request rate: {} req/sec ({} total requests)",
+          delta, count
+        );
+      }
+    }
+  })
+  .abort_handle()
 }

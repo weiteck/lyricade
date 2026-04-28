@@ -18,8 +18,8 @@ use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
 use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
+use crate::{LRCLIB_CLIENT, SETTINGS, init_app, util};
 use crate::{Result, library::Library, track::Track};
-use crate::{SETTINGS, init_app, util};
 
 struct AppModel {
   sender: AsyncComponentSender<Self>,
@@ -929,7 +929,6 @@ impl AsyncComponent for AppModel {
           }
 
           sender_handle.input(AppMsg::LoadLibraries);
-          sender_handle.input(AppMsg::BuildTracksTable);
           sender_handle.input(AppMsg::HideSpinner);
         });
       }
@@ -1100,6 +1099,8 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::Quit => {
+        LRCLIB_CLIENT.shutdown_request_rate_logger();
+
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
         let mut guard = SETTINGS.write().expect("settings lock is poisoned");
@@ -1107,8 +1108,6 @@ impl AsyncComponent for AppModel {
         guard.window_height = height;
         debug!("Persisted window size {width}x{height} to Settings");
         let _ = guard.save();
-
-        // TODO: Abort/shutdown background tasks before quitting (req rate logger)
 
         gtk::glib::idle_add_local_once(move || {
           relm4::main_adw_application().quit();

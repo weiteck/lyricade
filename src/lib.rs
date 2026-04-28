@@ -80,9 +80,6 @@ pub async fn init_app() -> Result<()> {
 
   init_db_pool()?;
 
-  // Spawn background worker to log HTTP request rate
-  LRCLIB_CLIENT.spawn_request_rate_logger().await;
-
   let pkg_name_and_version = format!(
     ":::::::::::: {}  v{} ::::::::::::",
     env!("CARGO_PKG_NAME"),
