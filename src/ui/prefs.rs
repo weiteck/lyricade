@@ -105,7 +105,8 @@ impl SimpleComponent for PrefsModel {
       },
 
       add = &adw::PreferencesPage {
-        set_title: "General",
+        set_title: "_General",
+        set_use_underline: true,
         set_icon_name: Some("preferences-system-symbolic"),
 
         adw::PreferencesGroup {
@@ -116,7 +117,8 @@ impl SimpleComponent for PrefsModel {
             add_css_class: "boxed-list",
 
             adw::ActionRow {
-              set_title: "Synchronous",
+              set_title: "_Synchronous",
+              set_use_underline: true,
               set_subtitle: "Prefer LRC format lyrics",
               set_selectable: false,
 
@@ -134,7 +136,8 @@ impl SimpleComponent for PrefsModel {
             },
 
             adw::ActionRow {
-              set_title: "Plain",
+              set_title: "_Plain",
+              set_use_underline: true,
               set_subtitle: "Prefer TXT format lyrics",
               set_selectable: false,
 
@@ -159,7 +162,8 @@ impl SimpleComponent for PrefsModel {
           set_description: Some("How audio and lyrics files are scanned and managed."),
 
           adw::SwitchRow {
-            set_title: "Ignore Unchanged",
+            set_title: "_Ignore Unchanged",
+            set_use_underline: true,
             set_subtitle: "Only scan new or modified files",
             #[watch]
             set_active: model.settings_current.scan_new_files_only,
@@ -169,7 +173,8 @@ impl SimpleComponent for PrefsModel {
           },
 
           adw::SwitchRow {
-            set_title: "Upgrade Lyrics Tag From Sidecar",
+            set_title: "_Upgrade Lyrics Tag From Sidecar",
+            set_use_underline: true,
             set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format exists",
             #[watch]
             set_active: model.settings_current.upgrade_lyrics_tag_on_scan,
@@ -179,7 +184,8 @@ impl SimpleComponent for PrefsModel {
           },
 
           adw::ComboRow {
-            set_title: "Clean Up Sidecar Files",
+            set_title: "_Clean Up Sidecar Files",
+            set_use_underline: true,
             #[watch]
             set_subtitle: if model.settings_current.delete_sidecar_files_on_scan {
               "All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
@@ -218,7 +224,8 @@ impl SimpleComponent for PrefsModel {
           set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
 
           adw::SwitchRow {
-            set_title: "Write to Lyrics Tag",
+            set_title: "Write to Lyrics _Tag",
+            set_use_underline: true,
             set_subtitle: "Update audio file metadata with the found lyrics",
             #[watch]
             set_active: model.settings_current.update_lyrics_tag_on_fetch,
@@ -228,7 +235,8 @@ impl SimpleComponent for PrefsModel {
           },
 
           adw::SwitchRow {
-            set_title: "Write to Sidecar File",
+            set_title: "Write to Sidecar _File",
+            set_use_underline: true,
             set_subtitle: "Save a LRC or TXT file with the found lyrics alongside the audio file",
             #[watch]
             set_active: model.settings_current.save_sidecar_file_on_fetch,
@@ -247,7 +255,8 @@ impl SimpleComponent for PrefsModel {
             add_css_class: "boxed-list",
 
             adw::ActionRow {
-              set_title: "Simple",
+              set_title: "Simpl_e",
+              set_use_underline: true,
               set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_simple1, example_datetime_simple2),
               set_selectable: false,
 
@@ -263,7 +272,8 @@ impl SimpleComponent for PrefsModel {
             },
 
             adw::ActionRow {
-              set_title: "Accurate",
+              set_title: "_Accurate",
+              set_use_underline: true,
               set_subtitle: &format!("Examples: “{}”, “{}”", example_datetime_accurate1, example_datetime_accurate2),
               set_selectable: false,
 
@@ -306,7 +316,8 @@ impl SimpleComponent for PrefsModel {
       add = &adw::PreferencesPage {
         set_name: Some("libraries"),
         #[watch]
-        set_title: &format!("Music Libraries ({})", model.libraries.len()),
+        set_title: &format!("_Music Libraries ({})", model.libraries.len()),
+        set_use_underline: true,
         set_visible: true,
         set_icon_name: Some("folder-music-symbolic"),
 
@@ -321,7 +332,6 @@ impl SimpleComponent for PrefsModel {
 
             // Add library button
             adw::ActionRow {
-              set_title: "Add Music Library",
               set_halign: gtk::Align::Fill,
               set_hexpand: true,
               set_activatable: true,
@@ -340,7 +350,8 @@ impl SimpleComponent for PrefsModel {
                   set_icon_name: Some("list-add-symbolic"),
                 },
                 gtk::Label {
-                  set_label: "Add Music Library",
+                  set_label: "_Add Music Library",
+                  set_use_underline: true,
                   add_css_class: "title",
                 }
               },

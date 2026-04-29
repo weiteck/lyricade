@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 
-use ::futures::stream::StreamExt;
+use futures::stream::StreamExt;
 use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
@@ -85,6 +85,7 @@ enum AppMsg {
 
   ShowTrackDetailsSidebar,
   PinTrackDetailsSidebar(bool),
+  TogglePinTrackDetailsSidebar,
 
   ShowSearch(bool),
   SearchQueryChanged(String),
@@ -158,7 +159,8 @@ impl AsyncComponent for AppModel {
 
       // Cancel button shown if lyrics fetching in progress
       pack_end = &gtk::Button {
-        set_label: "Cancel",
+        set_label: "_Cancel",
+        set_use_underline: true,
         set_tooltip_text: Some("Cancel Get Lyrics"),
         #[watch]
         set_visible: model.is_fetching_lyrics,
@@ -167,7 +169,8 @@ impl AsyncComponent for AppModel {
 
       // Lyrics fetch button shown if fetching not in progress
       pack_end = &gtk::Button {
-        set_label: "Get Lyrics",
+        set_label: "_Get Lyrics",
+        set_use_underline: true,
         set_tooltip_text: Some("Get Lyrics from lrclib.net"),
         #[watch]
         set_visible: !model.is_fetching_lyrics,
@@ -220,7 +223,8 @@ impl AsyncComponent for AppModel {
             set_margin_bottom: 4,
 
             gtk::ToggleButton {
-              set_label: "no lyrics",
+              set_label: "no _lyrics",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -233,7 +237,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "no lyrics tag",
+              set_label: "no lyrics _tag",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -246,7 +251,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "lrc file",
+              set_label: "l_rc file",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -259,7 +265,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "txt file",
+              set_label: "t_xt file",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -272,7 +279,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "not sync",
+              set_label: "not _sync",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -285,7 +293,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "never checked",
+              set_label: "never _checked",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -298,7 +307,8 @@ impl AsyncComponent for AppModel {
             },
 
             gtk::ToggleButton {
-              set_label: "not instrumental",
+              set_label: "not _instrumental",
+              set_use_underline: true,
               set_hexpand: false,
               set_margin_end: 4,
               set_css_classes: &["pill", "caption"],
@@ -374,7 +384,8 @@ impl AsyncComponent for AppModel {
                       set_width_request: 300,
                       #[wrap(Some)]
                       set_child = &gtk::Button {
-                        set_label: "Add Music Library…",
+                        set_label: "_Add Music Library…",
+                        set_use_underline: true,
                         set_css_classes: &["pill", "suggested-action"],
                         connect_clicked => AppMsg::ShowPrefsWindow,
                       },
@@ -494,17 +505,17 @@ impl AsyncComponent for AppModel {
 
   menu! {
     main_menu: {
-      "Refresh Libraries" => ActionRefreshLibraries,
-      "Fetch Lyrics" => ActionFetchLyrics,
+      "_Refresh Libraries" => ActionRefreshLibraries,
+      "_Get Lyrics" => ActionFetchLyrics,
       section! {
-        "Preferences" => ActionPrefs,
+        "_Preferences" => ActionPrefs,
         &format!("About {}", APP_NAME_PRETTY) => ActionAbout,
         },
       // TODO: Hide in release build
       section! {
         "Debug" {
-          "Test Toast" => ActionTestToast,
-          "Test Spinner" => ActionTestSpinner,
+          "Test _Toast" => ActionTestToast,
+          "Test _Spinner" => ActionTestSpinner,
         }
       }
     }
@@ -595,7 +606,7 @@ impl AsyncComponent for AppModel {
 
     // Main menu actions
     relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
-    let mut actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
+    let mut menu_actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
 
     relm4::new_stateless_action!(
       ActionRefreshLibraries,
@@ -608,7 +619,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::RefreshLibraries);
       })
     };
-    actions_group.add_action(action_refresh_libraries);
+    menu_actions_group.add_action(action_refresh_libraries);
 
     relm4::new_stateless_action!(ActionFetchLyrics, MainMenuActionGroup, "fetch_lyrics");
     let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
@@ -617,7 +628,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::FetchLyrics);
       })
     };
-    actions_group.add_action(action_fetch_lyrics);
+    menu_actions_group.add_action(action_fetch_lyrics);
 
     relm4::new_stateless_action!(ActionPrefs, MainMenuActionGroup, "prefs");
     let action_prefs: RelmAction<ActionPrefs> = {
@@ -626,7 +637,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ShowPrefsWindow);
       })
     };
-    actions_group.add_action(action_prefs);
+    menu_actions_group.add_action(action_prefs);
 
     relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
     let action_about: RelmAction<ActionAbout> = {
@@ -635,7 +646,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ShowAboutWindow);
       })
     };
-    actions_group.add_action(action_about);
+    menu_actions_group.add_action(action_about);
 
     relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
     let action_test_toast: RelmAction<ActionTestToast> = {
@@ -644,7 +655,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ShowToast("Testing toast notification".into()));
       })
     };
-    actions_group.add_action(action_test_toast);
+    menu_actions_group.add_action(action_test_toast);
 
     relm4::new_stateless_action!(ActionTestSpinner, MainMenuActionGroup, "test_spinner");
     let action_test_spinner: RelmAction<ActionTestSpinner> = {
@@ -653,35 +664,49 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ShowSpinner("I'm spinning around…".into()));
       })
     };
-    actions_group.add_action(action_test_spinner);
+    menu_actions_group.add_action(action_test_spinner);
 
     // Keyboard actions
-    relm4::new_stateless_action!(ActionQuit, MainMenuActionGroup, "quit");
+    relm4::new_action_group!(pub WindowActionGroup, "window_action_group");
+    let mut window_actions_group = RelmActionGroup::<WindowActionGroup>::new();
+
+    relm4::new_stateless_action!(ActionQuit, WindowActionGroup, "quit");
     let action_quit: RelmAction<ActionQuit> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
         sender.input(AppMsg::Quit);
       })
     };
-    actions_group.add_action(action_quit);
+    window_actions_group.add_action(action_quit);
 
-    relm4::new_stateless_action!(ActionSearch, MainMenuActionGroup, "search");
+    relm4::new_stateless_action!(ActionSearch, WindowActionGroup, "search");
     let action_search: RelmAction<ActionSearch> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
         sender.input(AppMsg::ShowSearch(true));
       })
     };
-    actions_group.add_action(action_search);
+    window_actions_group.add_action(action_search);
+
+    relm4::new_stateless_action!(ActionPinSidebar, WindowActionGroup, "pin_sidebar");
+    let pin_sidebar: RelmAction<ActionPinSidebar> = {
+      let sender = sender.clone();
+      RelmAction::new_stateless(move |_| {
+        sender.input(AppMsg::TogglePinTrackDetailsSidebar);
+      })
+    };
+    window_actions_group.add_action(pin_sidebar);
 
     // Keyboard shortcuts
     let app = relm4::main_adw_application();
     app.set_accelerators_for_action::<ActionPrefs>(&["<primary>comma"]);
     app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
     app.set_accelerators_for_action::<ActionSearch>(&["<primary>f"]);
+    app.set_accelerators_for_action::<ActionPinSidebar>(&["F9"]);
 
     // Register menu/keyboard actions for main window
-    actions_group.register_for_widget(&widgets.main_window);
+    menu_actions_group.register_for_widget(&widgets.main_window);
+    window_actions_group.register_for_widget(&widgets.main_window);
 
     AsyncComponentParts { model, widgets }
   }
@@ -705,7 +730,7 @@ impl AsyncComponent for AppModel {
 
         let total = self.tracks.len();
         let completed = Arc::new(AtomicUsize::new(0));
-        let stream = ::futures::stream::iter(self.tracks.clone());
+        let stream = futures::stream::iter(self.tracks.clone());
 
         // Batch process tracks and update progress
         let jh = tokio::spawn(async move {
@@ -1027,6 +1052,12 @@ impl AsyncComponent for AppModel {
         if active {
           self.rebuild_sidebar_widget();
         };
+      }
+
+      AppMsg::TogglePinTrackDetailsSidebar => {
+        debug!("Toggling pin sidebar");
+
+        sender.input(AppMsg::PinTrackDetailsSidebar(!self.is_sidebar_pinned));
       }
 
       AppMsg::UpdateSelection(set) => {
