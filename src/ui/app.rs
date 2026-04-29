@@ -152,6 +152,8 @@ impl AsyncComponent for AppModel {
         set_icon_name: "sidebar-show-right-symbolic",
         #[watch]
         set_sensitive: !model.no_tracks,
+        #[watch]
+        set_active: model.is_sidebar_pinned,
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::PinTrackDetailsSidebar(btn.is_active()));
         },
@@ -162,6 +164,7 @@ impl AsyncComponent for AppModel {
         set_label: "_Cancel",
         set_use_underline: true,
         set_tooltip_text: Some("Cancel Get Lyrics"),
+        set_margin_end: 12,
         #[watch]
         set_visible: model.is_fetching_lyrics,
         connect_clicked => AppMsg::CancelFetchLyrics,
@@ -172,6 +175,7 @@ impl AsyncComponent for AppModel {
         set_label: "_Get Lyrics",
         set_use_underline: true,
         set_tooltip_text: Some("Get Lyrics from lrclib.net"),
+        set_margin_end: 12,
         #[watch]
         set_visible: !model.is_fetching_lyrics,
         #[watch]
@@ -509,11 +513,11 @@ impl AsyncComponent for AppModel {
       "_Get Lyrics" => ActionFetchLyrics,
       section! {
         "_Preferences" => ActionPrefs,
-        &format!("About {}", APP_NAME_PRETTY) => ActionAbout,
+        &format!("_About {}", APP_NAME_PRETTY) => ActionAbout,
         },
       // TODO: Hide in release build
       section! {
-        "Debug" {
+        "_Debug" {
           "Test _Toast" => ActionTestToast,
           "Test _Spinner" => ActionTestSpinner,
         }
