@@ -9,6 +9,7 @@ use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::prelude::*;
 use relm4::*;
+use tokio::task::AbortHandle;
 use tracing::{debug, error, trace};
 
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
@@ -18,8 +19,8 @@ use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
 };
 use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::{LRCLIB_CLIENT, SETTINGS, init_app, util};
 use crate::{Result, library::Library, track::Track};
+use crate::{SETTINGS, init_app, util};
 
 struct AppModel {
   sender: AsyncComponentSender<Self>,
@@ -50,7 +51,7 @@ struct AppModel {
   active_search_filters: HashSet<TracksTableFilter>,
 
   is_fetching_lyrics: bool,
-  fetch_lyrics_abort_handle: Option<tokio::task::AbortHandle>,
+  fetch_lyrics_abort_handle: Option<AbortHandle>,
 
   /// Name of the task being tracked.
   progress_task: Option<String>,
@@ -1134,8 +1135,6 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::Quit => {
-        LRCLIB_CLIENT.shutdown_request_rate_logger();
-
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
         let mut guard = SETTINGS.write().expect("settings lock is poisoned");

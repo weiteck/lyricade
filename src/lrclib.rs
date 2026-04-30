@@ -3,14 +3,17 @@ static API_URL_GET_LYRICS_FROM_TRACK_SIGNATURE: LazyLock<String> =
   LazyLock::new(|| format!("{}/get", API_BASE_URL));
 
 use std::{
-  sync::{Arc, LazyLock, atomic::AtomicUsize},
+  sync::{
+    Arc, LazyLock,
+    atomic::{self, AtomicUsize},
+  },
   time::Duration,
 };
 
 use anyhow::anyhow;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
-use tokio::task::AbortHandle;
+use tokio::{sync::Semaphore, task::AbortHandle};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -55,9 +58,20 @@ enum ApiResponse {
 pub struct LrcLibClient {
   http_client: reqwest::Client,
   limiter: Arc<leaky_bucket::RateLimiter>,
-  semaphore: Arc<tokio::sync::Semaphore>,
+  semaphore: Arc<Semaphore>,
   completed_requests: Arc<AtomicUsize>,
-  req_rate_logger_abort_handle: AbortHandle,
+  requests_per_second: Arc<AtomicUsize>,
+  req_rate_logger_abort_handle: Option<AbortHandle>,
+}
+
+impl Drop for LrcLibClient {
+  fn drop(&mut self) {
+    self
+      .req_rate_logger_abort_handle
+      .as_ref()
+      .inspect(|&ah| ah.abort());
+    trace!("Shutdown req_rate_logger task");
+  }
 }
 
 impl LrcLibClient {
@@ -84,17 +98,18 @@ impl LrcLibClient {
         .build(),
     );
 
-    let completed_requests = Arc::new(AtomicUsize::new(0));
-
-    let req_rate_logger_abort_handle = spawn_request_rate_logger(Arc::clone(&completed_requests));
-
-    Self {
+    let mut lrclib_client = Self {
       http_client,
       limiter,
-      semaphore: Arc::new(tokio::sync::Semaphore::new(CONNECTION_LIMIT)),
-      completed_requests,
-      req_rate_logger_abort_handle,
-    }
+      semaphore: Arc::new(Semaphore::new(CONNECTION_LIMIT)),
+      completed_requests: Arc::new(AtomicUsize::new(0)),
+      requests_per_second: Arc::new(AtomicUsize::new(0)),
+      req_rate_logger_abort_handle: None,
+    };
+
+    lrclib_client.spawn_request_rate_logger();
+
+    lrclib_client
   }
 
   pub fn default() -> Self {
@@ -146,6 +161,11 @@ impl LrcLibClient {
       self
         .completed_requests
         .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+
+      debug!(
+        "LrcLibClient request rate: {} req/sec",
+        self.requests_per_second.load(atomic::Ordering::Relaxed)
+      );
 
       if response.status() == StatusCode::TOO_MANY_REQUESTS && attempts < 5 {
         // Retry in 1s
@@ -203,33 +223,31 @@ impl LrcLibClient {
     Err(anyhow!("{error}"))
   }
 
-  pub fn shutdown_request_rate_logger(&self) {
-    self.req_rate_logger_abort_handle.abort();
-    trace!("Aborted LrcLibClient request_rate_logger task");
+  pub fn current_req_per_sec(&self) -> usize {
+    self.requests_per_second.load(atomic::Ordering::Relaxed)
   }
-}
 
-/// Spawn background worker to log HTTP request rate.
-fn spawn_request_rate_logger(counter: Arc<AtomicUsize>) -> AbortHandle {
-  tokio::spawn(async move {
-    let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
-    let mut last_count = 0;
+  /// Spawn background worker to log HTTP request rate.
+  fn spawn_request_rate_logger(&mut self) {
+    let counter = Arc::clone(&self.completed_requests);
+    let req_per_sec = Arc::clone(&self.requests_per_second);
 
-    loop {
-      interval.tick().await;
-      trace!("Tick: LrcLibClient request_rate_logger");
+    let jh = tokio::spawn(async move {
+      let mut interval = tokio::time::interval(tokio::time::Duration::from_secs(1));
+      let mut last_count = 0;
 
-      let count = counter.load(std::sync::atomic::Ordering::Relaxed);
-      let delta = count.saturating_sub(last_count);
-      last_count = count;
+      loop {
+        interval.tick().await;
+        trace!("Tick: LrcLibClient request_rate_logger");
 
-      if delta > 0 {
-        debug!(
-          "Current completed request rate: {} req/sec ({} total requests)",
-          delta, count
-        );
+        let count = counter.load(atomic::Ordering::Relaxed);
+        let delta = count.saturating_sub(last_count);
+        last_count = count;
+
+        req_per_sec.store(delta, atomic::Ordering::Relaxed);
       }
-    }
-  })
-  .abort_handle()
+    });
+
+    self.req_rate_logger_abort_handle = Some(jh.abort_handle());
+  }
 }
