@@ -26,6 +26,7 @@ struct AppModel {
   sender: AsyncComponentSender<Self>,
   libraries: Vec<Library>,
   tracks: Vec<Track>,
+  track_stats: TrackStats,
 
   tracks_table_widget: Controller<TracksTableModel>,
   prefs_widget: Option<Controller<PrefsModel>>,
@@ -37,6 +38,7 @@ struct AppModel {
   no_tracks: bool,
   track_count: u32,
   filtered_track_count: Option<u32>,
+  filtered_track_ids: HashSet<i32>,
 
   selection_state: SelectionState,
   last_selection_state: SelectionState,
@@ -92,8 +94,7 @@ enum AppMsg {
   SearchQueryChanged(String),
   SetSearchFilter((TracksTableFilter, bool)),
   UpdateSelection(HashSet<i32>),
-  UpdateFilteredTrackCount(u32),
-
+  UpdateFiltered(HashSet<i32>),
   ProgressStart(String),
   ProgressUpdate(ProgressUpdate),
   ProgressComplete,
@@ -384,7 +385,6 @@ impl AsyncComponent for AppModel {
                     adw::StatusPage {
                       set_title: &format!("Welcome to {}", &APP_NAME_PRETTY),
                       set_description: Some("Add a Music Library to get started"),
-                      // set_icon_name: Some("media-playback-start-symbolic"),
                       set_icon_name: Some("Lyricade-symbolic"),
                       set_width_request: 300,
                       #[wrap(Some)]
@@ -479,22 +479,78 @@ impl AsyncComponent for AppModel {
                         }
                       },
 
-                      // Track count
+                      // Right-side of status bar
                       gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
-                        set_spacing: 12,
+                        set_spacing: 24,
 
+                        // Track count
                         gtk::Label {
                           add_css_class: "caption",
                           #[watch]
                           set_label: &format!(
-                            "{}{} Tracks",
-                            model.filtered_track_count.map(|n| format!("Showing {n} / ")).unwrap_or_default(),
+                            "Tracks: {}{}",
+                            model.filtered_track_count.map(|n| format!("{n}/")).unwrap_or_default(),
                             model.track_count
                           ),
+                        },
+
+                        // TODO: Put stats in 'track count' popover, and only compute stats on reveal
+                        // Track stats
+                        gtk::Box {
+                          set_orientation: gtk::Orientation::Horizontal,
+                          set_halign: gtk::Align::End,
+                          set_valign: gtk::Align::Center,
+                          set_hexpand: true,
+                          set_spacing: 12,
+                          set_opacity: 0.75,
+
+                          gtk::Label {
+                            add_css_class: "caption",
+                            #[watch]
+                            set_label: &format!(
+                              "Tagged: {}/{} ({}%)",
+                              model.track_stats.tagged_lyrics,
+                              model.track_stats.not_instrumental,
+                              model.track_stats.tagged_lyrics_percent().round()
+                            ),
+                          },
+
+                          gtk::Label {
+                            add_css_class: "caption",
+                            #[watch]
+                            set_label: &format!(
+                              "Sidecar: {}/{} ({}%)",
+                              model.track_stats.sidecar_file,
+                              model.track_stats.not_instrumental,
+                              model.track_stats.sidecar_file_percent().round()
+                            ),
+                          },
+
+                          gtk::Label {
+                            add_css_class: "caption",
+                            #[watch]
+                            set_label: &format!(
+                              "Sync: {}/{} ({}%)",
+                              model.track_stats.sync_lyrics,
+                              model.track_stats.not_instrumental,
+                              model.track_stats.sync_lyrics_percent().round()
+                            ),
+                          },
+
+                          gtk::Label {
+                            add_css_class: "caption",
+                            #[watch]
+                            set_label: &format!(
+                              "Plain: {}/{} ({}%)",
+                              model.track_stats.plain_lyrics,
+                              model.track_stats.not_instrumental,
+                              model.track_stats.plain_lyrics_percent().round()
+                            ),
+                          },
                         },
                       },
                     },
@@ -540,9 +596,7 @@ impl AsyncComponent for AppModel {
         .forward(sender.input_sender(), |msg| match msg {
           TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
-          TracksTableOutput::UpdateFilteredTrackCount(count) => {
-            AppMsg::UpdateFilteredTrackCount(count)
-          }
+          TracksTableOutput::TrackIdsVisible(set) => AppMsg::UpdateFiltered(set),
         });
 
     let about_widget = AboutModel::builder()
@@ -555,6 +609,7 @@ impl AsyncComponent for AppModel {
       sender: sender.clone(),
       libraries: vec![],
       tracks: vec![],
+      track_stats: TrackStats::default(),
       tracks_table_widget,
       prefs_widget: None,
       about_widget,
@@ -563,6 +618,7 @@ impl AsyncComponent for AppModel {
       toaster: Toaster::default(),
       no_tracks: false,
       track_count: 0,
+      filtered_track_ids: HashSet::new(),
       filtered_track_count: None,
       is_search_revealed: false,
       search_query: None,
@@ -773,6 +829,7 @@ impl AsyncComponent for AppModel {
           handle.abort();
         }
         self.is_fetching_lyrics = false;
+        self.update_track_stats();
         sender.input(AppMsg::ProgressComplete);
       }
 
@@ -780,6 +837,7 @@ impl AsyncComponent for AppModel {
         debug!("FetchLyrics completed");
         self.fetch_lyrics_abort_handle = None;
         self.is_fetching_lyrics = false;
+        self.update_track_stats();
         sender.input(AppMsg::ProgressComplete);
       }
 
@@ -1087,7 +1145,8 @@ impl AsyncComponent for AppModel {
         }
       }
 
-      AppMsg::UpdateFilteredTrackCount(count) => {
+      AppMsg::UpdateFiltered(set) => {
+        let count = set.len() as u32;
         if count != self.track_count {
           debug!("Filtered Track Count: {count}");
           self.filtered_track_count = Some(count);
@@ -1095,6 +1154,9 @@ impl AsyncComponent for AppModel {
           debug!("No tracks filtered");
           self.filtered_track_count = None;
         }
+
+        self.track_stats.refresh_from_filtered(&set);
+        self.filtered_track_ids = set;
       }
 
       AppMsg::ProgressStart(task_name) => {
@@ -1207,6 +1269,7 @@ impl AppModel {
       .collect::<Vec<_>>();
 
     self.track_count = self.tracks.len() as u32;
+    self.update_track_stats();
 
     debug!(
       "Loaded {} Tracks from {} Libraries",
@@ -1217,6 +1280,10 @@ impl AppModel {
     self.no_tracks = self.tracks.is_empty();
 
     Ok(())
+  }
+
+  fn update_track_stats(&mut self) {
+    self.track_stats.update(&self.tracks);
   }
 
   fn rebuild_sidebar_widget(&mut self) {
@@ -1402,6 +1469,96 @@ impl AppModel {
     if self.is_sidebar_revealed {
       self.rebuild_sidebar_widget();
     }
+  }
+}
+
+#[derive(Debug, Clone, Default)]
+struct TrackStats {
+  instrumental_set: HashSet<i32>,
+  not_instrumental_set: HashSet<i32>,
+  never_checked_set: HashSet<i32>,
+  sync_lyrics_set: HashSet<i32>,
+  plain_lyrics_set: HashSet<i32>,
+  tagged_lyrics_set: HashSet<i32>,
+  sidecar_file_set: HashSet<i32>,
+
+  count: usize,
+  instrumental: usize,
+  not_instrumental: usize,
+  never_checked: usize,
+  sync_lyrics: usize,
+  plain_lyrics: usize,
+  tagged_lyrics: usize,
+  sidecar_file: usize,
+}
+
+impl TrackStats {
+  fn update(&mut self, tracks: &Vec<Track>) {
+    trace!("Building TrackStats");
+
+    self.count = tracks.len();
+
+    tracks.iter().for_each(|t| {
+      if t.last_api_check_at.is_none() {
+        self.never_checked_set.insert(t.id);
+      };
+
+      if t.instrumental.is_some_and(|b| b) {
+        self.instrumental_set.insert(t.id);
+      } else {
+        self.not_instrumental_set.insert(t.id);
+
+        if t.lyrics_synchronised || t.lyrics_sidecar_lrc_file.is_some() {
+          self.sync_lyrics_set.insert(t.id);
+        };
+
+        if !t.lyrics_synchronised && (t.lyrics.is_some() || t.lyrics_sidecar_txt_file.is_some()) {
+          self.plain_lyrics_set.insert(t.id);
+        };
+
+        if t.lyrics.is_some() {
+          self.tagged_lyrics_set.insert(t.id);
+        };
+
+        if t.lyrics_sidecar_lrc_file.is_some() || t.lyrics_sidecar_txt_file.is_some() {
+          self.sidecar_file_set.insert(t.id);
+        };
+      };
+    });
+
+    self.instrumental = self.instrumental_set.len();
+    self.not_instrumental = self.not_instrumental_set.len();
+    self.never_checked = self.never_checked_set.len();
+    self.sync_lyrics = self.sync_lyrics_set.len();
+    self.plain_lyrics = self.plain_lyrics_set.len();
+    self.tagged_lyrics = self.tagged_lyrics_set.len();
+    self.sidecar_file = self.sidecar_file_set.len();
+  }
+
+  fn refresh_from_filtered(&mut self, track_ids: &HashSet<i32>) {
+    self.instrumental = self.instrumental_set.intersection(track_ids).count();
+    self.not_instrumental = self.not_instrumental_set.intersection(track_ids).count();
+    self.never_checked = self.never_checked_set.intersection(track_ids).count();
+    self.sync_lyrics = self.sync_lyrics_set.intersection(track_ids).count();
+    self.plain_lyrics = self.plain_lyrics_set.intersection(track_ids).count();
+    self.tagged_lyrics = self.tagged_lyrics_set.intersection(track_ids).count();
+    self.sidecar_file = self.sidecar_file_set.intersection(track_ids).count();
+  }
+
+  fn sync_lyrics_percent(&self) -> f32 {
+    (self.sync_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  }
+
+  fn plain_lyrics_percent(&self) -> f32 {
+    (self.plain_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  }
+
+  fn tagged_lyrics_percent(&self) -> f32 {
+    (self.tagged_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  }
+
+  fn sidecar_file_percent(&self) -> f32 {
+    (self.sidecar_file as f32 / self.not_instrumental as f32) * 100.0
   }
 }
 

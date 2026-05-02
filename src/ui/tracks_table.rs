@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use relm4::gtk::gio::prelude::ListModelExt;
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
@@ -15,7 +14,7 @@ pub struct TracksTableModel {
   table: TypedColumnView<Track, gtk::MultiSelection>,
   preset_filters_len: usize,
   total_rows: u32,
-  rows_visible: bool,
+  is_row_visible: bool,
 }
 
 #[derive(Debug)]
@@ -25,6 +24,7 @@ pub enum TracksTableMsg {
   Filter(Option<String>),
   SetFilter((TracksTableFilter, bool)),
   ClearFilters,
+  RefreshTrackIdsVisible,
   HandleRowActivated,
   HandleRowSelection(Bitset),
   ClearSelection,
@@ -33,8 +33,9 @@ pub enum TracksTableMsg {
 #[derive(Debug)]
 pub enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
+  TrackIdsVisible(HashSet<i32>),
   RowActivated,
-  UpdateFilteredTrackCount(u32),
+  // UpdateFilteredTrackCount(u32),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -72,7 +73,7 @@ impl SimpleComponent for TracksTableModel {
             set_icon_name: Some("edit-find-symbolic"),
             add_css_class: "compact",
             #[watch]
-            set_visible: !model.rows_visible,
+            set_visible: !model.is_row_visible,
           },
       }
   }
@@ -132,16 +133,16 @@ impl SimpleComponent for TracksTableModel {
     });
     table.set_filter_status(7, false);
 
-    // Update filtered track count
-    let sender_handle = sender.clone();
-    table
-      .selection_model
-      .connect_items_changed(move |selection_model, _, _, _| {
-        let count = selection_model.n_items();
-        sender_handle
-          .output(TracksTableOutput::UpdateFilteredTrackCount(count))
-          .expect("TracksTableOutput receiver dropped");
-      });
+    // // Update filtered track count
+    // let sender_handle = sender.clone();
+    // table
+    //   .selection_model
+    //   .connect_items_changed(move |selection_model, _, _, _| {
+    //     let count = selection_model.n_items();
+    //     sender_handle
+    //       .output(TracksTableOutput::UpdateFilteredTrackCount(count))
+    //       .expect("TracksTableOutput receiver dropped");
+    //   });
 
     // Handle row selection
     let sender_handle = sender.clone();
@@ -176,14 +177,15 @@ impl SimpleComponent for TracksTableModel {
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
-      rows_visible: false,
+      is_row_visible: false,
       table,
     };
 
-    // Ref of the view to use in `view` macro
+    // Ref of the `ColumnView` to use in `view` macro
     let tracks_table_view = &model.table.view;
 
     let widgets = view_output!();
+
     ComponentParts { model, widgets }
   }
 
@@ -192,7 +194,7 @@ impl SimpleComponent for TracksTableModel {
       TracksTableMsg::HandleRowActivated => {
         sender
           .output(TracksTableOutput::RowActivated)
-          .expect("receiver of TracksTableOutput dropped");
+          .expect("TracksTableOutput receiver dropped");
       }
 
       TracksTableMsg::HandleRowSelection(set) => {
@@ -220,7 +222,21 @@ impl SimpleComponent for TracksTableModel {
 
         sender
           .output(TracksTableOutput::TrackIdsSelected(selected_track_ids))
-          .expect("receiver of TracksTableOutput dropped");
+          .expect("TracksTableOutput receiver dropped");
+      }
+
+      TracksTableMsg::RefreshTrackIdsVisible => {
+        let mut visible_track_ids = HashSet::new();
+
+        let mut idx = 0_u32;
+        while let Some(item) = self.table.get_visible(idx) {
+          visible_track_ids.insert(item.borrow().id);
+          idx += 1;
+        }
+
+        sender
+          .output(TracksTableOutput::TrackIdsVisible(visible_track_ids))
+          .expect("TracksTableOutput receiver dropped");
       }
 
       TracksTableMsg::ClearSelection => {
@@ -231,7 +247,10 @@ impl SimpleComponent for TracksTableModel {
       TracksTableMsg::ClearAndAppend(tracks) => {
         self.table.clear();
         self.table.extend_from_iter(tracks);
+
         self.reset_rows_state();
+
+        sender.input(TracksTableMsg::RefreshTrackIdsVisible);
       }
 
       TracksTableMsg::Update(track) => {
@@ -258,7 +277,9 @@ impl SimpleComponent for TracksTableModel {
         }
 
         // Are any rows visible after filtering?
-        self.set_rows_visible();
+        self.update_is_row_visible();
+
+        sender.input(TracksTableMsg::RefreshTrackIdsVisible);
       }
 
       TracksTableMsg::SetFilter((filter, active)) => {
@@ -273,7 +294,7 @@ impl SimpleComponent for TracksTableModel {
         self.table.set_filter_status(filter as usize, active);
 
         // Are any rows visible after filtering?
-        self.set_rows_visible();
+        self.update_is_row_visible();
       }
 
       TracksTableMsg::ClearFilters => {
@@ -282,7 +303,9 @@ impl SimpleComponent for TracksTableModel {
         }
 
         // Are any rows visible after filtering?
-        self.set_rows_visible();
+        self.update_is_row_visible();
+
+        sender.input(TracksTableMsg::RefreshTrackIdsVisible);
       }
     }
   }
@@ -291,11 +314,11 @@ impl SimpleComponent for TracksTableModel {
 impl TracksTableModel {
   fn reset_rows_state(&mut self) {
     self.total_rows = self.table.len();
-    self.rows_visible = self.table.get_visible(0).is_some();
+    self.is_row_visible = self.table.get_visible(0).is_some();
   }
 
-  fn set_rows_visible(&mut self) {
-    self.rows_visible = self.table.get_visible(0).is_some();
+  fn update_is_row_visible(&mut self) {
+    self.is_row_visible = self.table.get_visible(0).is_some();
   }
 }
 
