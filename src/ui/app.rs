@@ -442,8 +442,7 @@ impl AsyncComponent for AppModel {
                       set_halign: gtk::Align::Fill,
                       set_valign: gtk::Align::Center,
                       set_hexpand: true,
-                      set_margin_horizontal: 12,
-                      set_margin_vertical: 2,
+                      set_margin_all: 6,
                       set_spacing: 12,
 
                       // Progress bar
@@ -490,11 +489,10 @@ impl AsyncComponent for AppModel {
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
 
-                        // Track count + stats
+                        // Track count and stats
                         gtk::MenuButton {
                           set_direction: gtk::ArrowType::Up,
-                          set_css_classes: &["caption", "flat"],
-                          inline_css: "padding: 0 !important; min-height: 0 !important; min-width: 0 !important",
+                          set_css_classes: &["caption", "flat", "status-bar-button"],
                           set_tooltip: "Show Statistics",
                           set_use_underline: true,
                           #[watch]
@@ -1000,7 +998,6 @@ impl AsyncComponent for AppModel {
           debug!("Libraries have been deleted; refreshing");
 
           sender.input(AppMsg::LoadLibraries);
-          self.update_track_stats();
         } else {
           // Refresh table if no changes to libraries in case datetime format changed
           sender.input(AppMsg::BuildTracksTable);
@@ -1674,6 +1671,15 @@ pub fn start() -> Result<()> {
 
     .window-bg-overlay {
       background-color: @window_bg_color;
+    }
+
+    menubutton.flat.status-bar-button,
+    menubutton.flat.status-bar-button button,
+    menubutton.flat.status-bar-button label,
+    menubutton.flat.status-bar-button arrow
+    {
+        padding-top: 0;
+        padding-bottom: 0;
     }
 
     button.circular.flat.mini-cancel {
