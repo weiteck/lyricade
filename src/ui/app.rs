@@ -95,6 +95,9 @@ enum AppMsg {
   SetSearchFilter((TracksTableFilter, bool)),
   UpdateSelection(HashSet<i32>),
   UpdateFiltered(HashSet<i32>),
+
+  RefreshTrackStats,
+
   ProgressStart(String),
   ProgressUpdate(ProgressUpdate),
   ProgressComplete,
@@ -439,7 +442,8 @@ impl AsyncComponent for AppModel {
                       set_halign: gtk::Align::Fill,
                       set_valign: gtk::Align::Center,
                       set_hexpand: true,
-                      set_margin_all: 12,
+                      set_margin_horizontal: 12,
+                      set_margin_vertical: 2,
                       set_spacing: 12,
 
                       // Progress bar
@@ -485,71 +489,148 @@ impl AsyncComponent for AppModel {
                         set_halign: gtk::Align::End,
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
-                        set_spacing: 24,
 
-                        // Track count
-                        gtk::Label {
-                          add_css_class: "caption",
+                        // Track count + stats
+                        gtk::MenuButton {
+                          set_direction: gtk::ArrowType::Up,
+                          set_css_classes: &["caption", "flat"],
+                          inline_css: "padding: 0 !important; min-height: 0 !important; min-width: 0 !important",
+                          set_tooltip: "Show Statistics",
+                          set_use_underline: true,
                           #[watch]
                           set_label: &format!(
-                            "Tracks: {}{}",
+                            "{}{} _Tracks",
                             model.filtered_track_count.map(|n| format!("{n}/")).unwrap_or_default(),
                             model.track_count
                           ),
-                        },
+                          connect_activate => AppMsg::RefreshTrackStats,
 
-                        // TODO: Put stats in 'track count' popover, and only compute stats on reveal
-                        // Track stats
-                        gtk::Box {
-                          set_orientation: gtk::Orientation::Horizontal,
-                          set_halign: gtk::Align::End,
-                          set_valign: gtk::Align::Center,
-                          set_hexpand: true,
-                          set_spacing: 12,
-                          set_opacity: 0.75,
+                          #[wrap(Some)]
+                          set_popover = &gtk::Popover {
+                            set_position: gtk::PositionType::Top,
 
-                          gtk::Label {
-                            add_css_class: "caption",
-                            #[watch]
-                            set_label: &format!(
-                              "Tagged: {}/{} ({}%)",
-                              model.track_stats.tagged_lyrics,
-                              model.track_stats.not_instrumental,
-                              model.track_stats.tagged_lyrics_percent().round()
-                            ),
-                          },
+                            // Track stats
+                            gtk::Box {
+                              set_orientation: gtk::Orientation::Horizontal,
+                              set_spacing: 6,
 
-                          gtk::Label {
-                            add_css_class: "caption",
-                            #[watch]
-                            set_label: &format!(
-                              "Sidecar: {}/{} ({}%)",
-                              model.track_stats.sidecar_file,
-                              model.track_stats.not_instrumental,
-                              model.track_stats.sidecar_file_percent().round()
-                            ),
-                          },
+                              // Left column - value names
+                              gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 6,
 
-                          gtk::Label {
-                            add_css_class: "caption",
-                            #[watch]
-                            set_label: &format!(
-                              "Sync: {}/{} ({}%)",
-                              model.track_stats.sync_lyrics,
-                              model.track_stats.not_instrumental,
-                              model.track_stats.sync_lyrics_percent().round()
-                            ),
-                          },
+                                gtk::Label {
+                                  set_align: gtk::Align::End,
+                                  add_css_class: "heading",
+                                  set_tooltip: "Not Marked “Instrumental”",
+                                  #[watch]
+                                  set_label: "Non-Inst.:",
+                                },
 
-                          gtk::Label {
-                            add_css_class: "caption",
-                            #[watch]
-                            set_label: &format!(
-                              "Plain: {}/{} ({}%)",
-                              model.track_stats.plain_lyrics,
-                              model.track_stats.not_instrumental,
-                              model.track_stats.plain_lyrics_percent().round()
-                            ),
+                                gtk::Label {
+                                  set_align: gtk::Align::End,
+                                  add_css_class: "heading",
+                                  set_tooltip: "Have Lyrics Tag",
+                                  #[watch]
+                                  set_label: "Tagged:",
+                                },
+
+                                gtk::Label {
+                                  set_align: gtk::Align::End,
+                                  add_css_class: "heading",
+                                  set_tooltip: "Have Lyrics Sidecar File",
+                                  #[watch]
+                                  set_label: "Sidecar:",
+                                },
+
+                                gtk::Label {
+                                  set_align: gtk::Align::End,
+                                  add_css_class: "heading",
+                                  set_tooltip: "Have Synchronous Lyrics",
+                                  #[watch]
+                                  set_label: "Sync:",
+                                },
+
+                                gtk::Label {
+                                  set_align: gtk::Align::End,
+                                  add_css_class: "heading",
+                                  set_tooltip: "Have Plain Lyrics",
+                                  #[watch]
+                                  set_label: "Plain:",
+                                },
+                              },
+
+                              // Right column - values
+                              gtk::Box {
+                                set_orientation: gtk::Orientation::Vertical,
+                                set_spacing: 6,
+
+                                // "Non-Inst."
+                                gtk::Label {
+                                  set_align: gtk::Align::Start,
+                                  set_tooltip: "Not Marked “Instrumental”",
+                                  #[watch]
+                                  set_label: &format!(
+                                    "{}/{} ({} %)",
+                                    model.track_stats.not_instrumental,
+                                    model.track_stats.count,
+                                    model.track_stats.not_instrumental_percent().round()
+                                  ),
+                                },
+
+                                // "Tagged"
+                                gtk::Label {
+                                  set_align: gtk::Align::Start,
+                                  set_tooltip: "Have Lyrics Tag",
+                                  #[watch]
+                                  set_label: &format!(
+                                    "{}/{} ({} %)",
+                                    model.track_stats.tagged_lyrics,
+                                    model.track_stats.not_instrumental,
+                                    model.track_stats.tagged_lyrics_percent().round()
+                                  ),
+                                },
+
+                                // "Sidecar"
+                                gtk::Label {
+                                  set_align: gtk::Align::Start,
+                                  set_tooltip: "Have Lyrics Sidecar File",
+                                  #[watch]
+                                  set_label: &format!(
+                                    "{}/{} ({} %)",
+                                    model.track_stats.sidecar_file,
+                                    model.track_stats.not_instrumental,
+                                    model.track_stats.sidecar_file_percent().round()
+                                  ),
+                                },
+
+                                // "Sync"
+                                gtk::Label {
+                                  set_align: gtk::Align::Start,
+                                  set_tooltip: "Have Synchronous Lyrics",
+                                  #[watch]
+                                  set_label: &format!(
+                                    "{}/{} ({} %)",
+                                    model.track_stats.sync_lyrics,
+                                    model.track_stats.not_instrumental,
+                                    model.track_stats.sync_lyrics_percent().round()
+                                  ),
+                                },
+
+                                // "Plain"
+                                gtk::Label {
+                                  set_align: gtk::Align::Start,
+                                  set_tooltip: "Have Plain Lyrics",
+                                  #[watch]
+                                  set_label: &format!(
+                                    "{}/{} ({} %)",
+                                    model.track_stats.plain_lyrics,
+                                    model.track_stats.not_instrumental,
+                                    model.track_stats.plain_lyrics_percent().round()
+                                  ),
+                                },
+                              },
+                            },
                           },
                         },
                       },
@@ -892,7 +973,7 @@ impl AsyncComponent for AppModel {
 
         // Scan newly-added libraries
         if !new_libs.is_empty() {
-          debug!("Libraries changed; refreshing");
+          debug!("Libraries have been added; refreshing");
 
           let sender_handle = sender.clone();
           let _ = tokio::task::spawn_blocking(move || {
@@ -916,7 +997,10 @@ impl AsyncComponent for AppModel {
             sender_handle.input(AppMsg::HideSpinner);
           });
         } else if libs_have_been_removed {
+          debug!("Libraries have been deleted; refreshing");
+
           sender.input(AppMsg::LoadLibraries);
+          self.update_track_stats();
         } else {
           // Refresh table if no changes to libraries in case datetime format changed
           sender.input(AppMsg::BuildTracksTable);
@@ -1146,6 +1230,8 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::UpdateFiltered(set) => {
+        debug!("Updating list and count of filtered tracks");
+
         let count = set.len() as u32;
         if count != self.track_count {
           debug!("Filtered Track Count: {count}");
@@ -1155,8 +1241,15 @@ impl AsyncComponent for AppModel {
           self.filtered_track_count = None;
         }
 
-        self.track_stats.refresh_from_filtered(&set);
         self.filtered_track_ids = set;
+      }
+
+      AppMsg::RefreshTrackStats => {
+        debug!("Refreshing TrackStats");
+
+        self
+          .track_stats
+          .refresh_from_filtered(&self.filtered_track_ids);
       }
 
       AppMsg::ProgressStart(task_name) => {
@@ -1496,6 +1589,8 @@ impl TrackStats {
   fn update(&mut self, tracks: &Vec<Track>) {
     trace!("Building TrackStats");
 
+    *self = Self::default();
+
     self.count = tracks.len();
 
     tracks.iter().for_each(|t| {
@@ -1543,6 +1638,10 @@ impl TrackStats {
     self.plain_lyrics = self.plain_lyrics_set.intersection(track_ids).count();
     self.tagged_lyrics = self.tagged_lyrics_set.intersection(track_ids).count();
     self.sidecar_file = self.sidecar_file_set.intersection(track_ids).count();
+  }
+
+  fn not_instrumental_percent(&self) -> f32 {
+    (self.not_instrumental as f32 / self.count as f32) * 100.0
   }
 
   fn sync_lyrics_percent(&self) -> f32 {
