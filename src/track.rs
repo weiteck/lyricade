@@ -243,7 +243,7 @@ impl Track {
     ////////////////////////////////
     let mut file_requires_update = false;
 
-    if let Some(sidecar_lyrics) = LyricsFile::from_track(&self) {
+    if let Some(sidecar_lyrics) = LyricsFile::from_track(self) {
       // Add sidecar lyrics to `Track`
       sidecar_lyrics.iter().for_each(|lf| {
         if lf.file_type == LyricsFileType::Lrc {
@@ -260,7 +260,7 @@ impl Track {
               // Collection is sorted - best sync candidate is first
               if let Some(lf) = sidecar_lyrics.first() {
                 let sync = lf.lyrics.lyrics_type == LyricsType::Sync;
-                if sync || (!sync && self.lyrics.is_some()) {
+                if sync || self.lyrics.is_some() {
                   debug!(
                     "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
                     &self, &lf.path
@@ -383,12 +383,10 @@ impl Track {
     } else {
       // Extract the preferred lyrics type and update tags
       let lyrics = match options.prefer_lyrics_type {
-        LyricsType::Sync => synced_lyrics.or_else(|| {
-          if options.ignore_plain_lyrics {
-            None
-          } else {
-            plain_lyrics
-          }
+        LyricsType::Sync => synced_lyrics.or(if options.ignore_plain_lyrics {
+          None
+        } else {
+          plain_lyrics
         }),
         LyricsType::Plain => plain_lyrics.or(synced_lyrics.map(Lyrics::into_plain)),
       };
@@ -396,26 +394,24 @@ impl Track {
       // Generate sidecar file
       if let Some(lyrics) = &lyrics
         && options.save_sidecar_file
+        && ((lyrics.lyrics_type == LyricsType::Sync && self.lyrics_sidecar_lrc_file.is_none())
+          || (lyrics.lyrics_type == LyricsType::Plain && self.lyrics_sidecar_txt_file.is_none()))
       {
-        if (lyrics.lyrics_type == LyricsType::Sync && self.lyrics_sidecar_lrc_file.is_none())
-          || (lyrics.lyrics_type == LyricsType::Plain && self.lyrics_sidecar_txt_file.is_none())
-        {
-          let file_type = LyricsFileType::from(lyrics.lyrics_type);
-          let path = self.path().with_extension(file_type.file_extension());
-          let sidecar_file = LyricsFile {
-            lyrics: lyrics.clone(),
-            file_type,
-            path,
-          };
-          sidecar_file.save()?;
+        let file_type = LyricsFileType::from(lyrics.lyrics_type);
+        let path = self.path().with_extension(file_type.file_extension());
+        let sidecar_file = LyricsFile {
+          lyrics: lyrics.clone(),
+          file_type,
+          path,
+        };
+        sidecar_file.save()?;
 
-          match sidecar_file.file_type {
-            LyricsFileType::Lrc => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
-            LyricsFileType::Txt => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
-          }
-
-          modified = true;
+        match sidecar_file.file_type {
+          LyricsFileType::Lrc => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
+          LyricsFileType::Txt => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
         }
+
+        modified = true;
       }
 
       let upgrade_tag = if options.update_lyrics_tag {
@@ -515,19 +511,17 @@ impl Track {
       // Check that lyrics have changed before writing
       if tag
         .get_string(tag::ItemKey::Lyrics)
-        .is_some_and(|l| &l != lyrics)
+        .is_some_and(|l| l != lyrics.as_str())
+        && (tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
+          && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok())
       {
-        if tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
-          && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok()
-        {
-          debug!("{} write updated tag: Lyrics tag updated in file", &self);
+        debug!("{} write updated tag: Lyrics tag updated in file", &self);
 
-          // Update track modified timestamp in DB
-          self.file_modified_at = util::file_modified_at()
-            .path(&self.path())
-            .file(&file)
-            .call();
-        }
+        // Update track modified timestamp in DB
+        self.file_modified_at = util::file_modified_at()
+          .path(&self.path())
+          .file(&file)
+          .call();
       }
     }
 

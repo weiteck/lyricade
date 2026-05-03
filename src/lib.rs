@@ -37,20 +37,19 @@ const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
 const MAX_LOG_FILES: usize = 10;
 
-static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(|| init_logging());
+static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(init_logging);
 
-pub static SETTINGS: LazyLock<RwLock<Settings>> = LazyLock::new(|| {
-  RwLock::new(Settings::load().expect(&format!("Failed to load settings from database")))
-});
+pub static SETTINGS: LazyLock<RwLock<Settings>> =
+  LazyLock::new(|| RwLock::new(Settings::load().expect("Failed to load settings from database")));
 
 pub static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
-  let manager = r2d2::ConnectionManager::<SqliteConnection>::new(&APP_DB_FILE_PATH.to_string());
+  let manager = r2d2::ConnectionManager::<SqliteConnection>::new(APP_DB_FILE_PATH.to_string());
   r2d2::Pool::builder()
     .build(manager)
     .expect("error creating database connection pool")
 });
 
-pub static LRCLIB_CLIENT: LazyLock<LrcLibClient> = LazyLock::new(|| LrcLibClient::new());
+pub static LRCLIB_CLIENT: LazyLock<LrcLibClient> = LazyLock::new(LrcLibClient::new);
 
 /// Supported audio file types.
 #[rustfmt::skip]
@@ -122,10 +121,12 @@ fn init_logging() -> WorkerGuard {
   let mut log_name = APP_NAME.to_string();
   log_name.push_str(".log");
   let log_dir = &APP_DATA_DIR.join("logs");
-  fs::create_dir_all(log_dir).expect(&format!(
-    "failed to create logging directory \"{}\"",
-    log_dir
-  ));
+  fs::create_dir_all(log_dir).unwrap_or_else(|error| {
+    panic!(
+      "failed to create logging directory \"{}\": {error}",
+      log_dir
+    )
+  });
 
   let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
   let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
@@ -136,7 +137,7 @@ fn init_logging() -> WorkerGuard {
     .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
     .init();
 
-  clean_up_log_files(&log_dir).expect("failed to clean up log files");
+  clean_up_log_files(log_dir).expect("failed to clean up log files");
 
   guard
 }

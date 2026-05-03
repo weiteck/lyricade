@@ -74,6 +74,12 @@ impl Drop for LrcLibClient {
   }
 }
 
+impl Default for LrcLibClient {
+  fn default() -> Self {
+    Self::new()
+  }
+}
+
 impl LrcLibClient {
   pub fn new() -> Self {
     let user_agent = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
@@ -110,10 +116,6 @@ impl LrcLibClient {
     lrclib_client.spawn_request_rate_logger();
 
     lrclib_client
-  }
-
-  pub fn default() -> Self {
-    Self::new()
   }
 
   pub async fn lyrics_from_track_signature(

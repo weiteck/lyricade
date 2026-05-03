@@ -244,7 +244,7 @@ impl Library {
           new_refreshed_count += 1;
 
           // Report back progress
-          if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+          if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
             on_progress(new_refreshed_count + existing_refreshed_count);
           }
         } else {
@@ -267,7 +267,7 @@ impl Library {
               existing_refreshed_count += 1;
 
               // Report back progress
-              if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+              if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
                 on_progress(new_refreshed_count + existing_refreshed_count);
               }
             };
@@ -286,7 +286,7 @@ impl Library {
             existing_refreshed_count += 1;
 
             // Report back progress
-            if (new_refreshed_count + existing_refreshed_count) % 5 == 0 {
+            if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
               on_progress(new_refreshed_count + existing_refreshed_count);
             }
           };
@@ -350,19 +350,19 @@ impl Library {
 
     let tracks = self.tracks().call()?;
 
+    // Fetch if `Track` lyrics state does not match target state in `FetchLyricsOptions`
     for mut track in tracks {
-      if options.update_lyrics_tag && track.lyrics.is_none()
+      if (options.update_lyrics_tag && track.lyrics.is_none()
         || ((!track.lyrics_synchronised && options.prefer_lyrics_type == LyricsType::Sync)
           || (track.lyrics_synchronised && options.prefer_lyrics_type == LyricsType::Plain))
         || options.save_sidecar_file
           && ((track.lyrics_sidecar_lrc_file.is_none()
             && options.prefer_lyrics_type == LyricsType::Sync)
             || (track.lyrics_sidecar_txt_file.is_none()
-              && options.prefer_lyrics_type == LyricsType::Plain))
+              && options.prefer_lyrics_type == LyricsType::Plain)))
+        && track.fetch_lyrics().options(options).call().await.is_ok()
       {
-        if track.fetch_lyrics().options(options).call().await.is_ok() {
-          attempted_fetches += 1;
-        }
+        attempted_fetches += 1;
       }
     }
 

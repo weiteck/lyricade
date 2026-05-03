@@ -20,7 +20,7 @@ pub struct TracksTableModel {
 #[derive(Debug)]
 pub enum TracksTableMsg {
   ClearAndAppend(Vec<Track>),
-  Update(Track),
+  Update(Box<Track>),
   Filter(Option<String>),
   SetFilter((TracksTableFilter, bool)),
   ClearFilters,
@@ -133,17 +133,6 @@ impl SimpleComponent for TracksTableModel {
     });
     table.set_filter_status(7, false);
 
-    // // Update filtered track count
-    // let sender_handle = sender.clone();
-    // table
-    //   .selection_model
-    //   .connect_items_changed(move |selection_model, _, _, _| {
-    //     let count = selection_model.n_items();
-    //     sender_handle
-    //       .output(TracksTableOutput::UpdateFilteredTrackCount(count))
-    //       .expect("TracksTableOutput receiver dropped");
-    //   });
-
     // Handle row selection
     let sender_handle = sender.clone();
     table
@@ -172,7 +161,7 @@ impl SimpleComponent for TracksTableModel {
       .expect("TracksTable should have Artist column");
     table
       .view
-      .sort_by_column(Some(&artist_col), SortType::Ascending);
+      .sort_by_column(Some(artist_col), SortType::Ascending);
 
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
@@ -256,7 +245,7 @@ impl SimpleComponent for TracksTableModel {
       TracksTableMsg::Update(track) => {
         if let Some(idx) = self.table.find(|row| row.id == track.id) {
           self.table.remove(idx);
-          self.table.insert(idx, track);
+          self.table.insert(idx, *track);
         }
       }
 

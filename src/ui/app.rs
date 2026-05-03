@@ -371,7 +371,7 @@ impl AsyncComponent for AppModel {
                 set_valign: gtk::Align::Start,
                 set_vexpand: true,
                 #[watch]
-                set_label: if model.spinner_reason.is_some() { model.spinner_reason.as_ref().unwrap() } else { "" },
+                set_label: &model.spinner_reason.as_deref().unwrap_or(""),
               },
             },
 
@@ -864,7 +864,7 @@ impl AsyncComponent for AppModel {
         // Display progress
         sender.input(AppMsg::ProgressStart("Getting Lyrics".into()));
         sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("Processed Track 0 / {}…", self.track_count)),
+          step: Some(format!("Processed 0 / {}…", self.track_count)),
           progress: 0.0,
         }));
 
@@ -888,7 +888,7 @@ impl AsyncComponent for AppModel {
                   .emit(AppCommand::TrackUpdated(track));
 
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                  step: Some(format!("Processed Track {} / {}…", completed, total)),
+                  step: Some(format!("Processed {} / {}…", completed, total)),
                   progress: completed as f64 / total as f64,
                 }))
               }
@@ -974,7 +974,7 @@ impl AsyncComponent for AppModel {
           debug!("Libraries have been added; refreshing");
 
           let sender_handle = sender.clone();
-          let _ = tokio::task::spawn_blocking(move || {
+          tokio::task::spawn_blocking(move || {
             for lib in new_libs {
               let name = lib.name();
               let progress_sender = sender_handle.clone();
@@ -1080,7 +1080,7 @@ impl AsyncComponent for AppModel {
       AppMsg::RefreshLibraries => {
         let libs = self.libraries.clone();
         let sender_handle = sender.clone();
-        let _ = tokio::task::spawn_blocking(move || {
+        tokio::task::spawn_blocking(move || {
           for lib in libs {
             let name = lib.name();
             let progress_sender = sender_handle.clone();
@@ -1324,7 +1324,7 @@ impl AsyncComponent for AppModel {
         self
           .tracks_table_widget
           .sender()
-          .emit(TracksTableMsg::Update(track));
+          .emit(TracksTableMsg::Update(Box::new(track)));
       }
     }
   }
@@ -1498,7 +1498,7 @@ impl AppModel {
       ar.set_subtitle(
         &track
           .last_api_check_at
-          .map(|ndt| util::ndt_utc_to_ui_string(ndt))
+          .map(util::ndt_utc_to_ui_string)
           .unwrap_or("Never".into()),
       );
       pg.container_add(&ar);
@@ -1520,7 +1520,7 @@ impl AppModel {
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Added At");
-        ar.set_subtitle(&&util::ndt_utc_to_ui_string(track.added_at));
+        ar.set_subtitle(&util::ndt_utc_to_ui_string(track.added_at));
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Updated At");
@@ -1528,7 +1528,7 @@ impl AppModel {
         pg.container_add(&ar);
         let ar = adw::ActionRow::new();
         ar.set_title("Refreshed At");
-        ar.set_subtitle(&&util::ndt_utc_to_ui_string(track.refreshed_at));
+        ar.set_subtitle(&util::ndt_utc_to_ui_string(track.refreshed_at));
         pg.container_add(&ar);
         root.append(&pg);
       }
@@ -1583,7 +1583,7 @@ struct TrackStats {
 }
 
 impl TrackStats {
-  fn update(&mut self, tracks: &Vec<Track>) {
+  fn update(&mut self, tracks: &[Track]) {
     trace!("Building TrackStats");
 
     *self = Self::default();
@@ -1658,7 +1658,7 @@ impl TrackStats {
   }
 }
 
-pub fn start() -> Result<()> {
+pub fn start() {
   let app = RelmApp::new(APP_ID);
 
   // Inject CSS
@@ -1703,7 +1703,7 @@ pub fn start() -> Result<()> {
   // Custom icons
   initialize_custom_icons();
 
-  Ok(app.run_async::<AppModel>(()))
+  app.run_async::<AppModel>(());
 }
 
 fn initialize_custom_icons() {

@@ -174,10 +174,7 @@ impl TryFrom<Utf8PathBuf> for LyricsFile {
 impl LyricsFile {
   /// Try to parse a file as a sync or plain `LyricsFiles`.
   pub fn try_from_path(path: &Utf8Path) -> Result<Self> {
-    let mut file = std::fs::File::options()
-      .read(true)
-      .write(true)
-      .open(&path)?;
+    let mut file = std::fs::File::options().read(true).write(true).open(path)?;
 
     let mut contents = String::new();
     if file.read_to_string(&mut contents).is_ok_and(|u| u != 0) {

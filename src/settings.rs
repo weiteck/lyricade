@@ -9,7 +9,7 @@ use tracing::{debug, error, info};
 use crate::{DB_POOL, Result, lyrics::LyricsType, schema::settings, util::now};
 
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
-  LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", &APP_NAME));
+  LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", APP_NAME));
 
 pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {

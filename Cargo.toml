@@ -2,6 +2,9 @@
 edition = "2024"
 name = "lyricade"
 version = "0.1.0"
+description = "Manage and download lyrics for your music library"
+repository = "https://github.com/weiteck/lyricade"
+license = "MIT"
 
 [dependencies]
 anyhow = "1.0"
