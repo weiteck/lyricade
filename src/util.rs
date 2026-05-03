@@ -12,11 +12,13 @@ pub static UNIX_EPOCH_NDT: LazyLock<NaiveDateTime> = LazyLock::new(|| {
 });
 
 /// Get current UTC timestamp as `NaiveDateTime`.
+#[must_use]
 pub fn now() -> chrono::NaiveDateTime {
   chrono::Utc::now().naive_utc()
 }
 
 /// Convert UTC `NaiveDateTime` to local time.
+#[must_use]
 pub fn ndt_utc_to_local_dt(ndt_utc: NaiveDateTime) -> DateTime<Local> {
   let utc_dt: DateTime<Utc> = DateTime::from_naive_utc_and_offset(ndt_utc, Utc);
   let dt_local: DateTime<Local> = DateTime::from(utc_dt);
@@ -24,6 +26,7 @@ pub fn ndt_utc_to_local_dt(ndt_utc: NaiveDateTime) -> DateTime<Local> {
 }
 
 /// Convert UTC `NaiveDateTime` to local ISO 8601 text with second accuracy.
+#[must_use]
 pub fn ndt_utc_to_ui_string(ndt_utc: NaiveDateTime) -> String {
   let local_dt = ndt_utc_to_local_dt(ndt_utc);
   local_dt.format("%F %T").to_string()
@@ -31,6 +34,7 @@ pub fn ndt_utc_to_ui_string(ndt_utc: NaiveDateTime) -> String {
 
 /// Convert UTC `NaiveDateTime` to humanised text if recent, e.g. "2 months ago",
 /// and local ISO 8601 text with second accuracy if not recent.
+#[must_use]
 pub fn ndt_utc_to_humanised_string(ndt_utc: NaiveDateTime) -> String {
   let local_dt = ndt_utc_to_local_dt(ndt_utc);
 
@@ -69,12 +73,11 @@ pub fn file_modified_at(path: &Utf8Path, file: Option<&std::fs::File>) -> NaiveD
     error!(
       "Error while getting modified timestamp for file \"{}\": {error}",
       path
-    )
+    );
   });
 
   metadata
     .and_then(|m| m.modified())
     .map(chrono::DateTime::<chrono::Utc>::from)
-    .map(|dt| dt.naive_utc())
-    .unwrap_or(*UNIX_EPOCH_NDT)
+    .map_or(*UNIX_EPOCH_NDT, |dt| dt.naive_utc())
 }

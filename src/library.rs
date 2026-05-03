@@ -4,7 +4,11 @@ use anyhow::anyhow;
 use bon::bon;
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::NaiveDateTime;
-use diesel::{dsl::insert_into, prelude::*};
+use diesel::{
+  dsl::insert_into,
+  prelude::*,
+  r2d2::{ConnectionManager, PooledConnection},
+};
 
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
@@ -145,7 +149,7 @@ impl Library {
       .find(id)
       .first::<Library>(&mut conn)
       .inspect_err(|error| {
-        error!("Database error while trying to get Library with ID {id}: {error}")
+        error!("Database error while trying to get Library with ID {id}: {error}");
       })?;
 
     Ok(lib)
@@ -182,7 +186,7 @@ impl Library {
     let paths = self
       .file_paths()
       .iter()
-      .map(|p| p.to_string())
+      .map(Utf8PathBuf::to_string)
       .collect::<HashSet<_>>();
     let mut existing_count = 0_usize;
     let mut existing_refreshed_count = 0_usize;
@@ -209,9 +213,9 @@ impl Library {
         .collect::<HashSet<_>>();
       let new_tracks = new_paths
         .iter()
-        .map(|path| NewTrack {
+        .map(|&path| NewTrack {
           library_id: self.id,
-          path: path.to_string(),
+          path: path.clone(),
           added_at: now,
           updated_at: now,
           ..Default::default()
@@ -270,7 +274,7 @@ impl Library {
               if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
                 on_progress(new_refreshed_count + existing_refreshed_count);
               }
-            };
+            }
           }
         }
       } else {
@@ -289,7 +293,7 @@ impl Library {
             if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
               on_progress(new_refreshed_count + existing_refreshed_count);
             }
-          };
+          }
         }
       }
 
@@ -383,26 +387,27 @@ impl Library {
       .filter(tracks::library_id.eq(&self.id))
       .find(id);
 
-    match conn {
-      Some(conn) => Ok(query.first::<Track>(conn)?),
-      None => {
-        let mut conn = DB_POOL.get()?;
-        Ok(query.first::<Track>(&mut conn)?)
-      }
+    if let Some(conn) = conn {
+      Ok(query.first::<Track>(conn)?)
+    } else {
+      let mut conn = DB_POOL.get()?;
+      Ok(query.first::<Track>(&mut conn)?)
     }
   }
 
   /// Get all `Track`s.
   #[builder]
-  pub fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
+  pub fn tracks(
+    &self,
+    conn: Option<&mut PooledConnection<ConnectionManager<SqliteConnection>>>,
+  ) -> Result<Vec<Track>> {
     let query = tracks::table.filter(tracks::library_id.eq(&self.id));
 
-    match conn {
-      Some(conn) => Ok(query.load::<Track>(conn)?),
-      None => {
-        let mut conn = DB_POOL.get()?;
-        Ok(query.load::<Track>(&mut conn)?)
-      }
+    if let Some(conn) = conn {
+      Ok(query.load::<Track>(conn)?)
+    } else {
+      let mut conn = DB_POOL.get()?;
+      Ok(query.load::<Track>(&mut conn)?)
     }
   }
 
@@ -420,16 +425,19 @@ impl Library {
   }
 
   /// Get the `Library`'s name. Returns the `default_name` if none is set.
+  #[must_use]
   pub fn name(&self) -> String {
     self.name.clone().unwrap_or_else(|| self.default_name())
   }
 
   /// The `Library`'s directory name.
+  #[must_use]
   pub fn default_name(&self) -> String {
     self.path().file_name().unwrap_or("(invalid)").into()
   }
 
   /// Get the `Library`'s path.
+  #[must_use]
   pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
@@ -482,7 +490,7 @@ impl Library {
   pub fn file_paths(&self) -> HashSet<Utf8PathBuf> {
     WalkDir::new(&self.path)
       .into_iter()
-      .filter_map(|e| e.ok())
+      .filter_map(core::result::Result::ok)
       .filter(|e| e.file_type().is_file())
       .filter(|e| {
         e.path().extension().is_some_and(|ext| {
@@ -504,6 +512,7 @@ impl Library {
       .count()
       .first::<i64>(&mut conn)?;
 
+    #[expect(clippy::cast_possible_truncation)]
     Ok(size as usize)
   }
 

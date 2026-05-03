@@ -15,10 +15,10 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {
     Utf8PathBuf::from("./dev-data") // use project dir
   } else {
-    let path = PROJECT_DIRS
-      .as_ref()
-      .map(|pd| pd.data_dir().to_path_buf())
-      .unwrap_or_else(|| env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")));
+    let path = PROJECT_DIRS.as_ref().map_or_else(
+      || env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")),
+      |pd| pd.data_dir().to_path_buf(),
+    );
     path
       .try_into()
       .expect("Encountered invalid UTF-8 path while parsing user data directory")
@@ -44,6 +44,7 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 /// Maximum concurrent HTTP connections.
 pub const CONNECTION_LIMIT: usize = 20;
 
+#[expect(clippy::struct_excessive_bools)]
 #[derive(
   Debug, Clone, PartialEq, Eq, Queryable, Selectable, Identifiable, Insertable, AsChangeset,
 )]
@@ -87,20 +88,19 @@ impl Settings {
         info!("Loaded settings");
         Ok(settings)
       }
-      Err(error) => match error {
-        diesel::result::Error::NotFound => {
+      Err(error) => {
+        if error == diesel::result::Error::NotFound {
           info!("Initialising default settings");
 
           let mut settings = Settings::default();
           settings.save()?;
 
           Ok(settings)
-        }
-        _ => {
+        } else {
           error!("Database error while trying to load Settings: {error}");
           Err(error)
         }
-      },
+      }
     }?;
 
     Ok(settings)

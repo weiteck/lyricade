@@ -1,6 +1,6 @@
 const API_BASE_URL: &str = "https://lrclib.net/api";
 static API_URL_GET_LYRICS_FROM_TRACK_SIGNATURE: LazyLock<String> =
-  LazyLock::new(|| format!("{}/get", API_BASE_URL));
+  LazyLock::new(|| format!("{API_BASE_URL}/get"));
 
 use std::{
   sync::{
@@ -32,17 +32,16 @@ pub struct LrcLibLyricsResponse {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[allow(unused)]
 #[serde(untagged)]
 enum ApiResponse {
   #[serde(rename_all = "camelCase")]
   Success {
-    id: i64,
-    name: Option<String>,
-    track_name: Option<String>,
-    artist_name: Option<String>,
-    album_name: Option<String>,
-    duration: Option<f64>,
+    // id: i64,
+    // name: Option<String>,
+    // track_name: Option<String>,
+    // artist_name: Option<String>,
+    // album_name: Option<String>,
+    // duration: Option<f64>,
     instrumental: bool,
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
@@ -81,6 +80,7 @@ impl Default for LrcLibClient {
 }
 
 impl LrcLibClient {
+  #[must_use]
   pub fn new() -> Self {
     let user_agent = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
@@ -173,10 +173,9 @@ impl LrcLibClient {
         // Retry in 1s
         drop(permit);
         tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
-        continue;
       } else {
         break (response.status(), response);
-      };
+      }
     };
 
     if let Ok(api_response) = response.json::<ApiResponse>().await {
@@ -225,6 +224,7 @@ impl LrcLibClient {
     Err(anyhow!("{error}"))
   }
 
+  #[must_use]
   pub fn current_req_per_sec(&self) -> usize {
     self.requests_per_second.load(atomic::Ordering::Relaxed)
   }

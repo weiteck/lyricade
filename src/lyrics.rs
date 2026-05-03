@@ -41,13 +41,15 @@ pub struct Lyrics {
 
 impl Lyrics {
   /// If lyrics are synchronous, remove timestamps.
+  #[must_use]
   pub fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
       self.contents = SYNC_LYRICS_STRIP_REGEX
         .replace_all(&self.contents, "")
         .to_string();
       self.lyrics_type = LyricsType::Plain;
-    };
+    }
+
     self
   }
 }
@@ -131,8 +133,7 @@ impl TryFrom<&Utf8Path> for LyricsFileType {
       Some("lrc") => Ok(LyricsFileType::Lrc),
       Some("txt") => Ok(LyricsFileType::Txt),
       Some(ext) => Err(anyhow!(
-        "\"{}\" is not a supported lyrics sidecar file extension (\"lrc\", \"txt\")",
-        ext
+        "\"{ext}\" is not a supported lyrics sidecar file extension (\"lrc\", \"txt\")"
       )),
       _ => Err(anyhow!("lyrics sidecar file must have an extension")),
     }
@@ -140,6 +141,7 @@ impl TryFrom<&Utf8Path> for LyricsFileType {
 }
 
 impl LyricsFileType {
+  #[must_use]
   pub fn file_extension(&self) -> String {
     match &self {
       LyricsFileType::Lrc => "lrc".into(),
@@ -201,6 +203,7 @@ impl LyricsFile {
 
   /// Find and return sidecar lyrics files that are alongside the `Track` file.
   /// Collection is sorted so best 'sync' candidate is yielded first and plain lyrics last.
+  #[must_use]
   pub fn from_track(track: &Track) -> Option<Vec<Self>> {
     let track_path = Utf8PathBuf::from(&track.path());
 
@@ -210,12 +213,12 @@ impl LyricsFile {
       .filter_map(|p| LyricsFile::try_from_path(&p).ok())
       .collect::<Vec<_>>();
 
-    if !vec.is_empty() {
+    if vec.is_empty() {
+      None
+    } else {
       // First item should be best sync candidate based on type (from regex test) and file extension
       vec.sort();
       Some(vec)
-    } else {
-      None
     }
   }
 

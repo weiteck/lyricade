@@ -7,8 +7,7 @@ use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
-use relm4::prelude::*;
-use relm4::*;
+use relm4::{RelmContainerExt, prelude::*};
 use tokio::task::AbortHandle;
 use tracing::{debug, error, trace};
 
@@ -22,6 +21,7 @@ use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
+#[expect(clippy::struct_excessive_bools)]
 struct AppModel {
   sender: AsyncComponentSender<Self>,
   libraries: Vec<Library>,
@@ -212,7 +212,7 @@ impl AsyncComponent for AppModel {
           set_placeholder_text: Some("Type to search"),
 
           connect_search_changed[sender] => move |query| {
-              sender.input(AppMsg::SearchQueryChanged(query.text().to_string()))
+              sender.input(AppMsg::SearchQueryChanged(query.text().to_string()));
           },
 
           connect_stop_search => AppMsg::ShowSearch(false),
@@ -649,7 +649,7 @@ impl AsyncComponent for AppModel {
       "_Get Lyrics" => ActionFetchLyrics,
       section! {
         "_Preferences" => ActionPrefs,
-        &format!("_About {}", APP_NAME_PRETTY) => ActionAbout,
+        &format!("_About {APP_NAME_PRETTY}") => ActionAbout,
         },
       // TODO: Hide in release build
       section! {
@@ -858,6 +858,7 @@ impl AsyncComponent for AppModel {
     root: &Self::Root,
   ) {
     match message {
+      #[expect(clippy::cast_possible_truncation)]
       AppMsg::FetchLyrics => {
         self.is_fetching_lyrics = true;
 
@@ -871,11 +872,12 @@ impl AsyncComponent for AppModel {
         let total = self.tracks.len();
         let completed = Arc::new(AtomicUsize::new(0));
         let stream = futures::stream::iter(self.tracks.clone());
+        let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
 
         // Batch process tracks and update progress
         let jh = tokio::spawn(async move {
           stream
-            .for_each_concurrent((CONNECTION_LIMIT as f64 * 1.5) as usize, |mut track| {
+            .for_each_concurrent(batch_size, |mut track| {
               let sender = sender.clone();
               let completed = Arc::clone(&completed);
 
@@ -888,9 +890,9 @@ impl AsyncComponent for AppModel {
                   .emit(AppCommand::TrackUpdated(track));
 
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                  step: Some(format!("Processed {} / {}…", completed, total)),
+                  step: Some(format!("Processed {completed} / {total}…")),
                   progress: completed as f64 / total as f64,
-                }))
+                }));
               }
             })
             .await;
@@ -1043,7 +1045,7 @@ impl AsyncComponent for AppModel {
           .inspect_err(|e| {
             sender.input(AppMsg::ShowToast(format!(
               "Error loading music libraries: {e}"
-            )))
+            )));
           })
           .is_ok()
         {
@@ -1105,7 +1107,7 @@ impl AsyncComponent for AppModel {
       AppMsg::SearchQueryChanged(query) => {
         debug!("Searching for: {}", &query);
         self.is_search_revealed = true;
-        self.search_query = if !query.is_empty() { Some(query) } else { None };
+        self.search_query = if query.is_empty() { None } else { Some(query) };
 
         self
           .tracks_table_widget
@@ -1195,7 +1197,7 @@ impl AsyncComponent for AppModel {
         self.is_sidebar_revealed = active;
         if active {
           self.rebuild_sidebar_widget();
-        };
+        }
       }
 
       AppMsg::TogglePinTrackDetailsSidebar => {
@@ -1214,28 +1216,33 @@ impl AsyncComponent for AppModel {
           self.is_sidebar_revealed = false;
         }
 
-        if self.selected_track_ids.len() == 1 {
-          self.selected_track_id = self.selected_track_ids.iter().next().copied();
-          self.change_selection_state(SelectionState::Single);
-        } else if self.selected_track_ids.len() > 1 {
-          self.selected_track_id = None;
-          self.change_selection_state(SelectionState::Multi);
-        } else {
-          self.selected_track_id = None;
-          self.change_selection_state(SelectionState::None);
+        match self.selected_track_ids.len() {
+          0 => {
+            self.selected_track_id = None;
+            self.change_selection_state(SelectionState::None);
+          }
+          1 => {
+            self.selected_track_id = self.selected_track_ids.iter().next().copied();
+            self.change_selection_state(SelectionState::Single);
+          }
+          _ => {
+            self.selected_track_id = None;
+            self.change_selection_state(SelectionState::Multi);
+          }
         }
       }
 
+      #[expect(clippy::cast_possible_truncation)]
       AppMsg::UpdateFiltered(set) => {
         debug!("Updating list and count of filtered tracks");
 
         let count = set.len() as u32;
-        if count != self.track_count {
-          debug!("Filtered Track Count: {count}");
-          self.filtered_track_count = Some(count);
-        } else {
+        if count == self.track_count {
           debug!("No tracks filtered");
           self.filtered_track_count = None;
+        } else {
+          debug!("Filtered Track Count: {count}");
+          self.filtered_track_count = Some(count);
         }
 
         self.filtered_track_ids = set;
@@ -1335,14 +1342,15 @@ impl AppModel {
     debug!("Loading Libraries and Tracks ...");
 
     self.libraries = Library::get_all()?;
-    self.load_tracks()?;
+    self.load_tracks();
 
     debug!("Loaded {} Libraries", self.libraries.len());
 
     Ok(())
   }
 
-  fn load_tracks(&mut self) -> Result<()> {
+  #[expect(clippy::cast_possible_truncation)]
+  fn load_tracks(&mut self) {
     debug!("Loading Tracks from {} Libraries ...", self.libraries.len());
 
     self.tracks = self
@@ -1368,14 +1376,13 @@ impl AppModel {
     );
 
     self.no_tracks = self.tracks.is_empty();
-
-    Ok(())
   }
 
   fn update_track_stats(&mut self) {
     self.track_stats.update(&self.tracks);
   }
 
+  #[expect(clippy::cast_possible_truncation)]
   fn rebuild_sidebar_widget(&mut self) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 24);
     root.set_margin_all(12);
@@ -1498,8 +1505,7 @@ impl AppModel {
       ar.set_subtitle(
         &track
           .last_api_check_at
-          .map(util::ndt_utc_to_ui_string)
-          .unwrap_or("Never".into()),
+          .map_or_else(|| "Never".into(), util::ndt_utc_to_ui_string),
       );
       pg.container_add(&ar);
       inner.append(&pg);
@@ -1590,33 +1596,35 @@ impl TrackStats {
 
     self.count = tracks.len();
 
-    tracks.iter().for_each(|t| {
-      if t.last_api_check_at.is_none() {
-        self.never_checked_set.insert(t.id);
-      };
+    for track in tracks {
+      if track.last_api_check_at.is_none() {
+        self.never_checked_set.insert(track.id);
+      }
 
-      if t.instrumental.is_some_and(|b| b) {
-        self.instrumental_set.insert(t.id);
+      if track.instrumental.is_some_and(|b| b) {
+        self.instrumental_set.insert(track.id);
       } else {
-        self.not_instrumental_set.insert(t.id);
+        self.not_instrumental_set.insert(track.id);
 
-        if t.lyrics_synchronised || t.lyrics_sidecar_lrc_file.is_some() {
-          self.sync_lyrics_set.insert(t.id);
-        };
+        if track.lyrics_synchronised || track.lyrics_sidecar_lrc_file.is_some() {
+          self.sync_lyrics_set.insert(track.id);
+        }
 
-        if !t.lyrics_synchronised && (t.lyrics.is_some() || t.lyrics_sidecar_txt_file.is_some()) {
-          self.plain_lyrics_set.insert(t.id);
-        };
+        if !track.lyrics_synchronised
+          && (track.lyrics.is_some() || track.lyrics_sidecar_txt_file.is_some())
+        {
+          self.plain_lyrics_set.insert(track.id);
+        }
 
-        if t.lyrics.is_some() {
-          self.tagged_lyrics_set.insert(t.id);
-        };
+        if track.lyrics.is_some() {
+          self.tagged_lyrics_set.insert(track.id);
+        }
 
-        if t.lyrics_sidecar_lrc_file.is_some() || t.lyrics_sidecar_txt_file.is_some() {
-          self.sidecar_file_set.insert(t.id);
-        };
-      };
-    });
+        if track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some() {
+          self.sidecar_file_set.insert(track.id);
+        }
+      }
+    }
 
     self.instrumental = self.instrumental_set.len();
     self.not_instrumental = self.not_instrumental_set.len();

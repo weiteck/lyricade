@@ -86,7 +86,7 @@ pub async fn init_app() -> Result<()> {
   );
   let separator = "`".repeat(pkg_name_and_version.len());
   info!(
-    r#"
+    r"
 {}
 {}
 
@@ -94,7 +94,7 @@ SQLite:        v{}
 Database:      {}
 Settings:
 {:#?}
-      "#,
+      ",
     pkg_name_and_version,
     separator,
     SQLITE_VERSION.to_string_lossy(),
@@ -121,12 +121,8 @@ fn init_logging() -> WorkerGuard {
   let mut log_name = APP_NAME.to_string();
   log_name.push_str(".log");
   let log_dir = &APP_DATA_DIR.join("logs");
-  fs::create_dir_all(log_dir).unwrap_or_else(|error| {
-    panic!(
-      "failed to create logging directory \"{}\": {error}",
-      log_dir
-    )
-  });
+  fs::create_dir_all(log_dir)
+    .unwrap_or_else(|error| panic!("failed to create logging directory \"{log_dir}\": {error}"));
 
   let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
   let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
@@ -145,7 +141,7 @@ fn init_logging() -> WorkerGuard {
 fn clean_up_log_files(log_dir: impl AsRef<Path>) -> Result<()> {
   let prefix = format!("{}.log", &APP_NAME);
   let mut files = fs::read_dir(log_dir)?
-    .filter_map(|de| de.ok())
+    .filter_map(core::result::Result::ok)
     .filter(|de| de.path().is_file() && de.file_name().to_string_lossy().starts_with(&prefix))
     .collect::<Vec<_>>();
   files.sort_by_cached_key(|de| {

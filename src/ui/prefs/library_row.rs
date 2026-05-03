@@ -55,7 +55,7 @@ impl FactoryComponent for LibraryRow {
       connect_expanded_notify[sender] => move |er| {
         if !er.is_expanded() {
           sender.input(LibraryRowMsg::Cancel);
-        };
+        }
       },
 
       #[name = "name_entry_row"]
@@ -180,10 +180,10 @@ impl FactoryComponent for LibraryRow {
           widgets.save_button.remove_css_class("suggested-action");
         } else {
           if name.is_empty() || name == self.library.default_name() {
-            self.library.name = None
+            self.library.name = None;
           } else {
-            self.library.name = Some(name)
-          };
+            self.library.name = Some(name);
+          }
 
           self.update_modified();
           self.name_too_long = false;

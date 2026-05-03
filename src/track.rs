@@ -115,7 +115,7 @@ pub struct ScanOptions {
   pub prefer_lyrics_type: LyricsType,
   /// Embed sidecar lyrics if lyrics tag is empty or not the preferred type.
   pub upgrade_lyrics_tag: bool,
-  /// Delete any "<audio_filename>.lrc" or "<audio_filename>.txt" sidecar lyrics files
+  /// Delete any _<audio-filename>.lrc_ or _<audio-filename>.txt_ sidecar lyrics files
   /// (optionally after embedding in file).
   pub delete_sidecar_files: bool,
   /// Keep only one sidecar file matching `preferred_lyrics_type`. This option causes the
@@ -166,6 +166,7 @@ impl From<&Settings> for FetchLyricsOptions {
 
 #[bon]
 impl Track {
+  #[must_use]
   pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
@@ -245,13 +246,13 @@ impl Track {
 
     if let Some(sidecar_lyrics) = LyricsFile::from_track(self) {
       // Add sidecar lyrics to `Track`
-      sidecar_lyrics.iter().for_each(|lf| {
-        if lf.file_type == LyricsFileType::Lrc {
-          self.lyrics_sidecar_lrc_file = Some(lf.lyrics.contents.clone());
+      for lyrics_file in &sidecar_lyrics {
+        if lyrics_file.file_type == LyricsFileType::Lrc {
+          self.lyrics_sidecar_lrc_file = Some(lyrics_file.lyrics.contents.clone());
         } else {
-          self.lyrics_sidecar_txt_file = Some(lf.lyrics.contents.clone());
+          self.lyrics_sidecar_txt_file = Some(lyrics_file.lyrics.contents.clone());
         }
-      });
+      }
 
       if options.upgrade_lyrics_tag {
         match options.prefer_lyrics_type {
@@ -268,7 +269,7 @@ impl Track {
                   self.lyrics = Some(lf.lyrics.contents.clone());
                   self.lyrics_synchronised = sync;
                   file_requires_update = true;
-                };
+                }
               }
             }
           }
@@ -289,7 +290,7 @@ impl Track {
                 self.lyrics = Some(lyrics);
                 self.lyrics_synchronised = false;
                 file_requires_update = true;
-              };
+              }
             }
           }
         }
@@ -313,13 +314,13 @@ impl Track {
             }
           });
       } else if options.delete_sidecar_files {
-        sidecar_lyrics.iter().for_each(|lf| {
+        for lyrics_file in &sidecar_lyrics {
           debug!(
             "{} scan: Deleting sidecar files: deleting file \"{}\"",
-            &self, &lf.path
+            &self, lyrics_file.path
           );
-          fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"))
-        });
+          fs::remove_file(&lyrics_file.path).unwrap_or_else(|error| error!("{error}"));
+        }
 
         self.lyrics_sidecar_lrc_file = None;
         self.lyrics_sidecar_txt_file = None;
@@ -377,8 +378,7 @@ impl Track {
       synced_lyrics,
     } = response.expect("checked result ok");
 
-    if instrumental && (self.instrumental.is_none() || self.instrumental.is_some_and(|inst| !inst))
-    {
+    if instrumental && self.instrumental.is_none_or(|inst| !inst) {
       self.instrumental = Some(true);
     } else {
       // Extract the preferred lyrics type and update tags
@@ -468,16 +468,17 @@ impl Track {
       .do_update()
       .set(&*self);
 
-    if 1
-      == match conn {
-        Some(conn) => stmt.execute(conn)?,
-        None => {
-          let mut conn = DB_POOL.get()?;
-          stmt.execute(&mut conn)?
-        }
-      }
-    {
+    let res = if let Some(conn) = conn {
+      stmt.execute(conn)?
+    } else {
+      let mut conn = DB_POOL.get()?;
+      stmt.execute(&mut conn)?
+    };
+
+    if res == 1 {
       trace!("Updated database entry for {}", &self);
+    } else {
+      error!("Failed to update database entry for {}", &self);
     }
 
     Ok(())
@@ -544,16 +545,17 @@ impl Track {
   ) -> Result<()> {
     let stmt = diesel::delete(&self);
 
-    if 1
-      == match conn {
-        Some(conn) => stmt.execute(conn)?,
-        None => {
-          let mut conn = DB_POOL.get()?;
-          stmt.execute(&mut conn)?
-        }
-      }
-    {
+    let res = if let Some(conn) = conn {
+      stmt.execute(conn)?
+    } else {
+      let mut conn = DB_POOL.get()?;
+      stmt.execute(&mut conn)?
+    };
+
+    if res == 1 {
       trace!("Deleted database entry for {}", &self);
+    } else {
+      error!("Failed to delete database entry for {}", &self);
     }
 
     Ok(())

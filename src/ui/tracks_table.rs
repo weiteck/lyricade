@@ -3,7 +3,7 @@ use std::collections::HashSet;
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
-use relm4::typed_view::column::*;
+use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use tracing::{debug, trace};
 
 use crate::SETTINGS;
@@ -111,8 +111,7 @@ impl SimpleComponent for TracksTableModel {
     table.set_filter_status(2, false);
 
     // 3 = NotInstrumental
-    table
-      .add_filter(|track| track.instrumental.is_none() || track.instrumental.is_some_and(|b| !b));
+    table.add_filter(|track| track.instrumental.is_none_or(|b| !b));
     table.set_filter_status(3, false);
 
     // 4 = NotSync
@@ -205,7 +204,7 @@ impl SimpleComponent for TracksTableModel {
             } else {
               debug!("Last row selected: {idx}");
               break;
-            };
+            }
           }
         }
 
@@ -552,7 +551,7 @@ impl RelmColumn for TracksTableColumnChecked {
       } else {
         &util::ndt_utc_to_humanised_string(ndt)
       };
-      (label.to_string(), iso.to_string())
+      (label.clone(), iso.clone())
     } else {
       ("Never".into(), "Never Checked for Lyrics".into())
     };

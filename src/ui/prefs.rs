@@ -1,3 +1,5 @@
+#![expect(clippy::bool_to_int_with_if)]
+
 use std::{collections::HashSet, path::PathBuf};
 
 use adw::prelude::*;
@@ -7,7 +9,9 @@ use relm4::{
   gtk::{EventControllerKey, gdk, glib},
   prelude::*,
 };
-use relm4_components::open_dialog::*;
+use relm4_components::open_dialog::{
+  OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
+};
 use tracing::{debug, trace};
 
 use crate::{
@@ -382,7 +386,7 @@ impl SimpleComponent for PrefsModel {
     let libraries = libraries.into_iter().collect::<HashSet<_>>();
 
     // Build library rows
-    let library_rows = build_library_rows(libraries.clone(), sender.clone());
+    let library_rows = build_library_rows(libraries.clone(), &sender);
 
     // Create file dialogs
     let file_dialog_settings = OpenDialogSettings {
@@ -441,8 +445,8 @@ impl SimpleComponent for PrefsModel {
 
     // Start at Music Libraries page if empty
     if model.libraries.is_empty() {
-      model.root.set_visible_page_name("libraries")
-    };
+      model.root.set_visible_page_name("libraries");
+    }
 
     ComponentParts { model, widgets }
   }
@@ -472,7 +476,7 @@ impl SimpleComponent for PrefsModel {
       PrefsMsg::UpdateSetting(setting) => match setting {
         ExposedSetting::PreferLyricsType(lyrics_type) => {
           debug!("UpdateSetting: PreferLyricsType: {lyrics_type}");
-          self.settings_current.prefer_lyrics_type = lyrics_type
+          self.settings_current.prefer_lyrics_type = lyrics_type;
         }
         ExposedSetting::PreferIsoTimestamps(active) => {
           debug!("UpdateSetting: PreferIsoTimestamps: {active}");
@@ -602,7 +606,7 @@ impl SimpleComponent for PrefsModel {
 
 fn build_library_rows(
   libs: impl IntoIterator<Item = Library>,
-  sender: ComponentSender<PrefsModel>,
+  sender: &ComponentSender<PrefsModel>,
 ) -> FactoryVecDeque<LibraryRow> {
   let mut library_rows = FactoryVecDeque::builder()
     .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
