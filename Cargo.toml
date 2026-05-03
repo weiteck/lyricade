@@ -6,6 +6,12 @@ description = "Manage and download lyrics for your music library"
 repository = "https://github.com/weiteck/lyricade"
 license = "MIT"
 
+[profile.release]
+strip = true
+opt-level = "z"
+lto = true
+codegen-units = 1
+
 [dependencies]
 anyhow = "1.0"
 bon = "3.9"
@@ -23,9 +29,8 @@ diesel_migrations = { version = "2.3", features = ["sqlite"] }
 directories = "6.0"
 futures = "0.3"
 leaky-bucket = { version = "1.1", features = ["tracing"] }
-# diesel currently supports <= v0.36 as of v2.3.7
-libsqlite3-sys = { version = "0.36", features = ["bundled"] }
-lofty = "0.23"
+libsqlite3-sys = { version = "0.37", features = ["bundled"] }
+lofty = "0.24"
 mimalloc = "0.1"
 rand = "0.10"
 regex = "1.12"
@@ -34,7 +39,7 @@ relm4-components = { version = "0.11", features = ["libadwaita"] }
 reqwest = { version = "0.13", features = ["json", "rustls"] }
 rfd = "0.17"
 serde = { version = "1.0", features = ["derive"] }
-tokio = { version = "1.50", features = ["full"] }
+tokio = { version = "1.52", features = ["full"] }
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
