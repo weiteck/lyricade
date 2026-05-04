@@ -416,7 +416,10 @@ impl AsyncComponent for AppModel {
                       // Tracks table view
                       #[wrap(Some)]
                       set_content = &gtk::ScrolledWindow {
-                        set_hexpand: true,
+                        set_expand: true,
+                        set_propagate_natural_height: true,
+                        set_valign: gtk::Align::Fill,
+                        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
 
                         #[local_ref]
                         tracks_table -> gtk::Overlay {}
@@ -1717,12 +1720,12 @@ pub fn start() {
     }
 
     box.view-lyrics.timestamp {
-      border-right: 4px solid shade(@window_bg_color, 1.5);
+      border-right: 4px solid @sidebar_bg_color;
     }
 
     label.view-lyrics.timestamp {
-      padding: 6px 4px 6px 8px;
-      background: shade(@window_bg_color, 1.5);
+      padding: 6px 6px 6px 10px;
+      background: @sidebar_bg_color;
       border-radius: 1000px 0 0 1000px;
     }
 

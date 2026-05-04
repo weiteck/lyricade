@@ -45,7 +45,7 @@ impl FactoryComponent for ViewLyricsLine {
           set_valign: gtk::Align::Start,
           set_halign: gtk::Align::End,
           set_expand: false,
-          set_css_classes: &["view-lyrics", "timestamp"],
+          set_css_classes: &["view-lyrics", "timestamp", "caption"],
           set_label: self.inner.timestamp.as_deref().unwrap_or(""),
         },
       },

@@ -89,13 +89,14 @@ impl LyricsLine {
           };
           prev_ts_secs = ts_secs;
 
+          let ts_secs = ts_secs.round();
           LyricsLine {
             lyrics_type: LyricsType::Sync,
             contents: contents.to_string(),
             timestamp: Some(format!(
               "{}:{:02}",
               (ts_secs as usize / 60),
-              ts_secs.round() as usize % 60
+              ts_secs as usize % 60
             )),
             gap_to_prev: Some(gap_to_prev),
           }

@@ -93,6 +93,7 @@ impl FactoryComponent for LibraryRow {
       },
 
       // Buttons row
+      // Manually create the `ListBoxRow` so we can disable the hover effect
       add_row = &gtk::ListBoxRow {
         set_selectable: false,
         set_activatable: false,
