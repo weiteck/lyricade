@@ -36,10 +36,9 @@ impl FactoryComponent for ViewLyricsLine {
 
       gtk::Box {
         set_visible: self.inner.timestamp.is_some(),
-        set_css_classes: &["view-lyrics", "timestamp"],
+        set_css_classes: &["view-lyrics", "timestamp", "dimmed"],
         set_valign: gtk::Align::Fill,
         set_vexpand: true,
-        set_opacity: 0.75,
 
         gtk::Label {
           set_valign: gtk::Align::Start,
@@ -51,7 +50,7 @@ impl FactoryComponent for ViewLyricsLine {
       },
 
       gtk::Label {
-        set_css_classes: &["view-lyrics", "text"],
+        set_css_classes: &["view-lyrics", "text", "document"],
         set_align: gtk::Align::Start,
         set_wrap: true,
         set_wrap_mode: gtk::pango::WrapMode::WordChar,
