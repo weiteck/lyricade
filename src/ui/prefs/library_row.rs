@@ -83,6 +83,8 @@ impl FactoryComponent for LibraryRow {
         set_subtitle: &self.library.path,
 
         add_suffix = &gtk::Button {
+          set_valign: gtk::Align::Center,
+          set_vexpand: false,
           set_icon_name: "folder-open-symbolic",
           add_css_class: "flat",
           set_tooltip: "Browse",
