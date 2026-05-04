@@ -60,6 +60,7 @@ pub fn ndt_utc_to_humanised_string(ndt_utc: NaiveDateTime) -> String {
 
 /// Get file modification timestamp as UTC `NaiveDateTime`. Falls back to Unix epoch on any error.
 /// Optionally takes a reference to an existing `File` handle.
+#[must_use]
 #[builder]
 pub fn file_modified_at(path: &Utf8Path, file: Option<&std::fs::File>) -> NaiveDateTime {
   trace!("Getting modified timestamp for file \"{}\"", path);
@@ -80,4 +81,13 @@ pub fn file_modified_at(path: &Utf8Path, file: Option<&std::fs::File>) -> NaiveD
     .and_then(|m| m.modified())
     .map(chrono::DateTime::<chrono::Utc>::from)
     .map_or(*UNIX_EPOCH_NDT, |dt| dt.naive_utc())
+}
+
+/// Scale a value to fit the provided `min` and `max` range.
+/// Values over 1.0 will be clamped to the `max` value.
+#[allow(clippy::cast_possible_truncation)]
+#[must_use]
+#[builder]
+pub fn scale(value: f64, min: i32, max: i32) -> i32 {
+  (min + (value.abs() * f64::from(max)) as i32).min(max)
 }

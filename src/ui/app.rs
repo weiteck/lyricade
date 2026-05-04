@@ -1007,6 +1007,13 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::ShowLyricsWindow(source) => {
+        // Close any existing window
+        self
+          .view_lyrics_widget
+          .as_ref()
+          .inspect(|ctrl| ctrl.widget().close());
+        self.view_lyrics_widget = None;
+
         if let Some(track) = self
           .selected_track_id
           .and_then(|idx| self.tracks.iter().find(|track| track.id == idx))
@@ -1014,7 +1021,7 @@ impl AsyncComponent for AppModel {
           debug!("Showing ViewLyrics window with lyrics type \"{source:?}\" for {track}");
 
           let controller = ViewLyricsModel::builder()
-            .launch((track.clone(), source))
+            .launch((Box::new(track.clone()), source))
             .forward(sender.input_sender(), |msg| match msg {
               ViewLyricsOutput::Close => AppMsg::CloseLyricsWindow,
             });
@@ -1645,24 +1652,24 @@ impl TrackStats {
     self.sidecar_file = self.sidecar_file_set.intersection(track_ids).count();
   }
 
-  fn not_instrumental_percent(&self) -> f32 {
-    (self.not_instrumental as f32 / self.count as f32) * 100.0
+  fn not_instrumental_percent(&self) -> f64 {
+    (self.not_instrumental as f64 / self.count as f64) * 100.0
   }
 
-  fn sync_lyrics_percent(&self) -> f32 {
-    (self.sync_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  fn sync_lyrics_percent(&self) -> f64 {
+    (self.sync_lyrics as f64 / self.not_instrumental as f64) * 100.0
   }
 
-  fn plain_lyrics_percent(&self) -> f32 {
-    (self.plain_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  fn plain_lyrics_percent(&self) -> f64 {
+    (self.plain_lyrics as f64 / self.not_instrumental as f64) * 100.0
   }
 
-  fn tagged_lyrics_percent(&self) -> f32 {
-    (self.tagged_lyrics as f32 / self.not_instrumental as f32) * 100.0
+  fn tagged_lyrics_percent(&self) -> f64 {
+    (self.tagged_lyrics as f64 / self.not_instrumental as f64) * 100.0
   }
 
-  fn sidecar_file_percent(&self) -> f32 {
-    (self.sidecar_file as f32 / self.not_instrumental as f32) * 100.0
+  fn sidecar_file_percent(&self) -> f64 {
+    (self.sidecar_file as f64 / self.not_instrumental as f64) * 100.0
   }
 }
 
@@ -1699,6 +1706,20 @@ pub fn start() {
 
     button.circular.flat.mini-cancel image {
         -gtk-icon-size: 12px;
+    }
+
+    box.view-lyrics.timestamp {
+      border-right: 4px solid shade(@window_bg_color, 1.5);
+    }
+
+    label.view-lyrics.timestamp {
+      padding: 6px 4px 6px 8px;
+      background: shade(@window_bg_color, 1.5);
+      border-radius: 1000px 0 0 1000px;
+    }
+
+    label.view-lyrics.text {
+      font-size: 1.5rem;
     }
     ",
   );

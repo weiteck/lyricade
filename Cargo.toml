@@ -46,7 +46,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2.5"
 
 [build-dependencies]
-glib-build-tools = "0.22.0"
+glib-build-tools = "0.22"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }

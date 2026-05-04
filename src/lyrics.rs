@@ -20,8 +20,10 @@ use tracing::error;
 
 use crate::{Result, track::Track};
 
+pub mod lyrics_line;
+
 /// Regex to match "\[00:00.000]\" or "\[0:00.0]\", indicating synchronised lyrics.
-pub static SYNC_LYRICS_MATCH_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub static SYNC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]").expect("should be valid regex")
 });
 
@@ -232,7 +234,7 @@ impl LyricsFile {
 
 /// Check if lyrics are synchronised using regex.
 pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
-  SYNC_LYRICS_MATCH_REGEX.find(lyrics).is_some()
+  SYNC_LYRICS_REGEX.find(lyrics).is_some()
 }
 
 #[cfg(test)]
