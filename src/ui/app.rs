@@ -1429,30 +1429,42 @@ impl AppModel {
       // General track info
       let pg = adw::PreferencesGroup::new();
       pg.set_title("Track Details");
+
       let ar = adw::ActionRow::new();
       ar.set_title("Artist Name");
       ar.set_subtitle(&track.artist_name);
       pg.container_add(&ar);
+
       let ar = adw::ActionRow::new();
       ar.set_title("Album Title");
       ar.set_subtitle(&track.album_name);
       pg.container_add(&ar);
+
       let ar = adw::ActionRow::new();
       ar.set_title("Track Title");
       ar.set_subtitle(&track.track_name);
       pg.container_add(&ar);
+
       let ar = adw::ActionRow::new();
       ar.set_title("Duration");
+      let duration = track.duration.round();
       ar.set_subtitle(&format!(
         "{}:{:02}",
-        track.duration as u32 / 60,
-        track.duration as u32 % 60,
+        duration as u32 / 60,
+        duration as u32 % 60
       ));
       pg.container_add(&ar);
+
       let ar = adw::ActionRow::new();
       ar.set_title("File Date");
       ar.set_subtitle(&util::ndt_utc_to_ui_string(track.file_modified_at));
       pg.container_add(&ar);
+
+      let ar = adw::ActionRow::new();
+      ar.set_title("Path");
+      ar.set_subtitle(&track.path);
+      pg.container_add(&ar);
+
       root.append(&pg);
 
       // Lyrics info
@@ -1460,6 +1472,7 @@ impl AppModel {
 
       let pg = adw::PreferencesGroup::new();
       pg.set_title("Lyrics");
+
       let ar = adw::ActionRow::new();
       ar.set_title("Lyrics Tag");
       if track.lyrics.is_some() {
@@ -1470,6 +1483,7 @@ impl AppModel {
         ar.set_subtitle("Missing");
       }
       pg.container_add(&ar);
+
       if track.lyrics.is_some() {
         let ar = adw::ActionRow::new();
         ar.set_title("Type");
@@ -1480,10 +1494,12 @@ impl AppModel {
         });
         pg.container_add(&ar);
       }
+
       inner.append(&pg);
 
       if track.lyrics_sidecar_lrc_file.is_some() {
         let pg = adw::PreferencesGroup::new();
+
         let ar = adw::ActionRow::new();
         ar.set_title("Sidecar File");
         ar.set_subtitle("LRC format");
@@ -1497,6 +1513,7 @@ impl AppModel {
 
       if track.lyrics_sidecar_txt_file.is_some() {
         let pg = adw::PreferencesGroup::new();
+
         let ar = adw::ActionRow::new();
         ar.set_title("Sidecar File");
         ar.set_subtitle("TXT format");
@@ -1510,14 +1527,17 @@ impl AppModel {
 
       if track.instrumental.is_some_and(|b| b) {
         let pg = adw::PreferencesGroup::new();
+
         let ar = adw::ActionRow::new();
         ar.set_title("Instrumental");
         ar.set_subtitle("True");
+
         pg.container_add(&ar);
         inner.append(&pg);
       }
 
       let pg = adw::PreferencesGroup::new();
+
       let ar = adw::ActionRow::new();
       ar.set_title("Last Check for Lyrics");
       ar.set_subtitle(
@@ -1525,6 +1545,7 @@ impl AppModel {
           .last_api_check_at
           .map_or_else(|| "Never".into(), util::ndt_utc_to_ui_string),
       );
+
       pg.container_add(&ar);
       inner.append(&pg);
 
@@ -1534,26 +1555,32 @@ impl AppModel {
       if cfg!(debug_assertions) {
         let pg = adw::PreferencesGroup::new();
         pg.set_title("Debug Information");
+
         let ar = adw::ActionRow::new();
         ar.set_title("Track Id");
         ar.set_subtitle(&track.id.to_string());
         pg.container_add(&ar);
+
         let ar = adw::ActionRow::new();
         ar.set_title("Library Id");
         ar.set_subtitle(&track.library_id.to_string());
         pg.container_add(&ar);
+
         let ar = adw::ActionRow::new();
         ar.set_title("Added At");
         ar.set_subtitle(&util::ndt_utc_to_ui_string(track.added_at));
         pg.container_add(&ar);
+
         let ar = adw::ActionRow::new();
         ar.set_title("Updated At");
         ar.set_subtitle(&util::ndt_utc_to_ui_string(track.updated_at));
         pg.container_add(&ar);
+
         let ar = adw::ActionRow::new();
         ar.set_title("Refreshed At");
         ar.set_subtitle(&util::ndt_utc_to_ui_string(track.refreshed_at));
         pg.container_add(&ar);
+
         root.append(&pg);
       }
     } else if self.selected_track_ids.len() > 1 {
