@@ -53,9 +53,10 @@ CREATE TABLE IF NOT EXISTS settings (
   update_lyrics_tag_on_fetch BOOLEAN NOT NULL DEFAULT 0,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
 
-  -- Window size
+  -- GUI settings
   window_width INTEGER NOT NULL DEFAULT 1000,
   window_height INTEGER NOT NULL DEFAULT 600,
+  sidebar_pinned BOOLEAN NOT NULL DEFAULT 0,
 
   added_at DATETIME NOT NULL DEFAULT 'now',
   updated_at DATETIME NOT NULL DEFAULT 'now'

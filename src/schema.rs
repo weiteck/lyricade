@@ -24,6 +24,7 @@ diesel::table! {
         save_sidecar_file_on_fetch -> Bool,
         window_width -> Integer,
         window_height -> Integer,
+        sidebar_pinned -> Bool,
         added_at -> Timestamp,
         updated_at -> Timestamp,
     }

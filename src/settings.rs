@@ -65,8 +65,10 @@ pub struct Settings {
   pub update_lyrics_tag_on_fetch: bool,
   pub save_sidecar_file_on_fetch: bool,
 
+  // GUI state
   pub window_width: i32,
   pub window_height: i32,
+  pub sidebar_pinned: bool,
 
   #[diesel(skip_update)]
   pub added_at: NaiveDateTime,
@@ -151,6 +153,7 @@ impl Default for Settings {
       save_sidecar_file_on_fetch: true,
       window_width: 1000,
       window_height: 600,
+      sidebar_pinned: false,
       added_at: now,
       updated_at: now,
     }

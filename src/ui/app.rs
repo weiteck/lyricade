@@ -684,7 +684,7 @@ impl AsyncComponent for AppModel {
         AboutOutput::Close => AppMsg::CloseAboutWindow,
       });
 
-    let model = AppModel {
+    let mut model = AppModel {
       sender: sender.clone(),
       libraries: vec![],
       tracks: vec![],
@@ -729,17 +729,22 @@ impl AsyncComponent for AppModel {
       APP_NAME_PRETTY.to_string()
     };
     widgets.main_window.set_title(Some(&app_title));
-    widgets.main_window.set_widget_name("Test");
 
-    // Restore previous window size
-    let (width, height) = {
+    // Restore previous window configuration
+    let (width, height, is_sidebar_pinned) = {
       let guard = SETTINGS.read().expect("settings lock is poisoned");
       (
         guard.window_width.clamp(400, 3840),
         guard.window_height.clamp(400, 3840),
+        guard.sidebar_pinned,
       )
     };
     widgets.main_window.set_default_size(width, height);
+
+    if is_sidebar_pinned {
+      model.is_sidebar_pinned = is_sidebar_pinned;
+      model.rebuild_sidebar_widget();
+    }
 
     // Load libraries and tracks and populate table view
     sender.input(AppMsg::LoadLibraries);
@@ -1199,11 +1204,13 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::PinTrackDetailsSidebar(active) => {
-        debug!("Pinning sidebar: {active}");
-        self.is_sidebar_pinned = active;
-        self.is_sidebar_revealed = active;
-        if active {
-          self.rebuild_sidebar_widget();
+        if !self.no_tracks {
+          debug!("Pinning sidebar: {active}");
+          if active && self.is_sidebar_revealed {
+            self.rebuild_sidebar_widget();
+          }
+          self.is_sidebar_pinned = active;
+          self.is_sidebar_revealed = active;
         }
       }
 
@@ -1306,7 +1313,8 @@ impl AsyncComponent for AppModel {
         let mut guard = SETTINGS.write().expect("settings lock is poisoned");
         guard.window_width = width;
         guard.window_height = height;
-        debug!("Persisted window size {width}x{height} to Settings");
+        guard.sidebar_pinned = self.is_sidebar_pinned;
+        debug!("Persisted window size {width}x{height} and sidebar pin state to Settings");
         let _ = guard.save();
 
         gtk::glib::idle_add_local_once(move || {
