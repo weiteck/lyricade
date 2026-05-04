@@ -1688,52 +1688,9 @@ pub fn start() {
   let app = RelmApp::new(APP_ID);
 
   // Inject CSS
+  let css = include_str!("../../data/style.css");
   let provider = gtk::CssProvider::new();
-  provider.load_from_string(
-    "
-    .fade-overlay {
-      background-color: alpha(@window_bg_color, 0.67);
-    }
-
-    .window-bg-overlay {
-      background-color: @window_bg_color;
-    }
-
-    menubutton.flat.status-bar-button,
-    menubutton.flat.status-bar-button button,
-    menubutton.flat.status-bar-button label,
-    menubutton.flat.status-bar-button arrow
-    {
-        padding-top: 0;
-        padding-bottom: 0;
-    }
-
-    button.circular.flat.mini-cancel {
-        min-height: 0;
-        min-width: 0;
-        padding: 2px;
-        margin: 0;
-    }
-
-    button.circular.flat.mini-cancel image {
-        -gtk-icon-size: 12px;
-    }
-
-    box.view-lyrics.timestamp {
-      border-right: 4px solid @sidebar_bg_color;
-    }
-
-    label.view-lyrics.timestamp {
-      padding: 6px 6px 6px 10px;
-      background: @sidebar_bg_color;
-      border-radius: 1000px 0 0 1000px;
-    }
-
-    label.view-lyrics.text {
-      font-size: 1.5rem;
-    }
-    ",
-  );
+  provider.load_from_string(css);
   gtk::style_context_add_provider_for_display(
     &gtk::gdk::Display::default().expect("could not connect to display"),
     &provider,

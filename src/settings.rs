@@ -16,7 +16,7 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
     Utf8PathBuf::from("./dev-data") // use project dir
   } else {
     let path = PROJECT_DIRS.as_ref().map_or_else(
-      || env::current_dir().unwrap_or_else(|_| PathBuf::from("./data")),
+      || env::current_dir().unwrap_or_else(|_| PathBuf::from(&format!("./{APP_NAME}-data"))),
       |pd| pd.data_dir().to_path_buf(),
     );
     path
