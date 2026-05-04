@@ -93,32 +93,35 @@ impl FactoryComponent for LibraryRow {
       },
 
       // Buttons row
-      add_row = &gtk::Box {
-        set_margin_all: 12,
-        set_spacing: 6,
-        set_homogeneous: true,
-        set_can_focus: false,
-        set_focusable: false,
+      add_row = &gtk::ListBoxRow {
+        set_selectable: false,
+        set_activatable: false,
 
-        #[name = "save_button"]
-        gtk::Button {
-          set_hexpand: true,
-          set_label: "Save",
-          set_sensitive: false,
-          connect_clicked => LibraryRowMsg::Save,
-        },
+        gtk::Box {
+          set_margin_all: 12,
+          set_spacing: 6,
+          set_homogeneous: true,
 
-        gtk::Button {
-          set_hexpand: true,
-          set_label: "Cancel",
-          connect_clicked => LibraryRowMsg::Cancel,
-        },
+          #[name = "save_button"]
+          gtk::Button {
+            set_hexpand: true,
+            set_label: "Save",
+            set_sensitive: false,
+            connect_clicked => LibraryRowMsg::Save,
+          },
 
-        gtk::Button {
-          set_hexpand: true,
-          set_label: "Delete Library",
-          add_css_class: "destructive-action",
-          connect_clicked => LibraryRowMsg::Delete,
+          gtk::Button {
+            set_hexpand: true,
+            set_label: "Cancel",
+            connect_clicked => LibraryRowMsg::Cancel,
+          },
+
+          gtk::Button {
+            set_hexpand: true,
+            set_label: "Delete Library",
+            add_css_class: "destructive-action",
+            connect_clicked => LibraryRowMsg::Delete,
+          },
         },
       },
     },
