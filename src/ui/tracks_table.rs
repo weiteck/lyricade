@@ -35,7 +35,6 @@ pub enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
   TrackIdsVisible(HashSet<i32>),
   RowActivated,
-  // UpdateFilteredTrackCount(u32),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -61,11 +60,11 @@ impl SimpleComponent for TracksTableModel {
           #[local_ref]
           #[wrap(Some)]
           set_child = tracks_table_view -> gtk::ColumnView {
-              set_expand: true,
-              set_show_column_separators: true,
-              connect_activate => move |_cv, _row| {
-                  sender.input(TracksTableMsg::HandleRowActivated);
-              },
+            set_expand: true,
+            set_show_column_separators: true,
+            connect_activate => move |_cv, _row| {
+              sender.input(TracksTableMsg::HandleRowActivated);
+            },
           },
 
           add_overlay = &adw::StatusPage {
@@ -327,6 +326,7 @@ impl RelmColumn for TracksTableColumnArtist {
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_use_markup(false);
     (label, ())
   }
 
@@ -359,6 +359,7 @@ impl RelmColumn for TracksTableColumnAlbum {
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_use_markup(false);
     (label, ())
   }
 
@@ -391,6 +392,7 @@ impl RelmColumn for TracksTableColumnTrack {
     track_label.set_align(gtk::Align::Start);
     track_label.set_xalign(0.0);
     track_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    track_label.set_use_markup(false);
 
     let inst_tag = gtk::Label::new(None);
     inst_tag.set_visible(false);

@@ -1426,16 +1426,19 @@ impl AppModel {
       let ar = adw::ActionRow::new();
       ar.set_title("Artist Name");
       ar.set_subtitle(&track.artist_name);
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       let ar = adw::ActionRow::new();
       ar.set_title("Album Title");
       ar.set_subtitle(&track.album_name);
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       let ar = adw::ActionRow::new();
       ar.set_title("Track Title");
       ar.set_subtitle(&track.track_name);
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       let ar = adw::ActionRow::new();
@@ -1446,16 +1449,19 @@ impl AppModel {
         duration as u32 / 60,
         duration as u32 % 60
       ));
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       let ar = adw::ActionRow::new();
       ar.set_title("File Date");
       ar.set_subtitle(&util::ndt_utc_to_ui_string(track.file_modified_at));
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       let ar = adw::ActionRow::new();
       ar.set_title("Path");
       ar.set_subtitle(&track.path);
+      ar.set_use_markup(false);
       pg.container_add(&ar);
 
       root.append(&pg);
