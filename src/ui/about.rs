@@ -1,5 +1,5 @@
 use relm4::{
-  gtk::{EventControllerKey, prelude::WidgetExt},
+  gtk::{EventControllerKey, gdk, prelude::WidgetExt},
   prelude::*,
 };
 use tracing::trace;
@@ -29,9 +29,6 @@ impl SimpleComponent for AboutModel {
       set_license: include_str!("../../LICENSE"),
       set_website: &format!("https://github.com/weiteck/{APP_NAME}"),
       set_version: env!("CARGO_PKG_VERSION"),
-
-      set_release_notes_version: env!("CARGO_PKG_VERSION"),
-      set_release_notes: "<p>Initial release</p>",
     }
   }
 
@@ -48,7 +45,9 @@ impl SimpleComponent for AboutModel {
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("About key event: key {key} + {:?}", modifier);
-      if key == gtk::gdk::Key::Escape {
+      if key == gdk::Key::Escape
+        || (key.to_upper() == gdk::Key::W && modifier.contains(gdk::ModifierType::CONTROL_MASK))
+      {
         sender_handle
           .output(AboutOutput::Close)
           .expect("AboutOutput receiver dropped");
