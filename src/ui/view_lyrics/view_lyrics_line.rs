@@ -43,7 +43,7 @@ impl FactoryComponent for ViewLyricsLine {
         gtk::Label {
           set_valign: gtk::Align::Start,
           set_halign: gtk::Align::End,
-          set_expand: false,
+          set_wrap: false,
           set_css_classes: &["view-lyrics", "timestamp", "caption"],
           set_label: self.inner.timestamp.as_deref().unwrap_or(""),
         },
@@ -51,7 +51,11 @@ impl FactoryComponent for ViewLyricsLine {
 
       gtk::Label {
         set_css_classes: &["view-lyrics", "text", "document"],
-        set_align: gtk::Align::Start,
+        set_hexpand: true,
+        set_vexpand: false,
+        set_halign: gtk::Align::Fill,
+        set_valign: gtk::Align::Start,
+        set_xalign: 0.0,
         set_wrap: true,
         set_wrap_mode: gtk::pango::WrapMode::WordChar,
         set_label: &self.inner.contents,

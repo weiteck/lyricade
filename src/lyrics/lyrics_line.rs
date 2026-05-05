@@ -4,6 +4,9 @@ use crate::lyrics::{LyricsType, SYNC_LYRICS_REGEX};
 /// i.e. with a value of `4` the gap will be either `0.0`, `0.25`, `0.5`, `0.75`, or `1.0`.
 const GAP_TO_PREV_GRANULARITY: f64 = 4.0;
 
+/// Represents a single line of lyrics. For sync lyrics, it contains the timestamp
+/// and the normalised relative gap to the previous line of lyrics. A `gap_to_prev
+/// == 0.5` would mean this gap is about 50% that of the longest gap in all the lyrics.
 #[derive(Debug, Clone)]
 pub struct LyricsLine {
   pub lyrics_type: LyricsType,
@@ -59,9 +62,7 @@ impl LyricsLine {
       .filter(|(secs, content)| !content.is_empty() || *secs == 0.0)
       .collect::<Vec<(_, _)>>();
 
-    if timestamp_and_contents.is_empty()
-      || (timestamp_and_contents.len() as f64) < (0.5 * line_count as f64)
-    {
+    if timestamp_and_contents.is_empty() || timestamp_and_contents.len() < (line_count / 2) {
       // Return plain lyrics
       lyrics
         .lines()
