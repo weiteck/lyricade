@@ -33,6 +33,7 @@ struct AppModel {
   about_widget: Controller<AboutModel>,
   view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
   sidebar_widget: gtk::Box,
+  search_entry: gtk::SearchEntry,
   toaster: Toaster,
 
   no_tracks: bool,
@@ -196,7 +197,7 @@ impl AsyncComponent for AppModel {
       #[watch]
       set_search_mode: model.is_search_revealed,
       set_key_capture_widget: Some(&main_window),
-      connect_entry: &search_entry,
+      connect_entry: search_entry,
 
       #[wrap(Some)]
       set_child = &gtk::Box {
@@ -206,8 +207,8 @@ impl AsyncComponent for AppModel {
           set_maximum_size: 600,
           set_tightening_threshold: 400,
 
-          #[name(search_entry)]
-          gtk::SearchEntry {
+          #[local_ref]
+          search_entry -> gtk::SearchEntry {
           set_hexpand: true,
           set_placeholder_text: Some("Type to search"),
 
@@ -691,6 +692,7 @@ impl AsyncComponent for AppModel {
       about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
+      search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       no_tracks: false,
       track_count: 0,
@@ -716,6 +718,7 @@ impl AsyncComponent for AppModel {
     // References used in `view` macro
     let toast_overlay = model.toaster.overlay_widget();
     let tracks_table = model.tracks_table_widget.widget();
+    let search_entry = &model.search_entry;
 
     let widgets = view_output!();
 
@@ -1138,6 +1141,8 @@ impl AsyncComponent for AppModel {
       AppMsg::ShowSearch(active) => {
         if active {
           debug!("Search bar revealed");
+
+          self.search_entry.grab_focus();
         } else {
           debug!("Search bar hidden");
 
