@@ -212,7 +212,7 @@ impl AsyncComponent for AppModel {
           set_placeholder_text: Some("Type to search"),
 
           connect_search_changed[sender] => move |query| {
-              sender.input(AppMsg::SearchQueryChanged(query.text().to_string()));
+            sender.input(AppMsg::SearchQueryChanged(query.text().to_string()));
           },
 
           connect_stop_search => AppMsg::ShowSearch(false),
@@ -241,7 +241,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyrics),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
               },
             },
 
@@ -255,7 +255,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyricsTag),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyricsTag, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyricsTag, btn.is_active())));
               },
             },
 
@@ -269,7 +269,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::Lrc),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Lrc, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Lrc, btn.is_active())));
               },
             },
 
@@ -283,7 +283,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::Txt),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
               },
             },
 
@@ -297,7 +297,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NotSync),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotSync, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotSync, btn.is_active())));
               },
             },
 
@@ -311,7 +311,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NeverChecked),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NeverChecked, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NeverChecked, btn.is_active())));
               },
             },
 
@@ -325,7 +325,7 @@ impl AsyncComponent for AppModel {
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NotInstrumental),
               connect_toggled[sender] => move |btn| {
-                  sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotInstrumental, btn.is_active())));
+                sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotInstrumental, btn.is_active())));
               },
             },
           }

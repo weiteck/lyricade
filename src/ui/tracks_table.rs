@@ -347,7 +347,7 @@ impl RelmColumn for TracksTableColumnArtist {
       a.artist_name
         .cmp(&b.artist_name)
         .then_with(|| a.album_name.cmp(&b.album_name))
-        .then_with(|| a.track_name.cmp(&b.track_name))
+        .then_with(|| a.path.cmp(&b.path))
     }))
   }
 }
@@ -379,7 +379,7 @@ impl RelmColumn for TracksTableColumnAlbum {
     Some(Box::new(|a, b| {
       a.album_name
         .cmp(&b.album_name)
-        .then_with(|| a.track_name.cmp(&b.track_name))
+        .then_with(|| a.path.cmp(&b.path))
     }))
   }
 }
@@ -429,7 +429,7 @@ impl RelmColumn for TracksTableColumnTrack {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.track_name.cmp(&b.track_name)))
+    Some(Box::new(|a, b| a.path.cmp(&b.path)))
   }
 }
 
