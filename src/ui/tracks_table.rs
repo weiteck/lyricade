@@ -56,25 +56,33 @@ impl SimpleComponent for TracksTableModel {
   type Output = TracksTableOutput;
 
   view! {
-      gtk::Overlay {
-          #[local_ref]
-          #[wrap(Some)]
-          set_child = tracks_table_view -> gtk::ColumnView {
-            set_expand: true,
-            set_show_column_separators: true,
-            connect_activate => move |_cv, _row| {
-              sender.input(TracksTableMsg::HandleRowActivated);
-            },
-          },
+    gtk::Overlay {
+      #[wrap(Some)]
+      set_child = &gtk::ScrolledWindow {
+        set_expand: true,
+        set_propagate_natural_height: true,
+        set_valign: gtk::Align::Fill,
+        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
 
-          add_overlay = &adw::StatusPage {
-            set_description: Some("No results"),
-            set_icon_name: Some("edit-find-symbolic"),
-            add_css_class: "compact",
-            #[watch]
-            set_visible: !model.is_row_visible,
+        #[local_ref]
+        tracks_table_view -> gtk::ColumnView {
+          set_expand: true,
+          set_show_column_separators: true,
+          set_reorderable: false,
+          connect_activate => move |_cv, _row| {
+            sender.input(TracksTableMsg::HandleRowActivated);
           },
-      }
+        },
+      },
+
+      add_overlay = &adw::StatusPage {
+        set_description: Some("No results"),
+        set_icon_name: Some("edit-find-symbolic"),
+        add_css_class: "compact",
+        #[watch]
+        set_visible: !model.is_row_visible,
+      },
+    }
   }
 
   fn init(

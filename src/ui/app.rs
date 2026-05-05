@@ -415,15 +415,8 @@ impl AsyncComponent for AppModel {
 
                       // Tracks table view
                       #[wrap(Some)]
-                      set_content = &gtk::ScrolledWindow {
-                        set_expand: true,
-                        set_propagate_natural_height: true,
-                        set_valign: gtk::Align::Fill,
-                        set_policy: (gtk::PolicyType::Never, gtk::PolicyType::Automatic),
-
-                        #[local_ref]
-                        tracks_table -> gtk::Overlay {}
-                      },
+                      #[local_ref]
+                      set_content = tracks_table -> gtk::Overlay {},
 
                       // Sidebar
                       #[wrap(Some)]
@@ -1069,6 +1062,11 @@ impl AsyncComponent for AppModel {
           sender.input(AppMsg::BuildTracksTable);
 
           self.no_tracks = self.tracks.is_empty();
+
+          // Reset track selection state
+          self.selected_track_id = None;
+          self.selected_track_ids.clear();
+          self.update_selection_state();
 
           if !self.no_tracks {
             sender.input(AppMsg::ShowToast(format!(
