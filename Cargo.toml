@@ -4,7 +4,7 @@ name = "lyricade"
 version = "0.1.0"
 description = "Manage and download lyrics for your music library"
 repository = "https://github.com/weiteck/lyricade"
-license = "MIT"
+license = "Apache-2.0"
 
 [profile.release]
 strip = true

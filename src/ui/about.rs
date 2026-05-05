@@ -4,7 +4,7 @@ use relm4::{
 };
 use tracing::trace;
 
-use crate::settings::APP_NAME_PRETTY;
+use crate::settings::{APP_NAME, APP_NAME_PRETTY};
 
 pub struct AboutModel;
 
@@ -25,14 +25,13 @@ impl SimpleComponent for AboutModel {
       set_application_icon: "lyricade",
       set_developer_name: "Chris Price",
       set_developers: &["Chris Price <fair.lake5766@fastmail.com>"],
+      set_license_type: gtk::License::Apache20,
+      set_license: include_str!("../../LICENSE"),
+      set_website: &format!("https://github.com/weiteck/{APP_NAME}"),
       set_version: env!("CARGO_PKG_VERSION"),
-      set_license_type: gtk::License::MitX11,
-      set_copyright: "Copyright © 2026 Chris Price",
-      set_comments: r"Thanks go to <b>tranxuanthang</b> and the <b>lrclib.net</b> contributors for creating the service that this app relies upon.
 
-    <i>github.com/tranxuanthang/lrclib</i>",
-      // TODO: Change website
-      set_website: "https://github.com/weiteck/lrcman",
+      set_release_notes_version: env!("CARGO_PKG_VERSION"),
+      set_release_notes: "<p>Initial release</p>",
     }
   }
 
