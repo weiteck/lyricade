@@ -643,19 +643,20 @@ impl AsyncComponent for AppModel {
 
   menu! {
     main_menu: {
-      "_Refresh Libraries" => ActionRefreshLibraries,
       "_Get Lyrics" => ActionFetchLyrics,
+      section! {
+        "_Refresh Libraries" => ActionRefreshLibraries,
+      },
       section! {
         "_Preferences" => ActionPrefs,
         &format!("_About {APP_NAME_PRETTY}") => ActionAbout,
-        },
-      // TODO: Hide in release build
-      section! {
-        "_Debug" {
-          "Test _Toast" => ActionTestToast,
-          "Test _Spinner" => ActionTestSpinner,
-        }
-      }
+      },
+      // section! {
+      //   "_Debug" {
+      //     "Test _Toast" => ActionTestToast,
+      //     "Test _Spinner" => ActionTestSpinner,
+      //   }
+      // }
     }
   }
 
@@ -844,10 +845,11 @@ impl AsyncComponent for AppModel {
 
     // Keyboard shortcuts
     let app = relm4::main_adw_application();
-    app.set_accelerators_for_action::<ActionPrefs>(&["<primary>comma"]);
-    app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
     app.set_accelerators_for_action::<ActionSearch>(&["<primary>f"]);
     app.set_accelerators_for_action::<ActionPinSidebar>(&["F9"]);
+    app.set_accelerators_for_action::<ActionRefreshLibraries>(&["<primary>r"]);
+    app.set_accelerators_for_action::<ActionPrefs>(&["<primary>comma"]);
+    app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
 
     // Register menu/keyboard actions for main window
     menu_actions_group.register_for_widget(&widgets.main_window);
