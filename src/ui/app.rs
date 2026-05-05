@@ -1233,20 +1233,7 @@ impl AsyncComponent for AppModel {
           self.is_sidebar_revealed = false;
         }
 
-        match self.selected_track_ids.len() {
-          0 => {
-            self.selected_track_id = None;
-            self.change_selection_state(SelectionState::None);
-          }
-          1 => {
-            self.selected_track_id = self.selected_track_ids.iter().next().copied();
-            self.change_selection_state(SelectionState::Single);
-          }
-          _ => {
-            self.selected_track_id = None;
-            self.change_selection_state(SelectionState::Multi);
-          }
-        }
+        self.update_selection_state();
       }
 
       #[expect(clippy::cast_possible_truncation)]
@@ -1260,6 +1247,10 @@ impl AsyncComponent for AppModel {
         } else {
           debug!("Filtered Track Count: {count}");
           self.filtered_track_count = Some(count);
+
+          // Unselect tracks not in filtered set
+          self.selected_track_ids.retain(|id| set.contains(id));
+          self.update_selection_state();
         }
 
         self.filtered_track_ids = set;
@@ -1599,6 +1590,23 @@ impl AppModel {
     }
 
     self.sidebar_widget = root;
+  }
+
+  fn update_selection_state(&mut self) {
+    match self.selected_track_ids.len() {
+      0 => {
+        self.selected_track_id = None;
+        self.change_selection_state(SelectionState::None);
+      }
+      1 => {
+        self.selected_track_id = self.selected_track_ids.iter().next().copied();
+        self.change_selection_state(SelectionState::Single);
+      }
+      _ => {
+        self.selected_track_id = None;
+        self.change_selection_state(SelectionState::Multi);
+      }
+    }
   }
 
   fn change_selection_state(&mut self, new_state: SelectionState) {
