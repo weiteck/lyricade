@@ -4,5 +4,9 @@ fn main() {
   println!("cargo:rerun-if-changed=migrations");
 
   // Bundle icons
-  glib_build_tools::compile_resources(&["data"], "data/icons.gresource.xml", "icons.gresource");
+  glib_build_tools::compile_resources(
+    &["data"],
+    "data/resources.gresource.xml",
+    "resources.gresource",
+  );
 }

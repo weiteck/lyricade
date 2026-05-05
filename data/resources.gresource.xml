@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<gresources>
+    <gresource prefix="io/github/weiteck/Lyricade/icons">
+        <file
+      preprocess="xml-stripblanks"
+      alias="lyricade.svg"
+    >icons/io.github.weiteck.Lyricade.svg</file>
+    </gresource>
+
+    <gresource prefix="io/github/weiteck/Lyricade/icons">
+        <file
+      preprocess="xml-stripblanks"
+      alias="lyricade-symbolic.svg"
+    >icons/symbolic/io.github.weiteck.Lyricade-symbolic.svg</file>
+    </gresource>
+
+    <gresource prefix="io/github/weiteck/Lyricade/icons">
+        <file
+      preprocess="xml-stripblanks"
+      alias="playlist2-symbolic.svg"
+    >icons/symbolic/playlist2-symbolic.svg</file>
+    </gresource>
+
+    <gresource prefix="io/github/weiteck/Lyricade/icons">
+        <file
+      preprocess="xml-stripblanks"
+      alias="document-text-symbolic.svg"
+    >icons/symbolic/document-text-symbolic.svg</file>
+    </gresource>
+</gresources>

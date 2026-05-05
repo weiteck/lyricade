@@ -388,7 +388,7 @@ impl AsyncComponent for AppModel {
                     adw::StatusPage {
                       set_title: &format!("Welcome to {}", &APP_NAME_PRETTY),
                       set_description: Some("Add a Music Library to get started"),
-                      set_icon_name: Some("Lyricade-symbolic"),
+                      set_icon_name: Some("lyricade-symbolic"),
                       set_width_request: 300,
                       #[wrap(Some)]
                       set_child = &gtk::Button {
@@ -433,6 +433,7 @@ impl AsyncComponent for AppModel {
 
                         #[name = "sidebar_viewport"]
                         gtk::Viewport {
+                          set_width_request: 300,
                           #[watch]
                           set_child: Some(&model.sidebar_widget),
                         },
@@ -1395,6 +1396,7 @@ impl AppModel {
   fn rebuild_sidebar_widget(&mut self) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 24);
     root.set_margin_all(12);
+
     if let Some(track) = self
       .selected_track_id
       .and_then(|id| self.tracks.iter().find(|t| t.id == id))
@@ -1408,7 +1410,7 @@ impl AppModel {
         let btn = gtk::Button::new();
         btn.add_css_class("flat");
         btn.set_valign(gtk::Align::Center);
-        btn.set_icon_name("view-reveal-symbolic");
+        btn.set_icon_name("document-text-symbolic");
         btn.set_tooltip("View Lyrics");
         let sender = self.sender.clone();
         btn.connect_clicked(move |_| {
@@ -1576,17 +1578,28 @@ impl AppModel {
       }
     } else if self.selected_track_ids.len() > 1 {
       debug!("Building sidebar with multiple tracks selected");
-
       root.set_valign(gtk::Align::Center);
+
       let selected = self.selected_track_ids.len();
-      let label = gtk::Label::new(Some(&format!("{selected} tracks selected")));
-      root.append(&label);
+
+      let status_page = adw::StatusPage::new();
+      status_page.set_title(&format!("{selected} tracks selected"));
+      status_page.set_description(Some("Select one track to view details"));
+      status_page.set_icon_name(Some("playlist2-symbolic"));
+      status_page.add_css_class("compact");
+
+      root.append(&status_page);
     } else {
       debug!("Building sidebar with no track selected");
-
       root.set_valign(gtk::Align::Center);
-      let label = gtk::Label::new(Some("No track selected"));
-      root.append(&label);
+
+      let status_page = adw::StatusPage::new();
+      status_page.set_title("No track selected");
+      status_page.set_description(Some("Select a track to view details"));
+      status_page.set_icon_name(Some("lyricade-symbolic"));
+      status_page.add_css_class("compact");
+
+      root.append(&status_page);
     }
 
     self.sidebar_widget = root;
@@ -1722,6 +1735,9 @@ impl TrackStats {
 pub fn start() {
   let app = RelmApp::new(APP_ID);
 
+  // Custom icons
+  initialize_custom_icons();
+
   // Inject CSS
   let css = include_str!("../../data/style.css");
   let provider = gtk::CssProvider::new();
@@ -1732,14 +1748,12 @@ pub fn start() {
     gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
   );
 
-  // Custom icons
-  initialize_custom_icons();
-
   app.run_async::<AppModel>(());
 }
 
 fn initialize_custom_icons() {
-  gtk::gio::resources_register_include!("icons.gresource").expect("failed to include gresources");
+  gtk::gio::resources_register_include!("resources.gresource")
+    .expect("failed to include gresources");
 
   let display = gtk::gdk::Display::default().expect("could not connect to display");
   let theme = gtk::IconTheme::for_display(&display);

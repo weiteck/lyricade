@@ -21,9 +21,8 @@ impl SimpleComponent for AboutModel {
 
   view! {
     adw::AboutWindow {
-      // TODO: Change name
       set_application_name: APP_NAME_PRETTY,
-      set_application_icon: "Lyricade",
+      set_application_icon: "lyricade",
       set_developer_name: "Chris Price",
       set_developers: &["Chris Price <fair.lake5766@fastmail.com>"],
       set_version: env!("CARGO_PKG_VERSION"),
