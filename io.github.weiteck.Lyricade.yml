@@ -6,6 +6,12 @@ sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
 command: lyricade
 
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
   env:
@@ -16,8 +22,12 @@ modules:
   - name: lyricade
     buildsystem: simple
     build-commands:
-      - cargo --offline fetch --manifest-path Cargo.toml --verbose
-      - cargo build --bin lyricade --offline --release
+      # Prepare the offline config
+      - mkdir -p .cargo
+      - cp cargo/config .cargo/config.toml
+
+      - cargo build --bin lyricade --offline --frozen --release
+
       - install -Dm0755 target/release/lyricade ${FLATPAK_DEST}/bin/lyricade
       - install -Dm0644 data/icons/${FLATPAK_ID}.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
       - install -Dm0644 data/icons/symbolic/${FLATPAK_ID}-symbolic.svg ${FLATPAK_DEST}/share/icons/hicolor/symbolic/apps/${FLATPAK_ID}-symbolic.svg
@@ -26,5 +36,5 @@ modules:
     sources:
       - type: git
         url: https://github.com/weiteck/lyricade.git
-        commit: "3535062848ccf6cc72702b21f59b8d7411735e09"
+        commit: "d1d5ac615a0ad77750dd34e935be33f4fa7768b8"
       - cargo-sources.json
