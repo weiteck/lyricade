@@ -1,11 +1,11 @@
 [Desktop Entry]
 Name=Lyricade
 GenericName=Lyrics Downloader
-Comment=Download and manage lyrics for your music library
+Comment=Download and manage lyrics
 Exec=lyricade
 Icon=io.github.weiteck.Lyricade
 Terminal=false
 Type=Application
-Categories=Music;GNOME;GTK;
-Keywords=lyrics;lrc;sync;synchronous;synchronize;synchronized;music;song;download;
+Categories=AudioVideo;Music;GNOME;GTK;
+Keywords=lyrics;lrc;metadata;sync;music;song;download;
 X-SingleMainWindow=true

@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<component type="desktop-application">
+  <id>io.github.weiteck.Lyricade</id>
+
+  <name>Lyricade</name>
+  <summary>Download and manage lyrics</summary>
+
+  <metadata_license>FSFAP</metadata_license>
+  <project_license>Apache-2.0</project_license>
+
+  <content_rating type="oars-1.1" />
+
+  <launchable type="desktop-id">io.github.weiteck.Lyricade.desktop</launchable>
+
+  <description>
+    <p>
+      Lyricade scans your music libraries and downloads missing lyrics in either synchronous LRC
+      format (if available) or plain text format, at your preference. It also assists in managing
+      your existing embedded and external lyrics files.
+    </p>
+
+    <p>
+      Features:
+    </p>
+    <ul>
+      <li>Scan your music and find missing lyrics</li>
+      <li>Download either synchronous LRC or plain lyrics</li>
+      <li>Embed lyrics to the metadata tag <em>or</em> save as a sidecar file</li>
+      <li>Embed <em>existing</em> sidecar <code>.lrc</code> or <code
+        >.txt</code> files into lyrics tags</li>
+      <li>Clean up sidecar lyrics files if a file is already tagged</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>AudioVideo</category>
+    <category>Music</category>
+  </categories>
+
+  <recommends>
+    <internet>always</internet>
+  </recommends>
+
+  <!-- TODO -->
+  <screenshots>
+    <screenshot type="default">
+      <caption>The main window</caption>
+      <image>https://tbc1</image>
+    </screenshot>
+    <screenshot>
+      <caption>The preferences window</caption>
+      <image>https://tbc2</image>
+    </screenshot>
+    <screenshot>
+      <caption>Light mode main window</caption>
+      <image>https://tbc3</image>
+    </screenshot>
+  </screenshots>
+
+  <url type="homepage">https://github.com/weiteck/lyricade</url>
+  <url type="vcs-browser">https://github.com/weiteck/lyricade</url>
+  <url type="bug-tracker">https://github.com/weiteck/lyricade/issues</url>
+
+  <developer id="io.github.weiteck">
+    <name translate="no">Chris Price</name>
+  </developer>
+
+  <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
+</component>
