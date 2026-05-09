@@ -17,6 +17,7 @@ pub enum ViewLyricsSource {
 
 pub struct ViewLyricsModel {
   track: Track,
+  lyrics: String,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
 }
 
@@ -32,18 +33,65 @@ impl SimpleComponent for ViewLyricsModel {
   type Init = (Box<Track>, ViewLyricsSource);
 
   view! {
-    gtk::Window {
+    #[root]
+    adw::Window {
       set_title: Some(&format!("“{}” - {}", &model.track.track_name, &model.track.artist_name)),
       set_default_size: (600, 700),
 
-      gtk::ScrolledWindow {
-        #[local_ref]
-        lyrics_lines_box -> gtk::Box {
-          set_css_classes: &["view-lyrics", "container"],
-          set_align: gtk::Align::Fill,
+      #[wrap(Some)]
+      set_content = &adw::ToolbarView {
+        add_top_bar = &adw::HeaderBar {
+        },
+
+        add_bottom_bar = &gtk::Box {
+          set_halign: gtk::Align::Center,
+
+          adw::ViewSwitcher {
+            set_policy: adw::ViewSwitcherPolicy::Wide,
+            // add_css_class: "linked",
+            set_stack: Some(&view_stack),
+          },
+        },
+
+        set_content: Some(&view_stack),
+      },
+
+    },
+
+    #[name = "view_stack"]
+    adw::ViewStack {
+      add = &gtk::ScrolledWindow {
+        gtk::ScrolledWindow {
+          #[local_ref]
+          lyrics_lines_box -> gtk::Box {
+            set_css_classes: &["view-lyrics", "container"],
+            set_halign: gtk::Align::Fill,
+            set_valign: gtk::Align::Start,
+            set_expand: true,
+            set_margin_all: 24,
+          },
+        },
+      } -> {
+        // returned `ViewStackPage`
+        set_title: Some("Stylised"),
+        set_icon_name: Some("magic-wand-symbolic"),
+      },
+
+      add = &gtk::ScrolledWindow {
+        gtk::Box {
+          set_halign: gtk::Align::Fill,
+          set_valign: gtk::Align::Start,
           set_expand: true,
           set_margin_all: 24,
-        },
+
+          gtk::Label {
+            set_label: &model.lyrics,
+          },
+        }
+      } -> {
+        // returned `ViewStackPage`
+        set_title: Some("Raw"),
+        set_icon_name: Some("format-text-rich-symbolic"),
       },
     },
   }
@@ -73,6 +121,7 @@ impl SimpleComponent for ViewLyricsModel {
     let model = ViewLyricsModel {
       track: *track,
       lyrics_lines,
+      lyrics,
     };
 
     let lyrics_lines_box = model.lyrics_lines.widget();

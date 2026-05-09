@@ -27,4 +27,11 @@
       alias="document-text-symbolic.svg"
     >icons/symbolic/document-text-symbolic.svg</file>
     </gresource>
+
+    <gresource prefix="io/github/weiteck/Lyricade/icons">
+        <file
+      preprocess="xml-stripblanks"
+      alias="magic-wand-symbolic.svg"
+    >icons/symbolic/magic-wand-symbolic.svg</file>
+    </gresource>
 </gresources>
