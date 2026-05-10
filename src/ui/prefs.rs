@@ -163,7 +163,7 @@ impl SimpleComponent for PrefsModel {
 
         adw::PreferencesGroup {
           set_title: "Scan Files",
-          set_description: Some("How audio and lyrics files are scanned and managed."),
+          set_description: Some("How audio files are scanned."),
 
           adw::SwitchRow {
             set_title: "_Ignore Unchanged",
@@ -175,11 +175,44 @@ impl SimpleComponent for PrefsModel {
               sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ScanNewFilesOnly(btn.is_active())));
             }
           },
+        },
+
+        adw::PreferencesGroup {
+          set_title: "Fetch Lyrics",
+          set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
 
           adw::SwitchRow {
-            set_title: "_Upgrade Lyrics Tag From Sidecar",
+            set_title: "Write to Lyrics _Tag",
             set_use_underline: true,
-            set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format exists",
+            set_subtitle: "Update audio file metadata",
+            #[watch]
+            set_active: model.settings_current.update_lyrics_tag_on_fetch,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpdateLyricsTagOnFetch(btn.is_active())));
+            }
+          },
+
+          adw::SwitchRow {
+            set_title: "Write to Sidecar _File",
+            set_use_underline: true,
+            set_subtitle: "Save LRC/TXT lyrics files alongside audio files",
+            #[watch]
+            set_active: model.settings_current.save_sidecar_file_on_fetch,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
+            },
+
+          },
+        },
+
+        adw::PreferencesGroup {
+          set_title: "Sidecar Files",
+          set_description: Some("How LRC/TXT lyrics files are scanned and managed."),
+
+          adw::SwitchRow {
+            set_title: "_Upgrade Lyrics Tag From File",
+            set_use_underline: true,
+            set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format is found",
             #[watch]
             set_active: model.settings_current.upgrade_lyrics_tag_on_scan,
             connect_active_notify[sender] => move |btn| {
@@ -191,13 +224,13 @@ impl SimpleComponent for PrefsModel {
             set_title: "_Clean Up Sidecar Files",
             set_use_underline: true,
             #[watch]
-            set_subtitle: if model.settings_current.delete_sidecar_files_on_scan {
-              "All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
+            set_subtitle: &format!("Whether lyrics files are deleted\n{}", if model.settings_current.delete_sidecar_files_on_scan {
+              "Action: All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
             } else if model.settings_current.keep_one_sidecar_file_on_scan  {
-              "Keep only the preferred lyrics format if both sync and plain sidecar files are present"
+              "Action: Keep only the preferred lyrics format if both sync and plain sidecar files are present"
             } else {
-              "Keep all sidecar files"
-            },
+              "Action: Keep all sidecar files"
+            }),
             set_model: Some(&gtk::StringList::new(&[
               "Do Nothing",
               "Keep One",
@@ -220,34 +253,6 @@ impl SimpleComponent for PrefsModel {
                 }
               }
             },
-          },
-        },
-
-        adw::PreferencesGroup {
-          set_title: "Fetch Lyrics",
-          set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
-
-          adw::SwitchRow {
-            set_title: "Write to Lyrics _Tag",
-            set_use_underline: true,
-            set_subtitle: "Update audio file metadata with the found lyrics",
-            #[watch]
-            set_active: model.settings_current.update_lyrics_tag_on_fetch,
-            connect_active_notify[sender] => move |btn| {
-              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpdateLyricsTagOnFetch(btn.is_active())));
-            }
-          },
-
-          adw::SwitchRow {
-            set_title: "Write to Sidecar _File",
-            set_use_underline: true,
-            set_subtitle: "Save a LRC or TXT file with the found lyrics alongside the audio file",
-            #[watch]
-            set_active: model.settings_current.save_sidecar_file_on_fetch,
-            connect_active_notify[sender] => move |btn| {
-              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
-            },
-
           },
         },
 

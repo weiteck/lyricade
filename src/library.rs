@@ -18,7 +18,7 @@ use crate::{
   lyrics::LyricsType,
   schema::{libraries, tracks},
   settings::Settings,
-  track::{self, FetchLyricsOptions, NewTrack, Track},
+  track::{self, CleanUpSidecarFilesOptions, FetchLyricsOptions, NewTrack, Track},
   util::{self, now},
 };
 
@@ -63,14 +63,14 @@ pub struct NewLibrary {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RefreshOptions {
   pub scan_new_only: bool,
-  pub scan_options: track::ScanOptions,
+  pub scan_options: track::CleanUpSidecarFilesOptions,
 }
 
 impl From<&Settings> for RefreshOptions {
   fn from(value: &Settings) -> Self {
     RefreshOptions {
       scan_new_only: value.scan_new_files_only,
-      scan_options: track::ScanOptions {
+      scan_options: track::CleanUpSidecarFilesOptions {
         prefer_lyrics_type: value.prefer_lyrics_type,
         upgrade_lyrics_tag: value.upgrade_lyrics_tag_on_scan,
         delete_sidecar_files: value.delete_sidecar_files_on_scan,
@@ -166,16 +166,21 @@ impl Library {
   }
 
   #[builder]
-  /// Read metadata for new and existing files in `Library` path and update database.
-  pub fn refresh<F>(&self, options: Option<RefreshOptions>, on_progress: F) -> Result<usize>
+  /// Read metadata for new and (optionally) existing files in `Library` path and update database.
+  pub fn refresh<F>(&self, on_progress: F) -> Result<usize>
   where
     F: Fn(usize) + Send + 'static,
   {
-    let options = {
-      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
-      options.unwrap_or_else(|| RefreshOptions::from(settings))
-    };
-    info!("{} refresh: Started with options: {:?}", &self, options);
+    let scan_new_only = SETTINGS
+      .read()
+      .map_err(|e| anyhow!("{e}"))?
+      .scan_new_files_only;
+
+    if scan_new_only {
+      info!("{} refresh: Started (new/modified files only)", &self);
+    } else {
+      info!("{} refresh: Started", &self);
+    }
 
     // Make sure progress is shown without delay
     on_progress(0);
@@ -237,17 +242,11 @@ impl Library {
       let mut new_tracks = vec![];
       let mut errored_new_tracks = vec![];
       for mut track in inserted_new_tracks {
-        if track
-          .scan_and_update()
-          .options(options.scan_options)
-          .conn(conn)
-          .call()
-          .is_ok()
-        {
+        if track.scan_and_update().conn(conn).call().is_ok() {
           new_tracks.push(track);
           new_refreshed_count += 1;
 
-          // Report back progress
+          // Report back progress periodically
           if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
             on_progress(new_refreshed_count + existing_refreshed_count);
           }
@@ -256,21 +255,15 @@ impl Library {
         }
       }
 
-      if options.scan_new_only {
+      if scan_new_only {
         // Refresh tracks with changed modified timestamps
         for mut track in existing_tracks {
           if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
             trace!("{} file has changed and will be re-scanned", &track);
-            if track
-              .scan_and_update()
-              .options(options.scan_options)
-              .conn(conn)
-              .call()
-              .is_ok()
-            {
+            if track.scan_and_update().conn(conn).call().is_ok() {
               existing_refreshed_count += 1;
 
-              // Report back progress
+              // Report back progress periodically
               if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
                 on_progress(new_refreshed_count + existing_refreshed_count);
               }
@@ -280,16 +273,10 @@ impl Library {
       } else {
         // Refresh existing tracks
         for mut track in existing_tracks {
-          if track
-            .scan_and_update()
-            .options(options.scan_options)
-            .conn(conn)
-            .call()
-            .is_ok()
-          {
+          if track.scan_and_update().conn(conn).call().is_ok() {
             existing_refreshed_count += 1;
 
-            // Report back progress
+            // Report back progress periodically
             if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
               on_progress(new_refreshed_count + existing_refreshed_count);
             }
@@ -305,11 +292,7 @@ impl Library {
       // Delete missing tracks (path not found)
       missing_removed_count = missing_tracks.len();
       if missing_removed_count > 0 {
-        warn!(
-          "{} tracks not found and will be removed: {:?}",
-          missing_removed_count,
-          missing_tracks.iter().map(|t| &t.path).collect::<Vec<_>>()
-        );
+        warn!("{} tracks not found will be removed", missing_removed_count);
         for track in missing_tracks {
           track.delete_from_db().conn(conn).call()?;
         }
@@ -329,6 +312,73 @@ impl Library {
       existing_count,
       new_refreshed_count,
       missing_removed_count
+    );
+
+    Ok(rows)
+  }
+
+  #[builder]
+  /// Based on `Settings` flags or the provided options, upgrade lyrics tags from sidecar files
+  /// and delete sidecar files.
+  pub fn clean_up_sidecar_files<F>(
+    &self,
+    options: Option<CleanUpSidecarFilesOptions>,
+    on_progress: F,
+  ) -> Result<usize>
+  where
+    F: Fn(usize) + Send + 'static,
+  {
+    let options = {
+      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
+      options.unwrap_or_else(|| CleanUpSidecarFilesOptions::from(settings))
+    };
+    info!(
+      "Clean Up Sidecar Files for {}: Started with options: {:?}",
+      &self, options
+    );
+
+    // Make sure progress is shown without delay
+    on_progress(0);
+
+    let start = Instant::now();
+    let mut conn = DB_POOL.get()?;
+    let mut existing_count = 0_usize;
+    let mut processed_count = 0_usize;
+
+    let rows = conn.transaction::<usize, _, _>(|conn| {
+      // Get existing tracks
+      let tracks = tracks::table
+        .filter(tracks::library_id.eq(&self.id))
+        .load::<Track>(conn)?;
+      existing_count = tracks.len();
+
+      // Clean up sidecar files
+      for mut track in tracks {
+        if track
+          .clean_up_sidecar_files()
+          .options(options)
+          .conn(conn)
+          .call()
+          .is_ok()
+        {
+          processed_count += 1;
+
+          // Report back progress periodically
+          if processed_count.is_multiple_of(5) {
+            on_progress(processed_count);
+          }
+        }
+      }
+
+      Ok::<usize, anyhow::Error>(processed_count)
+    })?;
+
+    info!(
+      "Clean Up Sidecar Files for {}: Completed in {:.1}s: Processed {}/{} existing tracks",
+      &self,
+      start.elapsed().as_secs_f32(),
+      processed_count,
+      existing_count,
     );
 
     Ok(rows)
