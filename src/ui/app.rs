@@ -468,7 +468,7 @@ impl AsyncComponent for AppModel {
                         set_align: gtk::Align::Start,
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
-                        set_spacing: 12,
+                        set_spacing: 6,
 
                         #[watch]
                         set_visible: model.progress_task.is_some(),
@@ -483,11 +483,19 @@ impl AsyncComponent for AppModel {
                           connect_clicked => AppMsg::CancelOperation,
                         },
 
+                        gtk::Label {
+                          add_css_class: "caption",
+                          set_margin_end: 12, // added spacing
+                          #[watch]
+                          set_text: model.progress_task.as_deref().unwrap_or_default(),
+                        },
+
                         gtk::ProgressBar {
                           set_halign: gtk::Align::Start,
                           set_valign: gtk::Align::Center,
                           set_ellipsize: gtk::pango::EllipsizeMode::End,
                           set_show_text: false,
+                          set_margin_end: 6, // added spacing
                           #[watch]
                           set_fraction: model.progress,
                         },
@@ -962,9 +970,9 @@ impl AsyncComponent for AppModel {
         self.is_fetching_lyrics = true;
 
         // Display progress
-        sender.input(AppMsg::ProgressStart("Getting Lyrics".into()));
+        sender.input(AppMsg::ProgressStart("Getting lyrics…".into()));
         sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("Processed 0 / {}…", self.track_count)),
+          step: Some(format!("0 / {} done", self.track_count)),
           progress: 0.0,
         }));
 
@@ -989,7 +997,7 @@ impl AsyncComponent for AppModel {
                   .emit(AppCommand::TrackUpdated(track));
 
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                  step: Some(format!("Processed {completed} / {total}…")),
+                  step: Some(format!("{completed} / {total} done")),
                   progress: completed as f64 / total as f64,
                 }));
               }
@@ -1018,9 +1026,9 @@ impl AsyncComponent for AppModel {
         let tracks = self.tracks.clone();
 
         // Display progress
-        sender.input(AppMsg::ProgressStart("Cleaning Up Sidecar Files".into()));
+        sender.input(AppMsg::ProgressStart("Cleaning up sidecar files…".into()));
         sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("Processed 0 / {}…", total)),
+          step: Some(format!("0 / {} done", total)),
           progress: 0.0,
         }));
 
@@ -1049,7 +1057,7 @@ impl AsyncComponent for AppModel {
             let completed = idx + 1;
             if completed.is_multiple_of(5) {
               sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                step: Some(format!("Processed {completed} / {total}…")),
+                step: Some(format!("{completed} / {total} done")),
                 progress: completed as f64 / total as f64,
               }));
             }

@@ -101,7 +101,6 @@ impl SimpleComponent for PrefsModel {
       set_size_request: (500, 300),
       set_default_size: (600, 600),
 
-
       // Update and save settings on close
       connect_close_request[sender] => move |_| {
         sender.input(PrefsMsg::SaveSettings);
