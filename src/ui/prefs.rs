@@ -510,10 +510,16 @@ impl SimpleComponent for PrefsModel {
         ExposedSetting::UpdateLyricsTagOnFetch(active) => {
           debug!("UpdateSetting: UpdateLyricsTagOnFetch: {active}");
           self.settings_current.update_lyrics_tag_on_fetch = active;
+          if !active {
+            self.settings_current.save_sidecar_file_on_fetch = true;
+          }
         }
         ExposedSetting::SaveSidecarOnFetch(active) => {
           debug!("UpdateSetting: SaveSidecarFileOnFetch: {active}");
           self.settings_current.save_sidecar_file_on_fetch = active;
+          if !active {
+            self.settings_current.update_lyrics_tag_on_fetch = true;
+          }
         }
       },
 

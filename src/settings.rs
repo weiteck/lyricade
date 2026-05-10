@@ -144,7 +144,7 @@ impl Default for Settings {
       id: 1,
       prefer_iso_timestamps: false,
       prefer_lyrics_type: LyricsType::Sync,
-      scan_new_files_only: false,
+      scan_new_files_only: true,
       upgrade_lyrics_tag_on_scan: false,
       delete_sidecar_files_on_scan: false,
       keep_one_sidecar_file_on_scan: false,

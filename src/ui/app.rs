@@ -38,6 +38,8 @@ struct AppModel {
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
 
+  get_lyrics_requires_confirmation: bool,
+
   no_tracks: bool,
   track_count: u32,
   filtered_track_count: Option<u32>,
@@ -183,7 +185,8 @@ impl AsyncComponent for AppModel {
 
       // Lyrics fetch button shown if fetching not in progress
       pack_end = &gtk::Button {
-        set_label: "_Get Lyrics",
+        #[watch]
+        set_label: if model.get_lyrics_requires_confirmation { "_Get Lyrics…" } else { "_Get Lyrics" },
         set_use_underline: true,
         set_tooltip_text: Some("Get Lyrics from lrclib.net"),
         set_margin_end: 12,
@@ -704,6 +707,11 @@ impl AsyncComponent for AppModel {
         AppMsg::HandleGetLyricsResponse(msg)
       });
 
+    let get_lyrics_requires_confirmation = SETTINGS
+      .read()
+      .expect("settings lock poisoned")
+      .update_lyrics_tag_on_fetch;
+
     let mut model = AppModel {
       sender: sender.clone(),
       libraries: vec![],
@@ -717,6 +725,7 @@ impl AsyncComponent for AppModel {
       confirm_get_lyrics_dialog,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
+      get_lyrics_requires_confirmation,
       no_tracks: false,
       track_count: 0,
       filtered_track_ids: HashSet::new(),
@@ -793,7 +802,7 @@ impl AsyncComponent for AppModel {
     let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::FetchLyrics);
+        sender.input(AppMsg::RequestConfirmGetLyrics);
       })
     };
     menu_actions_group.add_action(action_fetch_lyrics);
@@ -889,11 +898,7 @@ impl AsyncComponent for AppModel {
     match message {
       AppMsg::RequestConfirmGetLyrics => {
         // Show confirmation dialog only if tags will be written
-        if SETTINGS
-          .read()
-          .expect("settings lock is poisoned")
-          .update_lyrics_tag_on_fetch
-        {
+        if self.get_lyrics_requires_confirmation {
           debug!("Get Lyrics confirmation required");
           self.confirm_get_lyrics_dialog.emit(AlertMsg::Show);
         } else {
@@ -1056,6 +1061,11 @@ impl AsyncComponent for AppModel {
           // Refresh table if no changes to libraries in case datetime format changed
           sender.input(AppMsg::BuildTracksTable);
         }
+
+        self.get_lyrics_requires_confirmation = SETTINGS
+          .read()
+          .expect("settings lock is poisoned")
+          .update_lyrics_tag_on_fetch;
       }
 
       AppMsg::ShowLyricsWindow(source) => {
