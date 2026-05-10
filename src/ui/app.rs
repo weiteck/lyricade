@@ -8,6 +8,7 @@ use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::{RelmContainerExt, prelude::*};
+use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tokio::task::AbortHandle;
 use tracing::{debug, error, trace};
 
@@ -32,6 +33,7 @@ struct AppModel {
   prefs_widget: Option<Controller<PrefsModel>>,
   about_widget: Controller<AboutModel>,
   view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
+  confirm_get_lyrics_dialog: Controller<Alert>,
   sidebar_widget: gtk::Box,
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
@@ -84,6 +86,9 @@ enum AppMsg {
   CloseLyricsWindow,
   ShowPrefsWindow,
   ClosePrefsWindow,
+
+  RequestConfirmGetLyrics,
+  HandleGetLyricsResponse(AlertResponse),
 
   ShowToast(String),
 
@@ -188,7 +193,7 @@ impl AsyncComponent for AppModel {
         set_class_active: ("suggested-action", !model.no_tracks),
         #[watch]
         set_sensitive: !model.no_tracks,
-        connect_clicked => AppMsg::FetchLyrics,
+        connect_clicked => AppMsg::RequestConfirmGetLyrics,
       },
     },
 
@@ -683,6 +688,22 @@ impl AsyncComponent for AppModel {
         AboutOutput::Close => AppMsg::CloseAboutWindow,
       });
 
+    let confirm_get_lyrics_dialog = Alert::builder()
+      .transient_for(&root)
+      .launch(AlertSettings {
+        text: Some("Are you sure?".into()),
+        secondary_text: Some("Tags will be written to your files.".into()),
+        is_modal: true,
+        destructive_accept: false,
+        confirm_label: Some("Confirm".into()),
+        cancel_label: Some("Cancel".into()),
+        option_label: None,
+        extra_child: None,
+      })
+      .forward(sender.input_sender(), |msg| {
+        AppMsg::HandleGetLyricsResponse(msg)
+      });
+
     let mut model = AppModel {
       sender: sender.clone(),
       libraries: vec![],
@@ -693,6 +714,7 @@ impl AsyncComponent for AppModel {
       about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
+      confirm_get_lyrics_dialog,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       no_tracks: false,
@@ -865,6 +887,29 @@ impl AsyncComponent for AppModel {
     root: &Self::Root,
   ) {
     match message {
+      AppMsg::RequestConfirmGetLyrics => {
+        // Show confirmation dialog only if tags will be written
+        if SETTINGS
+          .read()
+          .expect("settings lock is poisoned")
+          .update_lyrics_tag_on_fetch
+        {
+          debug!("Get Lyrics confirmation required");
+          self.confirm_get_lyrics_dialog.emit(AlertMsg::Show);
+        } else {
+          sender.input(AppMsg::FetchLyrics);
+        }
+      }
+
+      AppMsg::HandleGetLyricsResponse(response) => {
+        if let AlertResponse::Confirm = response {
+          debug!("User confirmed Get Lyrics request");
+          sender.input(AppMsg::FetchLyrics);
+        } else {
+          debug!("User cancelled Get Lyrics request");
+        }
+      }
+
       #[expect(clippy::cast_possible_truncation)]
       AppMsg::FetchLyrics => {
         self.is_fetching_lyrics = true;
