@@ -10,6 +10,7 @@ use diesel::{
   r2d2::{ConnectionManager, PooledConnection},
 };
 
+use tokio::sync::oneshot;
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
@@ -167,14 +168,21 @@ impl Library {
 
   #[builder]
   /// Read metadata for new and (optionally) existing files in `Library` path and update database.
-  pub fn refresh<F>(&self, on_progress: F) -> Result<usize>
+  pub fn refresh<F>(
+    &self,
+    on_progress: F,
+    cancel_on_close: &mut oneshot::Receiver<()>,
+  ) -> Result<usize>
   where
-    F: Fn(usize) + Send + 'static,
+    F: Fn(String) + Send + 'static,
   {
     let scan_new_only = SETTINGS
       .read()
-      .map_err(|e| anyhow!("{e}"))?
-      .scan_new_files_only;
+      .inspect_err(|_| error!("Settings lock was poisoned while refreshing {}", &self))
+      .map_or_else(
+        |_| Settings::default().scan_new_files_only,
+        |g| g.scan_new_files_only,
+      );
 
     if scan_new_only {
       info!("{} refresh: Started (new/modified files only)", &self);
@@ -182,17 +190,17 @@ impl Library {
       info!("{} refresh: Started", &self);
     }
 
-    // Make sure progress is shown without delay
-    on_progress(0);
-
     let start = Instant::now();
     let mut conn = DB_POOL.get()?;
     let now = now();
+
+    on_progress("Discovering paths…".into());
     let paths = self
       .file_paths()
       .iter()
       .map(Utf8PathBuf::to_string)
       .collect::<HashSet<_>>();
+
     let mut existing_count = 0_usize;
     let mut existing_refreshed_count = 0_usize;
     let mut new_refreshed_count = 0_usize;
@@ -242,13 +250,27 @@ impl Library {
       let mut new_tracks = vec![];
       let mut errored_new_tracks = vec![];
       for mut track in inserted_new_tracks {
+        // Task cancelled?
+        if cancel_on_close
+          .try_recv()
+          .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
+        {
+          return Err(
+            anyhow!(diesel::result::Error::RollbackTransaction)
+              .context("User cancelled the library refresh operation"),
+          );
+        }
+
         if track.scan_and_update().conn(conn).call().is_ok() {
           new_tracks.push(track);
           new_refreshed_count += 1;
 
           // Report back progress periodically
           if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-            on_progress(new_refreshed_count + existing_refreshed_count);
+            on_progress(format!(
+              "Found {} tracks",
+              new_refreshed_count + existing_refreshed_count
+            ));
           }
         } else {
           errored_new_tracks.push(track);
@@ -258,6 +280,17 @@ impl Library {
       if scan_new_only {
         // Refresh tracks with changed modified timestamps
         for mut track in existing_tracks {
+          // Task cancelled?
+          if cancel_on_close
+            .try_recv()
+            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
+          {
+            return Err(
+              anyhow!(diesel::result::Error::RollbackTransaction)
+                .context("User cancelled the library refresh operation"),
+            );
+          }
+
           if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
             trace!("{} file has changed and will be re-scanned", &track);
             if track.scan_and_update().conn(conn).call().is_ok() {
@@ -265,7 +298,10 @@ impl Library {
 
               // Report back progress periodically
               if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-                on_progress(new_refreshed_count + existing_refreshed_count);
+                on_progress(format!(
+                  "Found {} tracks",
+                  new_refreshed_count + existing_refreshed_count
+                ));
               }
             }
           }
@@ -273,12 +309,26 @@ impl Library {
       } else {
         // Refresh existing tracks
         for mut track in existing_tracks {
+          // Task cancelled?
+          if cancel_on_close
+            .try_recv()
+            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
+          {
+            return Err(
+              anyhow!(diesel::result::Error::RollbackTransaction)
+                .context("User cancelled the library refresh operation"),
+            );
+          }
+
           if track.scan_and_update().conn(conn).call().is_ok() {
             existing_refreshed_count += 1;
 
             // Report back progress periodically
             if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-              on_progress(new_refreshed_count + existing_refreshed_count);
+              on_progress(format!(
+                "Found {} tracks",
+                new_refreshed_count + existing_refreshed_count
+              ));
             }
           }
         }

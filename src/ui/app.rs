@@ -12,7 +12,7 @@ use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tokio::sync::oneshot;
 use tokio::sync::oneshot::error::TryRecvError;
 use tokio::task::AbortHandle;
-use tracing::{debug, error, trace};
+use tracing::{debug, error, trace, warn};
 
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
 use crate::ui::about::{AboutModel, AboutOutput};
@@ -66,13 +66,18 @@ struct AppModel {
   is_cleaning_up_sidecar_files: bool,
   clean_up_sidecar_files_cancel_token: Option<oneshot::Sender<()>>,
 
+  refresh_library_cancel_token: Option<oneshot::Sender<()>>,
+
   /// Name of the task being tracked.
   progress_task: Option<String>,
   /// The current step or state of the task.
   progress_step: Option<String>,
   progress: f64,
 
-  spinner_reason: Option<String>,
+  /// Name of the task being tracked.
+  spinner_task: Option<String>,
+  /// The current step or state of the task.
+  spinner_step: Option<String>,
 }
 
 #[derive(Debug)]
@@ -121,7 +126,7 @@ enum AppMsg {
   ProgressUpdate(ProgressUpdate),
   ProgressComplete,
 
-  ShowSpinner(String),
+  ShowSpinner((String, String)),
   HideSpinner,
 }
 
@@ -369,40 +374,69 @@ impl AsyncComponent for AppModel {
 
           // Overlay for spinner
           gtk::Overlay {
-
             add_overlay = &gtk::Box {
               #[watch]
-              set_visible: model.spinner_reason.is_some(),
+              set_visible: model.spinner_task.is_some(),
               set_orientation: gtk::Orientation::Vertical,
               set_align: gtk::Align::Fill,
-              set_spacing: 12,
               add_css_class: "window-bg-overlay",
 
-              gtk::Spinner {
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::End,
+              // Pad top for centring
+              gtk::Box {
                 set_vexpand: true,
-                set_size_request: (32, 32),
-                set_spinning: true,
               },
 
-              gtk::Label {
-                set_halign: gtk::Align::Center,
-                set_valign: gtk::Align::Start,
+              gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_spacing: 12,
+
+                gtk::Spinner {
+                  set_halign: gtk::Align::Center,
+                  set_valign: gtk::Align::End,
+                  set_size_request: (32, 32),
+                  set_spinning: true,
+                },
+
+                gtk::Label {
+                  set_halign: gtk::Align::Center,
+                  set_valign: gtk::Align::Start,
+                  add_css_class: "heading",
+                  set_margin_top: 12,
+                  #[watch]
+                  set_label: &model.spinner_task.as_deref().unwrap_or(""),
+                },
+
+                gtk::Label {
+                  set_halign: gtk::Align::Center,
+                  set_valign: gtk::Align::Start,
+                  set_margin_bottom: 12,
+                  #[watch]
+                  set_label: &model.spinner_step.as_deref().unwrap_or(""),
+                },
+
+                gtk::Button {
+                  set_halign: gtk::Align::Center,
+                  set_valign: gtk::Align::Start,
+                  set_label: "Cancel",
+                  connect_clicked => AppMsg::CancelOperation,
+                },
+              },
+
+              // Pad bottom for centring
+              gtk::Box {
                 set_vexpand: true,
-                #[watch]
-                set_label: &model.spinner_reason.as_deref().unwrap_or(""),
               },
             },
 
             #[wrap(Some)]
             set_child = &gtk::Box {
+
               #[transition = "Crossfade"]
               match model.libraries.is_empty() {
                 true => {
                   gtk::Box {
                     #[watch]
-                    set_visible: model.spinner_reason.is_none(),
+                    set_visible: model.spinner_task.is_none(),
                     set_align: gtk::Align::Center,
 
                     adw::StatusPage {
@@ -420,6 +454,7 @@ impl AsyncComponent for AppModel {
                     },
                   }
                 }
+
                 false => {
                   gtk::Box {
                     set_orientation: gtk::Orientation::Vertical,
@@ -659,13 +694,13 @@ impl AsyncComponent for AppModel {
                       },
                     },
                   }
-                }
+                },
               },
             },
           },
         },
       },
-    }
+    },
   }
 
   menu! {
@@ -759,10 +794,12 @@ impl AsyncComponent for AppModel {
       fetch_lyrics_abort_handle: None,
       is_cleaning_up_sidecar_files: false,
       clean_up_sidecar_files_cancel_token: None,
+      refresh_library_cancel_token: None,
       progress_task: None,
       progress_step: None,
       progress: 0.0,
-      spinner_reason: None,
+      spinner_task: None,
+      spinner_step: None,
     };
 
     model.refresh_from_settings(&root, &sender);
@@ -872,7 +909,10 @@ impl AsyncComponent for AppModel {
     let action_test_spinner: RelmAction<ActionTestSpinner> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowSpinner("I'm spinning around…".into()));
+        sender.input(AppMsg::ShowSpinner((
+          "I'm spinning around…".into(),
+          "Get out of my way".into(),
+        )));
       })
     };
     menu_actions_group.add_action(action_test_spinner);
@@ -1077,25 +1117,32 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ProgressComplete);
       }
 
-      // Cancel either fetching lyrics or clean up sidecar files operation
+      // Cancel either fetching lyrics, clean up sidecar files, or refresh libraries operations
       AppMsg::CancelOperation => {
         // Abort the async fetch lyrics task
         if let Some(handle) = self.fetch_lyrics_abort_handle.take() {
           handle.abort();
-          debug!("FetchLyrics cancelled");
+          debug!("FetchLyrics cancelled by user");
+          sender.input(AppMsg::ProgressComplete);
         }
 
         // Drop the sender to cancel the clean up task
         if self.clean_up_sidecar_files_cancel_token.take().is_some() {
-          debug!("CleanUpSidecarFiles cancelled");
+          debug!("CleanUpSidecarFiles cancelled by user");
+          sender.input(AppMsg::ProgressComplete);
+        }
+
+        // Drop the sender to cancel the clean up task
+        if self.refresh_library_cancel_token.take().is_some() {
+          self.spinner_task = None;
+          self.spinner_step = None;
+          debug!("RefreshLibraries cancelled by user");
         }
 
         self.is_fetching_lyrics = false;
         self.is_cleaning_up_sidecar_files = false;
 
         self.update_track_stats();
-
-        sender.input(AppMsg::ProgressComplete);
       }
 
       AppMsg::ShowAboutWindow => {
@@ -1158,22 +1205,34 @@ impl AsyncComponent for AppModel {
         if !new_libs.is_empty() {
           debug!("Libraries have been added; refreshing");
 
+          let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+          self.refresh_library_cancel_token = Some(cancel_tx);
+
           let sender_handle = sender.clone();
           tokio::task::spawn_blocking(move || {
             for lib in new_libs {
+              if cancel_rx
+                .try_recv()
+                .is_err_and(|error| error == TryRecvError::Closed)
+              {
+                break;
+              }
+
               let name = lib.name();
               let progress_sender = sender_handle.clone();
-              let progress_callback = move |count| {
-                progress_sender.input(AppMsg::ShowSpinner(format!(
-                  "Scanning new library \"{name}\"… ({count} tracks)"
+              let progress_callback = move |msg| {
+                progress_sender.input(AppMsg::ShowSpinner((
+                  format!("Scanning new library “{name}”…"),
+                  msg,
                 )));
               };
 
-              lib
+              let _ = lib
                 .refresh()
                 .on_progress(progress_callback.clone())
+                .cancel_on_close(&mut cancel_rx)
                 .call()
-                .expect("failed to refresh newly-added {lib}");
+                .inspect_err(|error| warn!("{error}"));
             }
 
             sender_handle.input(AppMsg::LoadLibraries);
@@ -1232,6 +1291,9 @@ impl AsyncComponent for AppModel {
 
       // TODO: Use alert dialog to show errors
       AppMsg::LoadLibraries => {
+        // Can clear the channel as refresh is done at this point
+        self.refresh_library_cancel_token = None;
+
         if self
           .load_libraries()
           .inspect_err(|e| {
@@ -1279,21 +1341,34 @@ impl AsyncComponent for AppModel {
       AppMsg::RefreshLibraries => {
         let libs = self.libraries.clone();
         let sender_handle = sender.clone();
+
+        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
+        self.refresh_library_cancel_token = Some(cancel_tx);
+
         tokio::task::spawn_blocking(move || {
           for lib in libs {
+            if cancel_rx
+              .try_recv()
+              .is_err_and(|error| error == TryRecvError::Closed)
+            {
+              break;
+            }
+
             let name = lib.name();
             let progress_sender = sender_handle.clone();
-            let progress_callback = move |count| {
-              progress_sender.input(AppMsg::ShowSpinner(format!(
-                "Scanning library \"{name}\"… ({count} tracks)"
+            let progress_callback = move |msg| {
+              progress_sender.input(AppMsg::ShowSpinner((
+                format!("Refreshing library “{name}”…"),
+                msg,
               )));
             };
 
-            lib
+            let _ = lib
               .refresh()
               .on_progress(progress_callback.clone())
+              .cancel_on_close(&mut cancel_rx)
               .call()
-              .expect("failed to refresh newly-added {lib}");
+              .inspect_err(|error| warn!("{error}"));
           }
 
           sender_handle.input(AppMsg::LoadLibraries);
@@ -1475,14 +1550,15 @@ impl AsyncComponent for AppModel {
         self.progress = pu.progress;
       }
 
-      AppMsg::ShowSpinner(reason) => {
-        debug!("Showing spinner: \"{reason}\"");
-        self.spinner_reason = Some(reason);
+      AppMsg::ShowSpinner((task, step)) => {
+        debug!("Showing spinner: \"{task}\", \"{step}\"");
+        self.spinner_task = Some(task);
+        self.spinner_step = Some(step);
       }
 
       AppMsg::HideSpinner => {
         debug!("Hiding spinner");
-        self.spinner_reason = None;
+        self.spinner_task = None;
       }
 
       AppMsg::Quit => {
