@@ -533,21 +533,32 @@ impl RelmColumn for TracksTableColumnLyricsTag {
     bx.append(&icon);
     bx.append(&label);
 
+    bx.set_css_classes(&["table-cell", "lyrics"]);
+
     (bx, (icon, label))
   }
 
   fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
     if item.lyrics.is_some() && item.lyrics_synchronised {
       label.set_label("Sync");
-      label.inline_css("font-weight: bold");
       root.set_tooltip("Sync Lyrics Tag");
       icon.set_icon_name(Some("audio-x-generic-symbolic"));
+      root.add_css_class("sync");
     } else if item.lyrics.is_some() && !item.lyrics_synchronised {
       label.set_label("Plain");
       root.set_tooltip("Plain Lyrics Tag");
       icon.set_icon_name(Some("audio-x-generic-symbolic"));
-      root.set_opacity(0.67);
+      root.add_css_class("plain");
     }
+  }
+
+  fn unbind(_item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+    icon.set_icon_name(None);
+    label.set_label("");
+    root.set_tooltip("");
+    root.set_visible(false);
+    root.remove_css_class("sync");
+    root.remove_css_class("plain");
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -581,21 +592,31 @@ impl RelmColumn for TracksTableColumnSidecar {
     bx.append(&icon);
     bx.append(&label);
 
+    bx.set_css_classes(&["table-cell", "lyrics"]);
+
     (bx, (icon, label))
   }
 
   fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
     if item.lyrics_sidecar_lrc_file.is_some() {
       label.set_label("Sync");
-      label.inline_css("font-weight: bold");
       root.set_tooltip("Sync Sidecar File");
       icon.set_icon_name(Some("text-x-generic-symbolic"));
+      root.add_css_class("sync");
     } else if item.lyrics_sidecar_txt_file.is_some() {
       label.set_label("Plain");
       root.set_tooltip("Plain Sidecar File");
       icon.set_icon_name(Some("text-x-generic-symbolic"));
-      root.set_opacity(0.67);
+      root.add_css_class("plain");
     }
+  }
+
+  fn unbind(_item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+    icon.set_icon_name(None);
+    label.set_label("");
+    root.set_tooltip("");
+    root.remove_css_class("sync");
+    root.remove_css_class("plain");
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
