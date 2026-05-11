@@ -414,11 +414,12 @@ impl Track {
   }
 
   /// Does nothing but sleeps for 500ms.
+  #[allow(unused_variables)]
   #[builder]
-  pub async fn fetch_lyrics_test(&mut self, _options: Option<FetchLyricsOptions>) -> Result<bool> {
+  pub async fn fetch_lyrics_test(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
     self.last_api_check_at = Some(now());
     debug!("Running fetch_lyrics_test -- sleeping 500ms");
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    relm4::tokio::time::sleep(Duration::from_millis(500)).await;
     Ok(false)
   }
 

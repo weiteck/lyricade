@@ -11,9 +11,9 @@ use std::{
 };
 
 use anyhow::anyhow;
+use relm4::tokio;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
-use tokio::{sync::Semaphore, task::AbortHandle};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -57,10 +57,10 @@ enum ApiResponse {
 pub struct LrcLibClient {
   http_client: reqwest::Client,
   limiter: Arc<leaky_bucket::RateLimiter>,
-  semaphore: Arc<Semaphore>,
+  semaphore: Arc<tokio::sync::Semaphore>,
   completed_requests: Arc<AtomicUsize>,
   requests_per_second: Arc<AtomicUsize>,
-  req_rate_logger_abort_handle: Option<AbortHandle>,
+  req_rate_logger_abort_handle: Option<tokio::task::AbortHandle>,
 }
 
 impl Drop for LrcLibClient {
@@ -107,7 +107,7 @@ impl LrcLibClient {
     let mut lrclib_client = Self {
       http_client,
       limiter,
-      semaphore: Arc::new(Semaphore::new(CONNECTION_LIMIT)),
+      semaphore: Arc::new(tokio::sync::Semaphore::new(CONNECTION_LIMIT)),
       completed_requests: Arc::new(AtomicUsize::new(0)),
       requests_per_second: Arc::new(AtomicUsize::new(0)),
       req_rate_logger_abort_handle: None,

@@ -10,7 +10,7 @@ use diesel::{
   r2d2::{ConnectionManager, PooledConnection},
 };
 
-use tokio::sync::oneshot;
+use relm4::tokio::sync::oneshot;
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 

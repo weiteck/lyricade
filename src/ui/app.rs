@@ -7,11 +7,10 @@ use relm4::abstractions::Toaster;
 use relm4::actions::AccelsPlus;
 use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
+use relm4::tokio::sync::oneshot;
+use relm4::tokio::task::AbortHandle;
 use relm4::{RelmContainerExt, prelude::*};
 use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
-use tokio::sync::oneshot;
-use tokio::sync::oneshot::error::TryRecvError;
-use tokio::task::AbortHandle;
 use tracing::{debug, error, trace, warn};
 
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
@@ -1023,7 +1022,7 @@ impl AsyncComponent for AppModel {
         let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
 
         // Batch process tracks and update progress
-        let jh = tokio::spawn(async move {
+        let jh = relm4::spawn(async move {
           stream
             .for_each_concurrent(batch_size, |mut track| {
               let sender = sender.clone();
@@ -1077,14 +1076,14 @@ impl AsyncComponent for AppModel {
         self.clean_up_sidecar_files_cancel_token = Some(cancel_tx);
 
         // Process tracks in background thread and update progress
-        tokio::task::spawn_blocking(move || {
+        relm4::spawn_blocking(move || {
           let sender = sender.clone();
 
           for (idx, mut track) in tracks.into_iter().enumerate() {
             // Cancel operation if sender was dropped
             if cancel_rx
               .try_recv()
-              .is_err_and(|error| error == TryRecvError::Closed)
+              .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
             {
               break;
             }
@@ -1209,11 +1208,11 @@ impl AsyncComponent for AppModel {
           self.refresh_library_cancel_token = Some(cancel_tx);
 
           let sender_handle = sender.clone();
-          tokio::task::spawn_blocking(move || {
+          relm4::spawn_blocking(move || {
             for lib in new_libs {
               if cancel_rx
                 .try_recv()
-                .is_err_and(|error| error == TryRecvError::Closed)
+                .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
               {
                 break;
               }
@@ -1345,11 +1344,11 @@ impl AsyncComponent for AppModel {
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         self.refresh_library_cancel_token = Some(cancel_tx);
 
-        tokio::task::spawn_blocking(move || {
+        relm4::spawn_blocking(move || {
           for lib in libs {
             if cancel_rx
               .try_recv()
-              .is_err_and(|error| error == TryRecvError::Closed)
+              .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
             {
               break;
             }
