@@ -12,7 +12,7 @@ use relm4::{
 use relm4_components::open_dialog::{
   OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 use crate::{
   SETTINGS,
@@ -92,7 +92,7 @@ pub enum HandleSidecarSetting {
 impl SimpleComponent for PrefsModel {
   type Input = PrefsMsg;
   type Output = PrefsOutput;
-  type Init = Vec<Library>;
+  type Init = (Settings, Vec<Library>);
 
   view! {
     prefs_window = adw::PreferencesWindow {
@@ -371,7 +371,7 @@ impl SimpleComponent for PrefsModel {
   }
 
   fn init(
-    libraries: Self::Init,
+    (settings, libraries): Self::Init,
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
@@ -415,19 +415,16 @@ impl SimpleComponent for PrefsModel {
         OpenDialogResponse::Cancel => PrefsMsg::NoOp,
       });
 
-    let model = {
-      let settings = SETTINGS.read().expect("settings lock is poisoned");
-      PrefsModel {
-        libraries,
-        library_rows,
-        editing_library_row: None,
-        settings_initial: settings.clone(),
-        settings_current: settings.clone(),
-        settings_default: Settings::default(),
-        add_library_file_dialog,
-        edit_library_file_dialog,
-        root: root.clone(),
-      }
+    let model = PrefsModel {
+      libraries,
+      library_rows,
+      editing_library_row: None,
+      settings_initial: settings.clone(),
+      settings_current: settings,
+      settings_default: Settings::default(),
+      add_library_file_dialog,
+      edit_library_file_dialog,
+      root: root.clone(),
     };
 
     let libraries_list_box = model.library_rows.widget();
@@ -468,9 +465,14 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::SaveSettings => {
-        let mut settings = SETTINGS.write().expect("settings lock is poisoned");
-        *settings = self.settings_current.clone();
-        settings.save().expect("unable to save settings");
+        if self.settings_current != self.settings_initial {
+          if let Ok(mut guard) = SETTINGS.write() {
+            *guard = self.settings_current.clone();
+            let _ = guard.save();
+          } else {
+            error!("Settings lock was poisoned while closing Preferences");
+          }
+        }
 
         sender
           .output(PrefsOutput::Close)

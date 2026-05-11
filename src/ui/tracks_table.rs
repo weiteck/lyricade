@@ -1,12 +1,15 @@
 use std::collections::HashSet;
 
+use relm4::gtk::gio::prelude::ListModelExt;
+use relm4::gtk::glib::object::Cast;
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
-use tracing::{debug, trace};
+use tracing::{debug, error, trace};
 
 use crate::SETTINGS;
+use crate::settings::Settings;
 use crate::track::Track;
 use crate::util::{self};
 
@@ -15,7 +18,11 @@ pub struct TracksTableModel {
   preset_filters_len: usize,
   total_rows: u32,
   is_row_visible: bool,
+  iso_datetime_format: bool,
 }
+
+static COLUMN_TITLE_CHECKED: &str = "Checked";
+static COLUMN_TITLE_MODIFIED: &str = "Modified";
 
 #[derive(Debug)]
 pub enum TracksTableMsg {
@@ -90,90 +97,22 @@ impl SimpleComponent for TracksTableModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let mut table = TypedColumnView::<Track, gtk::MultiSelection>::new();
+    let iso_datetime_format = SETTINGS
+      .read()
+      .inspect_err(|_| error!("Settings lock is poisoned while initialising TracksTable"))
+      .map_or_else(
+        |_| Settings::default().prefer_iso_timestamps,
+        |g| g.prefer_iso_timestamps,
+      );
 
-    // Append each column
-    table.append_column::<TracksTableColumnArtist>();
-    table.append_column::<TracksTableColumnAlbum>();
-    table.append_column::<TracksTableColumnTrack>();
-    table.append_column::<TracksTableColumnLyricsTag>();
-    table.append_column::<TracksTableColumnSidecar>();
-    table.append_column::<TracksTableColumnChecked>();
-    table.append_column::<TracksTableColumnModified>();
-
-    // 0 = NeverChecked
-    table.add_filter(|track| track.last_api_check_at.is_none());
-    table.set_filter_status(0, false);
-
-    // 1 = NoLyrics
-    table.add_filter(|track| {
-      track.lyrics.is_none()
-        && track.lyrics_sidecar_lrc_file.is_none()
-        && track.lyrics_sidecar_txt_file.is_none()
-    });
-    table.set_filter_status(1, false);
-
-    // 2 = NoLyricsTag
-    table.add_filter(|track| track.lyrics.is_none());
-    table.set_filter_status(2, false);
-
-    // 3 = NotInstrumental
-    table.add_filter(|track| track.instrumental.is_none_or(|b| !b));
-    table.set_filter_status(3, false);
-
-    // 4 = NotSync
-    table.add_filter(|track| !track.lyrics_synchronised && track.lyrics_sidecar_lrc_file.is_none());
-    table.set_filter_status(4, false);
-
-    // 5 = Lrc
-    table.add_filter(|track| track.lyrics_sidecar_lrc_file.is_some());
-    table.set_filter_status(5, false);
-
-    // 6 = Txt
-    table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
-    table.set_filter_status(6, false);
-
-    // 7 = EitherLrcOrTxt
-    table.add_filter(|track| {
-      track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some()
-    });
-    table.set_filter_status(7, false);
-
-    // Handle row selection
-    let sender_handle = sender.clone();
-    table
-      .selection_model
-      .connect_selection_changed(move |selection_model, _pos, _n_items| {
-        let set = selection_model.selection();
-        sender_handle.input(TracksTableMsg::HandleRowSelection(set));
-      });
-
-    // Handle key presses
-    let sender_handle = sender.clone();
-    let controller = EventControllerKey::new();
-    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
-      trace!("TracksTable key event: key {key} + {:?}", modifier);
-      if key == gtk::gdk::Key::Escape {
-        sender_handle.input(TracksTableMsg::ClearSelection);
-      }
-      gtk::glib::Propagation::Proceed
-    });
-    table.view.add_controller(controller);
-
-    // Apply default sorting
-    let artist_col = table
-      .get_columns()
-      .get("Artist")
-      .expect("TracksTable should have Artist column");
-    table
-      .view
-      .sort_by_column(Some(artist_col), SortType::Ascending);
+    let table = create_table(&sender, iso_datetime_format);
 
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
       is_row_visible: false,
       table,
+      iso_datetime_format,
     };
 
     // Ref of the `ColumnView` to use in `view` macro
@@ -241,6 +180,54 @@ impl SimpleComponent for TracksTableModel {
 
       TracksTableMsg::ClearAndAppend(tracks) => {
         self.table.clear();
+
+        // Replace datetime columns if format has changed
+        let current_iso_datetime_format = SETTINGS
+          .read()
+          .inspect_err(|_| {
+            error!("Settings lock is poisoned while calling ClearAndAppend on TracksTable");
+          })
+          .map_or(self.iso_datetime_format, |g| g.prefer_iso_timestamps);
+
+        if current_iso_datetime_format != self.iso_datetime_format {
+          debug!("Datetime format has changed; replacing columns");
+
+          self.iso_datetime_format = !self.iso_datetime_format;
+
+          // Remove existing columns
+          let mut idx = 0;
+          while let Some(col) = self.table.view.columns().item(idx) {
+            if let Ok(col) = col.downcast::<gtk::ColumnViewColumn>() {
+              if col.title().is_some_and(|t| {
+                t.as_str() == COLUMN_TITLE_CHECKED || t.as_str() == COLUMN_TITLE_MODIFIED
+              }) {
+                self.table.view.remove_column(&col);
+                trace!("Removed datetime column: {}", col.id().unwrap_or_default());
+              } else {
+                // Only increment if no column removed or we skip columns
+                idx += 1;
+              }
+            }
+          }
+
+          // Append new columns
+          if self.iso_datetime_format {
+            self
+              .table
+              .append_column::<TracksTableColumnCheckedIsoFormat>();
+            self
+              .table
+              .append_column::<TracksTableColumnModifiedIsoFormat>();
+          } else {
+            self
+              .table
+              .append_column::<TracksTableColumnCheckedSimpleFormat>();
+            self
+              .table
+              .append_column::<TracksTableColumnModifiedSimpleFormat>();
+          }
+        }
+
         self.table.extend_from_iter(tracks);
 
         self.reset_rows_state();
@@ -315,6 +302,98 @@ impl TracksTableModel {
   fn update_is_row_visible(&mut self) {
     self.is_row_visible = self.table.get_visible(0).is_some();
   }
+}
+
+fn create_table(
+  sender: &ComponentSender<TracksTableModel>,
+  iso_datetime_format: bool,
+) -> TypedColumnView<Track, gtk::MultiSelection> {
+  let mut table = TypedColumnView::<Track, gtk::MultiSelection>::new();
+
+  // Append columns
+  table.append_column::<TracksTableColumnArtist>();
+  table.append_column::<TracksTableColumnAlbum>();
+  table.append_column::<TracksTableColumnTrack>();
+  table.append_column::<TracksTableColumnLyricsTag>();
+  table.append_column::<TracksTableColumnSidecar>();
+
+  if iso_datetime_format {
+    table.append_column::<TracksTableColumnCheckedIsoFormat>();
+    table.append_column::<TracksTableColumnModifiedIsoFormat>();
+  } else {
+    table.append_column::<TracksTableColumnCheckedSimpleFormat>();
+    table.append_column::<TracksTableColumnModifiedSimpleFormat>();
+  }
+
+  // 0 = NeverChecked
+  table.add_filter(|track| track.last_api_check_at.is_none());
+  table.set_filter_status(0, false);
+
+  // 1 = NoLyrics
+  table.add_filter(|track| {
+    track.lyrics.is_none()
+      && track.lyrics_sidecar_lrc_file.is_none()
+      && track.lyrics_sidecar_txt_file.is_none()
+  });
+  table.set_filter_status(1, false);
+
+  // 2 = NoLyricsTag
+  table.add_filter(|track| track.lyrics.is_none());
+  table.set_filter_status(2, false);
+
+  // 3 = NotInstrumental
+  table.add_filter(|track| track.instrumental.is_none_or(|b| !b));
+  table.set_filter_status(3, false);
+
+  // 4 = NotSync
+  table.add_filter(|track| !track.lyrics_synchronised && track.lyrics_sidecar_lrc_file.is_none());
+  table.set_filter_status(4, false);
+
+  // 5 = Lrc
+  table.add_filter(|track| track.lyrics_sidecar_lrc_file.is_some());
+  table.set_filter_status(5, false);
+
+  // 6 = Txt
+  table.add_filter(|track| track.lyrics_sidecar_txt_file.is_some());
+  table.set_filter_status(6, false);
+
+  // 7 = EitherLrcOrTxt
+  table.add_filter(|track| {
+    track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some()
+  });
+  table.set_filter_status(7, false);
+
+  // Handle row selection
+  let sender_handle = sender.clone();
+  table
+    .selection_model
+    .connect_selection_changed(move |selection_model, _pos, _n_items| {
+      let set = selection_model.selection();
+      sender_handle.input(TracksTableMsg::HandleRowSelection(set));
+    });
+
+  // Handle key presses
+  let sender_handle = sender.clone();
+  let controller = EventControllerKey::new();
+  controller.connect_key_pressed(move |_con, key, _idx, modifier| {
+    trace!("TracksTable key event: key {key} + {:?}", modifier);
+    if key == gtk::gdk::Key::Escape {
+      sender_handle.input(TracksTableMsg::ClearSelection);
+    }
+    gtk::glib::Propagation::Proceed
+  });
+  table.view.add_controller(controller);
+
+  // Apply default sorting
+  let artist_col = table
+    .get_columns()
+    .get("Artist")
+    .expect("TracksTable should have Artist column");
+  table
+    .view
+    .sort_by_column(Some(artist_col), SortType::Ascending);
+
+  table
 }
 
 // Column Models ///////////////////////////////////////////////////////////////
@@ -533,13 +612,13 @@ impl RelmColumn for TracksTableColumnSidecar {
   }
 }
 
-struct TracksTableColumnChecked;
-impl RelmColumn for TracksTableColumnChecked {
+struct TracksTableColumnCheckedSimpleFormat;
+impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
   type Item = Track;
   type Root = gtk::Label;
   type Widgets = ();
 
-  const COLUMN_NAME: &'static str = "Checked";
+  const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
@@ -551,17 +630,9 @@ impl RelmColumn for TracksTableColumnChecked {
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
     let (label, tooltip) = if let Some(ndt) = item.last_api_check_at {
-      let iso = &util::ndt_utc_to_ui_string(ndt);
-      let label = if SETTINGS
-        .read()
-        .expect("settings lock is poisoned")
-        .prefer_iso_timestamps
-      {
-        iso
-      } else {
-        &util::ndt_utc_to_humanised_string(ndt)
-      };
-      (label.clone(), iso.clone())
+      let iso = util::ndt_utc_to_ui_string(ndt);
+      let label = util::ndt_utc_to_humanised_string(ndt);
+      (label, iso)
     } else {
       ("Never".into(), "Never Checked for Lyrics".into())
     };
@@ -577,13 +648,13 @@ impl RelmColumn for TracksTableColumnChecked {
   }
 }
 
-struct TracksTableColumnModified;
-impl RelmColumn for TracksTableColumnModified {
+struct TracksTableColumnModifiedSimpleFormat;
+impl RelmColumn for TracksTableColumnModifiedSimpleFormat {
   type Item = Track;
   type Root = gtk::Label;
   type Widgets = ();
 
-  const COLUMN_NAME: &'static str = "Modified";
+  const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
@@ -594,18 +665,77 @@ impl RelmColumn for TracksTableColumnModified {
   }
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    let iso = &util::ndt_utc_to_ui_string(item.file_modified_at);
-    let label = if SETTINGS
-      .read()
-      .expect("settings lock is poisoned")
-      .prefer_iso_timestamps
-    {
-      iso
+    let iso = util::ndt_utc_to_ui_string(item.file_modified_at);
+    let label = util::ndt_utc_to_humanised_string(item.file_modified_at);
+    root.set_label(&label);
+    root.set_tooltip(&iso);
+  }
+
+  fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
+    Some(Box::new(|a, b| a.file_modified_at.cmp(&b.file_modified_at)))
+  }
+}
+
+struct TracksTableColumnCheckedIsoFormat;
+impl RelmColumn for TracksTableColumnCheckedIsoFormat {
+  type Item = Track;
+  type Root = gtk::Label;
+  type Widgets = ();
+
+  const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
+
+  fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+    let label = gtk::Label::new(None);
+    label.set_align(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_width_chars(20);
+    (label, ())
+  }
+
+  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
+    let (label, tooltip) = if let Some(ndt) = item.last_api_check_at {
+      let iso = util::ndt_utc_to_ui_string(ndt);
+      (iso, None)
     } else {
-      &util::ndt_utc_to_humanised_string(item.file_modified_at)
+      (
+        "Never".to_string(),
+        Some("Never Checked for Lyrics".to_string()),
+      )
     };
-    root.set_label(label);
-    root.set_tooltip(iso);
+
+    root.set_label(&label);
+
+    if let Some(tooltip) = tooltip {
+      root.set_tooltip(&tooltip);
+    }
+  }
+
+  fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
+    Some(Box::new(|a, b| {
+      a.last_api_check_at.cmp(&b.last_api_check_at)
+    }))
+  }
+}
+
+struct TracksTableColumnModifiedIsoFormat;
+impl RelmColumn for TracksTableColumnModifiedIsoFormat {
+  type Item = Track;
+  type Root = gtk::Label;
+  type Widgets = ();
+
+  const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
+
+  fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
+    let label = gtk::Label::new(None);
+    label.set_align(gtk::Align::Start);
+    label.set_xalign(0.0);
+    label.set_width_chars(20);
+    (label, ())
+  }
+
+  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
+    let iso = util::ndt_utc_to_ui_string(item.file_modified_at);
+    root.set_label(&iso);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {

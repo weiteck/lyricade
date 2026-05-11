@@ -198,7 +198,7 @@ impl Library {
     let mut new_refreshed_count = 0_usize;
     let mut missing_removed_count = 0_usize;
 
-    let rows = conn.transaction::<usize, _, _>(|conn| {
+    let rows = conn.immediate_transaction::<usize, _, _>(|conn| {
       // Get existing and missing tracks
       let (existing_tracks, missing_tracks): (Vec<Track>, Vec<Track>) = tracks::table
         .filter(tracks::library_id.eq(&self.id))
@@ -345,7 +345,7 @@ impl Library {
     let mut existing_count = 0_usize;
     let mut processed_count = 0_usize;
 
-    let rows = conn.transaction::<usize, _, _>(|conn| {
+    let rows = conn.immediate_transaction::<usize, _, _>(|conn| {
       // Get existing tracks
       let tracks = tracks::table
         .filter(tracks::library_id.eq(&self.id))

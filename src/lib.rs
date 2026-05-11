@@ -173,7 +173,7 @@ fn init_db_pool() -> Result<()> {
 
   // see https://fractaledmind.github.io/2023/09/07/enhancing-rails-sqlite-fine-tuning/
   // sleep if the database is busy, this corresponds to up to 2 seconds sleeping time.
-  conn.batch_execute("PRAGMA busy_timeout = 5000;")?;
+  conn.batch_execute("PRAGMA busy_timeout = 2000;")?;
   // better write-concurrency
   conn.batch_execute("PRAGMA journal_mode = WAL;")?;
   // fsync only in critical moments

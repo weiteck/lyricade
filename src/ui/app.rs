@@ -783,13 +783,14 @@ impl AsyncComponent for AppModel {
     widgets.main_window.set_title(Some(&app_title));
 
     // Restore previous window configuration
-    let (width, height, is_sidebar_pinned) = {
-      let guard = SETTINGS.read().expect("settings lock is poisoned");
+    let (width, height, is_sidebar_pinned) = if let Ok(guard) = SETTINGS.read() {
       (
         guard.window_width.clamp(400, 3840),
         guard.window_height.clamp(400, 3840),
         guard.sidebar_pinned,
       )
+    } else {
+      (800, 600, false)
     };
     widgets.main_window.set_default_size(width, height);
 
@@ -1113,18 +1114,25 @@ impl AsyncComponent for AppModel {
       AppMsg::ShowPrefsWindow => {
         debug!("Showing Preferences window");
 
-        let prefs_widget = PrefsModel::builder()
-          .launch(self.libraries.clone())
-          .forward(sender.input_sender(), |msg| match msg {
-            PrefsOutput::Close => AppMsg::ClosePrefsWindow,
-          });
+        if let Ok(guard) = SETTINGS.read() {
+          let settings = guard.clone();
+          drop(guard);
 
-        let window = prefs_widget.widget();
-        window.set_transient_for(Some(root));
-        window.set_hide_on_close(true);
-        window.present();
+          let prefs_widget = PrefsModel::builder()
+            .launch((settings, self.libraries.clone()))
+            .forward(sender.input_sender(), |msg| match msg {
+              PrefsOutput::Close => AppMsg::ClosePrefsWindow,
+            });
 
-        self.prefs_widget = Some(prefs_widget);
+          let window = prefs_widget.widget();
+          window.set_transient_for(Some(root));
+          window.set_hide_on_close(true);
+          window.present();
+
+          self.prefs_widget = Some(prefs_widget);
+        } else {
+          sender.input(AppMsg::ShowToast("Cannot read settings".into()));
+        }
       }
 
       AppMsg::ClosePrefsWindow => {
@@ -1480,12 +1488,15 @@ impl AsyncComponent for AppModel {
       AppMsg::Quit => {
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
-        let mut guard = SETTINGS.write().expect("settings lock is poisoned");
-        guard.window_width = width;
-        guard.window_height = height;
-        guard.sidebar_pinned = self.is_sidebar_pinned;
-        debug!("Persisted window size {width}x{height} and sidebar pin state to Settings");
-        let _ = guard.save();
+        if let Ok(mut guard) = SETTINGS.write() {
+          guard.window_width = width;
+          guard.window_height = height;
+          guard.sidebar_pinned = self.is_sidebar_pinned;
+          debug!("Persisted window size {width}x{height} and sidebar pin state to Settings");
+          let _ = guard.save();
+        } else {
+          error!("");
+        }
 
         gtk::glib::idle_add_local_once(move || {
           relm4::main_adw_application().quit();
@@ -1573,41 +1584,41 @@ impl AppModel {
     root: &adw::ApplicationWindow,
     sender: &AsyncComponentSender<AppModel>,
   ) {
-    let guard = SETTINGS.read().expect("settings lock is poisoned");
+    if let Ok(guard) = SETTINGS.read() {
+      self.get_lyrics_requires_confirmation = guard.update_lyrics_tag_on_fetch;
 
-    self.get_lyrics_requires_confirmation = guard.update_lyrics_tag_on_fetch;
+      let secondary_text = if guard.upgrade_lyrics_tag_on_scan
+        && (guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan)
+      {
+        String::from("Sidecar files will be deleted and tags will be written to your files.")
+      } else if guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan {
+        String::from("Sidecar files will be deleted.")
+      } else if guard.upgrade_lyrics_tag_on_scan {
+        String::from("Lyrics tags will be written to your files.")
+      } else {
+        String::from("This will have no effect with the options set in Preferences.")
+      };
 
-    let secondary_text = if guard.upgrade_lyrics_tag_on_scan
-      && (guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan)
-    {
-      String::from("Sidecar files will be deleted and tags will be written to your files.")
-    } else if guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan {
-      String::from("Sidecar files will be deleted.")
-    } else if guard.upgrade_lyrics_tag_on_scan {
-      String::from("Lyrics tags will be written to your files.")
-    } else {
-      String::from("This will have no effect with the options set in Preferences.")
-    };
+      drop(guard);
 
-    drop(guard);
+      let confirm_clean_up_sidecar_files_dialog = Alert::builder()
+        .transient_for(root)
+        .launch(AlertSettings {
+          text: Some("Are you sure?".into()),
+          secondary_text: Some(secondary_text),
+          is_modal: true,
+          destructive_accept: true,
+          confirm_label: Some("Confirm".into()),
+          cancel_label: Some("Cancel".into()),
+          option_label: None,
+          extra_child: None,
+        })
+        .forward(sender.input_sender(), |msg| {
+          AppMsg::HandleCleanUpSidecarFilesResponse(msg)
+        });
 
-    let confirm_clean_up_sidecar_files_dialog = Alert::builder()
-      .transient_for(root)
-      .launch(AlertSettings {
-        text: Some("Are you sure?".into()),
-        secondary_text: Some(secondary_text),
-        is_modal: true,
-        destructive_accept: true,
-        confirm_label: Some("Confirm".into()),
-        cancel_label: Some("Cancel".into()),
-        option_label: None,
-        extra_child: None,
-      })
-      .forward(sender.input_sender(), |msg| {
-        AppMsg::HandleCleanUpSidecarFilesResponse(msg)
-      });
-
-    self.confirm_clean_up_sidecar_files_dialog = Some(confirm_clean_up_sidecar_files_dialog);
+      self.confirm_clean_up_sidecar_files_dialog = Some(confirm_clean_up_sidecar_files_dialog);
+    }
   }
 
   #[expect(clippy::cast_possible_truncation)]
