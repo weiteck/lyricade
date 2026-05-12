@@ -1,7 +1,6 @@
 use std::{
   fmt::Display,
   io::{Read, Write},
-  sync::LazyLock,
 };
 
 use anyhow::anyhow;
@@ -15,22 +14,16 @@ use diesel::{
   sql_types::Text,
   sqlite::Sqlite,
 };
-use regex::Regex;
 use tracing::error;
 
-use crate::{Result, track::Track};
+use crate::{
+  Result,
+  lyrics::lrc::{LRC_LYRICS_REGEX, LRC_LYRICS_STRIP_REGEX},
+  track::Track,
+};
 
+pub mod lrc;
 pub mod lyrics_line;
-
-/// Regex to match "\[00:00.000]\" or "\[0:00.0]\", indicating synchronised lyrics.
-pub static SYNC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-  regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]").expect("should be valid regex")
-});
-
-/// Regex to match "\[00:00.000]\" or "\[0:00.0]\" followed by 0 or more whitespace chars ("[ \t]*").
-pub static SYNC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-  regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*").expect("should be valid regex")
-});
 
 #[derive(Debug, Clone)]
 #[derive_where(PartialOrd, Ord, Eq, PartialEq)]
@@ -46,7 +39,7 @@ impl Lyrics {
   #[must_use]
   pub fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
-      self.contents = SYNC_LYRICS_STRIP_REGEX
+      self.contents = LRC_LYRICS_STRIP_REGEX
         .replace_all(&self.contents, "")
         .to_string();
       self.lyrics_type = LyricsType::Plain;
@@ -234,7 +227,7 @@ impl LyricsFile {
 
 /// Check if lyrics are synchronised using regex.
 pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
-  SYNC_LYRICS_REGEX.find(lyrics).is_some()
+  LRC_LYRICS_REGEX.find(lyrics).is_some()
 }
 
 #[cfg(test)]

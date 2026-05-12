@@ -1,4 +1,8 @@
-use crate::lyrics::{LyricsType, SYNC_LYRICS_REGEX};
+use std::collections::BTreeSet;
+
+use tracing::trace;
+
+use crate::lyrics::{LRC_LYRICS_REGEX, LyricsType, lrc::LrcTag};
 
 /// Gaps will be normalised and pegged to the nearest multiple of of `1 / value`,
 /// i.e. with a value of `4` the gap will be either `0.0`, `0.25`, `0.5`, `0.75`, or `1.0`.
@@ -18,15 +22,25 @@ pub struct LyricsLine {
 #[allow(clippy::cast_possible_truncation)]
 impl LyricsLine {
   #[must_use]
-  pub fn from_lyrics(lyrics: &str) -> Vec<LyricsLine> {
+  pub fn from_lyrics(lyrics: &str) -> (Vec<LyricsLine>, Option<BTreeSet<LrcTag>>) {
     let mut line_count = 0_usize;
     let mut prev_ts_secs = 0.0;
     let mut longest_gap_secs = 0.0;
 
+    let mut tags: BTreeSet<LrcTag> = BTreeSet::new();
+
     let timestamp_and_contents = lyrics
       .lines()
       .filter_map(|line| {
-        SYNC_LYRICS_REGEX.find(line).map(|m| {
+        // Try to parse tags if sync lyrics not yet encountered
+        if line_count == 0
+          && let Ok(tag) = LrcTag::try_from(line)
+        {
+          trace!("Parsed LRC tag: \"{tag}\"");
+          tags.insert(tag);
+        }
+
+        LRC_LYRICS_REGEX.find(line).map(|m| {
           let content = line[m.end()..].trim();
 
           if content.is_empty() {
@@ -62,9 +76,13 @@ impl LyricsLine {
       .filter(|(secs, content)| !content.is_empty() || *secs == 0.0)
       .collect::<Vec<(_, _)>>();
 
-    if timestamp_and_contents.is_empty() || timestamp_and_contents.len() < (line_count / 2) {
+    // Some LRC files can have _only_ tags, e.g. instrumentals,
+    // so check if we have more tags than lines before returning plain lyrics
+    if tags.len() <= line_count
+      && (timestamp_and_contents.is_empty() || timestamp_and_contents.len() < (line_count / 2))
+    {
       // Return plain lyrics
-      lyrics
+      let lyrics_lines = lyrics
         .lines()
         .map(str::trim)
         .filter(|line| !line.is_empty())
@@ -74,12 +92,14 @@ impl LyricsLine {
           timestamp: None,
           gap_to_prev: None,
         })
-        .collect()
+        .collect();
+
+      (lyrics_lines, None)
     } else {
       // Return sync lyrics
       let mut prev_ts_secs = 0.0;
 
-      timestamp_and_contents
+      let lyrics_lines = timestamp_and_contents
         .into_iter()
         .map(|(ts_secs, contents)| {
           let gap_to_prev = if prev_ts_secs == 0.0 {
@@ -102,7 +122,10 @@ impl LyricsLine {
             gap_to_prev: Some(gap_to_prev),
           }
         })
-        .collect()
+        .collect();
+
+      let tags = if tags.is_empty() { None } else { Some(tags) };
+      (lyrics_lines, tags)
     }
   }
 }

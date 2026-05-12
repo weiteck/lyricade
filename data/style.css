@@ -25,6 +25,33 @@ button.circular.flat.mini-cancel image {
   -gtk-icon-size: 12px;
 }
 
+box.view-lyrics.track-info {
+  background: @sidebar_bg_color;
+  border-radius: 1rem;
+  padding: 1rem;
+}
+
+label.view-lyrics.artist-name {
+  font-size: 1.5rem;
+}
+
+label.view-lyrics.track-name {
+  font-size: 3rem;
+  font-style: italic;
+}
+
+box.view-lyrics.tag {
+  background: @sidebar_bg_color;
+  border-radius: 1000px;
+  padding: 0.5rem 1rem;
+}
+
+label.view-lyrics.tag.type {
+  font-weight: bold;
+  font-size: 0.8em;
+  text-transform: uppercase;
+}
+
 box.view-lyrics.timestamp {
   border-right: 4px solid @sidebar_bg_color;
 }

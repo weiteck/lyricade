@@ -464,7 +464,8 @@ impl AsyncComponent for AppModel {
                       #[watch]
                       set_collapsed: !model.is_sidebar_pinned,
                       set_sidebar_position: gtk::PackType::End,
-                      set_enable_hide_gesture: true,
+                      #[watch]
+                      set_enable_hide_gesture: !model.is_sidebar_pinned,
                       set_sidebar_width_fraction: 0.5,
 
                       // Tracks table view
@@ -1700,6 +1701,7 @@ impl AppModel {
   fn rebuild_sidebar_widget(&mut self) {
     let root = gtk::Box::new(gtk::Orientation::Vertical, 24);
     root.set_margin_all(12);
+    root.set_margin_top(0);
 
     if let Some(track) = self
       .selected_track_id

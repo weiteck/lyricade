@@ -3,10 +3,13 @@ use relm4::{gtk::EventControllerKey, prelude::*};
 use tracing::trace;
 
 use crate::{
-  lyrics::lyrics_line::LyricsLine, track::Track, ui::view_lyrics::view_lyrics_line::ViewLyricsLine,
+  lyrics::lyrics_line::LyricsLine,
+  track::Track,
+  ui::view_lyrics::{line::ViewLyricsLine, tag::ViewLyricsLrcTag},
 };
 
-pub mod view_lyrics_line;
+pub mod line;
+pub mod tag;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViewLyricsSource {
@@ -19,6 +22,7 @@ pub struct ViewLyricsModel {
   track: Track,
   lyrics: String,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
+  lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
 }
 
 #[derive(Debug)]
@@ -35,7 +39,7 @@ impl SimpleComponent for ViewLyricsModel {
   view! {
     #[root]
     adw::Window {
-      set_title: Some(&format!("“{}” - {}", &model.track.track_name, &model.track.artist_name)),
+      set_title: Some("Lyrics"),
       set_default_size: (600, 700),
 
       #[wrap(Some)]
@@ -48,7 +52,6 @@ impl SimpleComponent for ViewLyricsModel {
 
           adw::ViewSwitcher {
             set_policy: adw::ViewSwitcherPolicy::Wide,
-            // add_css_class: "linked",
             set_stack: Some(&view_stack),
           },
         },
@@ -59,9 +62,61 @@ impl SimpleComponent for ViewLyricsModel {
     },
 
     #[name = "view_stack"]
+    // Stylised lyrics page
     adw::ViewStack {
       add = &gtk::ScrolledWindow {
-        gtk::ScrolledWindow {
+        gtk::Box {
+          set_orientation: gtk::Orientation::Vertical,
+          set_spacing: 12,
+
+          gtk::Box {
+            set_orientation: gtk::Orientation::Vertical,
+            set_margin_horizontal: 24,
+            set_css_classes: &["view-lyrics", "track-info"],
+
+            gtk::Label {
+              set_halign: gtk::Align::Start,
+              set_label: &model.track.artist_name,
+              set_css_classes: &["view-lyrics", "artist-name"],
+              set_hexpand: true,
+              set_vexpand: false,
+              set_halign: gtk::Align::Fill,
+              set_xalign: 0.0,
+              set_wrap: true,
+              set_wrap_mode: gtk::pango::WrapMode::WordChar,
+              set_margin_bottom: 6,
+            },
+
+            gtk::Label {
+              set_label: &model.track.track_name,
+              set_css_classes: &["view-lyrics", "track-name"],
+              set_hexpand: true,
+              set_vexpand: false,
+              set_halign: gtk::Align::Fill,
+              set_xalign: 0.0,
+              set_wrap: true,
+              set_wrap_mode: gtk::pango::WrapMode::WordChar,
+            },
+          },
+
+          // LRC tags (if any)
+          gtk::ScrolledWindow {
+            set_visible: !model.lrc_tags.is_empty(),
+            set_hscrollbar_policy: gtk::PolicyType::External,
+            set_vscrollbar_policy: gtk::PolicyType::Never,
+            set_hexpand: true,
+            set_margin_top: 12,
+
+            #[local_ref]
+            lrc_tags_box -> gtk::Box {
+              set_orientation: gtk::Orientation::Horizontal,
+              set_halign: gtk::Align::Center,
+              set_margin_horizontal: 24,
+              set_spacing: 6,
+            },
+          },
+
+          // Lyrics
           #[local_ref]
           lyrics_lines_box -> gtk::Box {
             set_css_classes: &["view-lyrics", "container"],
@@ -77,6 +132,7 @@ impl SimpleComponent for ViewLyricsModel {
         set_icon_name: Some("magic-wand-symbolic"),
       },
 
+      // Raw lyrics page
       add = &gtk::ScrolledWindow {
         gtk::Box {
           set_halign: gtk::Align::Fill,
@@ -105,26 +161,28 @@ impl SimpleComponent for ViewLyricsModel {
       ViewLyricsSource::Tag => track
         .lyrics
         .clone()
-        .unwrap_or_else(|| "No lyrics tag".into()),
+        .unwrap_or_else(|| "No lyrics tag found".into()),
       ViewLyricsSource::Lrc => track
         .lyrics_sidecar_lrc_file
         .clone()
-        .unwrap_or_else(|| "No LRC sidecar file".into()),
+        .unwrap_or_else(|| "No LRC sidecar file found".into()),
       ViewLyricsSource::Txt => track
         .lyrics_sidecar_txt_file
         .clone()
-        .unwrap_or_else(|| "No TXT sidecar file".into()),
+        .unwrap_or_else(|| "No TXT sidecar file found".into()),
     };
 
-    let lyrics_lines = build_lyrics_lines(&lyrics);
+    let (lyrics_lines, lrc_tags) = build_factories(&lyrics);
 
     let model = ViewLyricsModel {
       track: *track,
-      lyrics_lines,
       lyrics,
+      lyrics_lines,
+      lrc_tags,
     };
 
     let lyrics_lines_box = model.lyrics_lines.widget();
+    let lrc_tags_box = model.lrc_tags.widget();
 
     let widgets = view_output!();
 
@@ -146,18 +204,35 @@ impl SimpleComponent for ViewLyricsModel {
   }
 }
 
-fn build_lyrics_lines(lyrics: &str) -> FactoryVecDeque<ViewLyricsLine> {
-  let lines = LyricsLine::from_lyrics(lyrics);
-  let mut view_lyrics_lines = FactoryVecDeque::builder()
+fn build_factories(
+  lyrics: &str,
+) -> (
+  FactoryVecDeque<ViewLyricsLine>,
+  FactoryVecDeque<ViewLyricsLrcTag>,
+) {
+  let (lines, tags) = LyricsLine::from_lyrics(lyrics);
+
+  let mut lyrics_lines = FactoryVecDeque::builder()
     .launch(gtk::Box::new(gtk::Orientation::Vertical, 0))
     .detach();
-
   {
-    let mut guard = view_lyrics_lines.guard();
+    let mut guard = lyrics_lines.guard();
     for line in lines {
       guard.push_back(line);
     }
   }
 
-  view_lyrics_lines
+  let mut lrc_tags = FactoryVecDeque::builder()
+    .launch(gtk::Box::new(gtk::Orientation::Vertical, 0))
+    .detach();
+  {
+    if let Some(tags) = tags {
+      let mut guard = lrc_tags.guard();
+      for tag in tags {
+        guard.push_back(tag);
+      }
+    }
+  }
+
+  (lyrics_lines, lrc_tags)
 }
