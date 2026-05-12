@@ -406,7 +406,6 @@ impl RelmColumn for TracksTableColumnArtist {
 
   const COLUMN_NAME: &'static str = "Artist";
   const ENABLE_RESIZE: bool = true;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
@@ -439,7 +438,6 @@ impl RelmColumn for TracksTableColumnAlbum {
 
   const COLUMN_NAME: &'static str = "Album";
   const ENABLE_RESIZE: bool = true;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
@@ -470,6 +468,7 @@ impl RelmColumn for TracksTableColumnTrack {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Track";
+  const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
@@ -645,6 +644,7 @@ impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
     (label, ())
   }
@@ -681,6 +681,7 @@ impl RelmColumn for TracksTableColumnModifiedSimpleFormat {
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
     (label, ())
   }
@@ -709,6 +710,7 @@ impl RelmColumn for TracksTableColumnCheckedIsoFormat {
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
     (label, ())
   }
@@ -750,6 +752,7 @@ impl RelmColumn for TracksTableColumnModifiedIsoFormat {
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
     (label, ())
   }
