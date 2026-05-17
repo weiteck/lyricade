@@ -1,7 +1,5 @@
 use std::collections::HashSet;
 
-use relm4::gtk::gio::prelude::ListModelExt;
-use relm4::gtk::glib::object::Cast;
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
@@ -18,7 +16,7 @@ pub struct TracksTableModel {
   preset_filters_len: usize,
   total_rows: u32,
   is_row_visible: bool,
-  iso_datetime_format: bool,
+  prefer_accurate_timestamps: bool,
 }
 
 static COLUMN_TITLE_CHECKED: &str = "Checked";
@@ -97,22 +95,22 @@ impl SimpleComponent for TracksTableModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let iso_datetime_format = SETTINGS
+    let prefer_accurate_timestamps = SETTINGS
       .read()
       .inspect_err(|_| error!("Settings lock is poisoned while initialising TracksTable"))
       .map_or_else(
-        |_| Settings::default().prefer_iso_timestamps,
-        |g| g.prefer_iso_timestamps,
+        |_| Settings::default().prefer_accurate_timestamps,
+        |g| g.prefer_accurate_timestamps,
       );
 
-    let table = create_table(&sender, iso_datetime_format);
+    let table = create_table(&sender, prefer_accurate_timestamps);
 
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
       is_row_visible: false,
       table,
-      iso_datetime_format,
+      prefer_accurate_timestamps,
     };
 
     // Ref of the `ColumnView` to use in `view` macro
@@ -182,42 +180,38 @@ impl SimpleComponent for TracksTableModel {
         self.table.clear();
 
         // Replace datetime columns if format has changed
-        let current_iso_datetime_format = SETTINGS
+        let prefer_accurate_timestamps = SETTINGS
           .read()
           .inspect_err(|_| {
             error!("Settings lock is poisoned while calling ClearAndAppend on TracksTable");
           })
-          .map_or(self.iso_datetime_format, |g| g.prefer_iso_timestamps);
+          .map_or(self.prefer_accurate_timestamps, |g| {
+            g.prefer_accurate_timestamps
+          });
 
-        if current_iso_datetime_format != self.iso_datetime_format {
+        if prefer_accurate_timestamps != self.prefer_accurate_timestamps {
           debug!("Datetime format has changed; replacing columns");
 
-          self.iso_datetime_format = !self.iso_datetime_format;
+          self.prefer_accurate_timestamps = prefer_accurate_timestamps;
 
           // Remove existing columns
-          let mut idx = 0;
-          while let Some(col) = self.table.view.columns().item(idx) {
-            if let Ok(col) = col.downcast::<gtk::ColumnViewColumn>() {
-              if col.title().is_some_and(|t| {
-                t.as_str() == COLUMN_TITLE_CHECKED || t.as_str() == COLUMN_TITLE_MODIFIED
-              }) {
-                self.table.view.remove_column(&col);
-                trace!("Removed datetime column: {}", col.id().unwrap_or_default());
-              } else {
-                // Only increment if no column removed or we skip columns
-                idx += 1;
-              }
-            }
+          let columns = self.table.get_columns();
+          if let (Some(col_checked), Some(col_modified)) = (
+            columns.get(COLUMN_TITLE_CHECKED),
+            columns.get(COLUMN_TITLE_MODIFIED),
+          ) {
+            self.table.view.remove_column(col_checked);
+            self.table.view.remove_column(col_modified);
           }
 
           // Append new columns
-          if self.iso_datetime_format {
+          if self.prefer_accurate_timestamps {
             self
               .table
-              .append_column::<TracksTableColumnCheckedIsoFormat>();
+              .append_column::<TracksTableColumnCheckedAccurateFormat>();
             self
               .table
-              .append_column::<TracksTableColumnModifiedIsoFormat>();
+              .append_column::<TracksTableColumnModifiedAccurateFormat>();
           } else {
             self
               .table
@@ -318,8 +312,8 @@ fn create_table(
   table.append_column::<TracksTableColumnSidecar>();
 
   if iso_datetime_format {
-    table.append_column::<TracksTableColumnCheckedIsoFormat>();
-    table.append_column::<TracksTableColumnModifiedIsoFormat>();
+    table.append_column::<TracksTableColumnCheckedAccurateFormat>();
+    table.append_column::<TracksTableColumnModifiedAccurateFormat>();
   } else {
     table.append_column::<TracksTableColumnCheckedSimpleFormat>();
     table.append_column::<TracksTableColumnModifiedSimpleFormat>();
@@ -405,10 +399,12 @@ impl RelmColumn for TracksTableColumnArtist {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = "Artist";
+  const ENABLE_EXPAND: bool = true;
   const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -437,10 +433,12 @@ impl RelmColumn for TracksTableColumnAlbum {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = "Album";
+  const ENABLE_EXPAND: bool = true;
   const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -468,10 +466,12 @@ impl RelmColumn for TracksTableColumnTrack {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Track";
+  const ENABLE_EXPAND: bool = true;
   const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bx.set_hexpand(false);
     bx.set_valign(gtk::Align::Center);
 
     let track_label = gtk::Label::new(None);
@@ -518,9 +518,11 @@ impl RelmColumn for TracksTableColumnLyricsTag {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Tag";
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bx.set_hexpand(false);
 
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
@@ -577,9 +579,11 @@ impl RelmColumn for TracksTableColumnSidecar {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Sidecar";
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
+    bx.set_hexpand(false);
 
     let label = gtk::Label::new(None);
     label.set_align(gtk::Align::Start);
@@ -639,9 +643,11 @@ impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -676,9 +682,11 @@ impl RelmColumn for TracksTableColumnModifiedSimpleFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
@@ -698,20 +706,21 @@ impl RelmColumn for TracksTableColumnModifiedSimpleFormat {
   }
 }
 
-struct TracksTableColumnCheckedIsoFormat;
-impl RelmColumn for TracksTableColumnCheckedIsoFormat {
+struct TracksTableColumnCheckedAccurateFormat;
+impl RelmColumn for TracksTableColumnCheckedAccurateFormat {
   type Item = Track;
   type Root = gtk::Label;
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    label.set_width_chars(20);
     (label, ())
   }
 
@@ -740,20 +749,21 @@ impl RelmColumn for TracksTableColumnCheckedIsoFormat {
   }
 }
 
-struct TracksTableColumnModifiedIsoFormat;
-impl RelmColumn for TracksTableColumnModifiedIsoFormat {
+struct TracksTableColumnModifiedAccurateFormat;
+impl RelmColumn for TracksTableColumnModifiedAccurateFormat {
   type Item = Track;
   type Root = gtk::Label;
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
+  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
+    label.set_hexpand(false);
     label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    label.set_width_chars(20);
     (label, ())
   }
 

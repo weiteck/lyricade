@@ -13,7 +13,7 @@ diesel::table! {
 diesel::table! {
     settings (id) {
         id -> Integer,
-        prefer_iso_timestamps -> Bool,
+        prefer_accurate_timestamps -> Bool,
         prefer_lyrics_type -> Text,
         scan_new_files_only -> Bool,
         upgrade_lyrics_tag_on_scan -> Bool,

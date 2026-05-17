@@ -92,7 +92,7 @@ impl LrcLibClient {
       .build()
     {
       Ok(c) => c,
-      Err(e) => panic!("Error creating HTTP client: {e}"),
+      Err(e) => panic!("Could not create LrcLib HTTP client: {e}"),
     };
 
     let limiter = Arc::new(

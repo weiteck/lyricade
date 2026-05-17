@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS settings (
   -- Singleton table
   id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
 
-  prefer_iso_timestamps BOOLEAN NOT NULL DEFAULT 0,
+  prefer_accurate_timestamps BOOLEAN NOT NULL DEFAULT 0,
   prefer_lyrics_type TEXT NOT NULL CHECK (prefer_lyrics_type IN ('Sync', 'Plain')) DEFAULT 'Sync',
 
   -- RefreshOptions

@@ -85,6 +85,9 @@ pub async fn init_app() -> Result<()> {
     env!("CARGO_PKG_VERSION")
   );
   let separator = "`".repeat(pkg_name_and_version.len());
+  let settings = &*SETTINGS
+    .read()
+    .map_err(|_| anyhow!("Settings lock is poisoned"))?;
   info!(
     r"
 {}
@@ -101,7 +104,7 @@ Settings:
     &*APP_DB_FILE_PATH
       .canonicalize_utf8()
       .unwrap_or("(error while getting full path)".into()),
-    &*SETTINGS.read().expect("settings lock is poisoned")
+    settings
   );
 
   Ok(())

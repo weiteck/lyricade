@@ -272,7 +272,7 @@ impl SimpleComponent for PrefsModel {
               #[name = "group_datetime_format_button_simple"]
               add_prefix = &gtk::CheckButton {
                 #[watch]
-                set_active: !model.settings_current.prefer_iso_timestamps,
+                set_active: !model.settings_current.prefer_accurate_timestamps,
                 connect_toggled[sender] => move |btn| {
                   sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(!btn.is_active())));
                 },
@@ -290,7 +290,7 @@ impl SimpleComponent for PrefsModel {
               add_prefix = &gtk::CheckButton {
                 set_group: Some(&group_datetime_format_button_simple),
                 #[watch]
-                set_active: model.settings_current.prefer_iso_timestamps,
+                set_active: model.settings_current.prefer_accurate_timestamps,
                 connect_toggled[sender] => move |btn| {
                   sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(btn.is_active())));
                 },
@@ -486,7 +486,7 @@ impl SimpleComponent for PrefsModel {
         }
         ExposedSetting::PreferIsoTimestamps(active) => {
           debug!("UpdateSetting: PreferIsoTimestamps: {active}");
-          self.settings_current.prefer_iso_timestamps = active;
+          self.settings_current.prefer_accurate_timestamps = active;
         }
         ExposedSetting::ScanNewFilesOnly(active) => {
           debug!("UpdateSetting: ScanNewFilesOnly: {active}");

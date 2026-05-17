@@ -53,7 +53,8 @@ pub const CONNECTION_LIMIT: usize = 20;
 pub struct Settings {
   pub id: i32,
 
-  pub prefer_iso_timestamps: bool,
+  /// Prefer full datetime or humanised representation (e.g. "5 minutes ago").
+  pub prefer_accurate_timestamps: bool,
   pub prefer_lyrics_type: LyricsType,
 
   pub scan_new_files_only: bool,
@@ -142,7 +143,7 @@ impl Default for Settings {
     let now = now();
     Self {
       id: 1,
-      prefer_iso_timestamps: false,
+      prefer_accurate_timestamps: false,
       prefer_lyrics_type: LyricsType::Sync,
       scan_new_files_only: true,
       upgrade_lyrics_tag_on_scan: false,

@@ -121,7 +121,9 @@ impl LrcTag {
       | LrcTag::Creator(value)
       | LrcTag::Editor(value)
       | LrcTag::Version(value) => value.clone(),
-      LrcTag::Offset(value) => format!("{} ms", value),
+      LrcTag::Offset(value) => {
+        format!("{}{} ms", if value.is_positive() { "+" } else { "" }, value)
+      }
     }
   }
 }

@@ -3,6 +3,7 @@ use std::sync::LazyLock;
 use bon::builder;
 use camino::Utf8Path;
 use chrono::{DateTime, Local, NaiveDateTime, Utc};
+use relm4::gtk;
 use tracing::{error, trace};
 
 pub static UNIX_EPOCH_NDT: LazyLock<NaiveDateTime> = LazyLock::new(|| {
@@ -25,11 +26,18 @@ pub fn ndt_utc_to_local_dt(ndt_utc: NaiveDateTime) -> DateTime<Local> {
   dt_local
 }
 
-/// Convert UTC `NaiveDateTime` to local ISO 8601 text with second accuracy.
+/// Convert UTC `NaiveDateTime` to local timezone formatted according to the locale.
 #[must_use]
 pub fn ndt_utc_to_ui_string(ndt_utc: NaiveDateTime) -> String {
-  let local_dt = ndt_utc_to_local_dt(ndt_utc);
-  local_dt.format("%F %T").to_string()
+  let ts = ndt_utc.and_utc().timestamp();
+
+  gtk::glib::DateTime::from_unix_utc(ts)
+    .expect("should be a valid Unix timestamp")
+    .to_local()
+    .expect("should be able to convert UTC glib datetime to local datetime")
+    .format("%x, %X")
+    .expect("should be a valid `strftime` format specifier")
+    .to_string()
 }
 
 /// Convert UTC `NaiveDateTime` to humanised text if recent, e.g. "2 months ago",
@@ -39,7 +47,7 @@ pub fn ndt_utc_to_humanised_string(ndt_utc: NaiveDateTime) -> String {
   let local_dt = ndt_utc_to_local_dt(ndt_utc);
 
   if local_dt.years_since(Local::now()).is_some() {
-    local_dt.format("%F %T").to_string()
+    ndt_utc_to_ui_string(ndt_utc)
   } else {
     // Humanise recent dates
     let ht = chrono_humanize::HumanTime::from(local_dt);
