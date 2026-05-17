@@ -57,13 +57,14 @@ box.view-lyrics.timestamp {
 }
 
 label.view-lyrics.timestamp {
-  padding: 6px 6px 6px 10px;
+  padding: 6px 6px 6px 14px;
   background: @sidebar_bg_color;
   border-radius: 1000px 0 0 1000px;
+  min-height: 1.5rem; /* match lyrics height */
 }
 
 label.view-lyrics.text {
-  font-size: 1.75em;
+  font-size: 1.5rem;
 }
 
 .table-cell.lyrics.sync {
