@@ -1897,7 +1897,7 @@ impl AppModel {
       let status_page = adw::StatusPage::new();
       status_page.set_title(&format!("{selected} tracks selected"));
       status_page.set_description(Some("Select one track to view details"));
-      status_page.set_icon_name(Some("playlist2-symbolic"));
+      status_page.set_icon_name(Some("music-queue-symbolic"));
       status_page.add_css_class("compact");
 
       root.append(&status_page);

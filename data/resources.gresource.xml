@@ -17,8 +17,8 @@
     <gresource prefix="io/github/weiteck/Lyricade/icons">
         <file
       preprocess="xml-stripblanks"
-      alias="playlist2-symbolic.svg"
-    >icons/symbolic/playlist2-symbolic.svg</file>
+      alias="music-queue-symbolic.svg"
+    >icons/symbolic/music-queue-symbolic.svg</file>
     </gresource>
 
     <gresource prefix="io/github/weiteck/Lyricade/icons">
