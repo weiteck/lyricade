@@ -6,6 +6,8 @@ use chrono::{DateTime, Local, NaiveDateTime, Utc};
 use relm4::gtk;
 use tracing::{error, trace};
 
+pub mod reporter;
+
 pub static UNIX_EPOCH_NDT: LazyLock<NaiveDateTime> = LazyLock::new(|| {
   chrono::DateTime::from_timestamp_secs(0)
     .expect("valid timestamp")

@@ -271,7 +271,7 @@ impl FactoryComponent for LibraryRow {
 
         sender
           .output(LibraryRowOutput::ShowToast(
-            format!("Library \"{}\" deleted", self.library.name()),
+            format!("Library “{}” deleted", self.library.name()),
             false,
           ))
           .expect("LibraryRowOutput receiver dropped");

@@ -408,6 +408,7 @@ impl AsyncComponent for AppModel {
                 gtk::Label {
                   set_halign: gtk::Align::Center,
                   set_valign: gtk::Align::Start,
+                  set_justify: gtk::Justification::Center,
                   set_margin_bottom: 12,
                   #[watch]
                   set_label: &model.spinner_step.as_deref().unwrap_or(""),
@@ -1358,7 +1359,7 @@ impl AsyncComponent for AppModel {
             let progress_sender = sender_handle.clone();
             let progress_callback = move |msg| {
               progress_sender.input(AppMsg::ShowSpinner((
-                format!("Refreshing library “{name}”…"),
+                format!("Refreshing library “{name}”"),
                 msg,
               )));
             };

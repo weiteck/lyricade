@@ -1,4 +1,9 @@
-use std::{collections::HashSet, fmt::Display, hash::Hash, time::Instant};
+use std::{
+  collections::HashSet,
+  fmt::Display,
+  hash::Hash,
+  time::{Duration, Instant},
+};
 
 use anyhow::anyhow;
 use bon::bon;
@@ -11,7 +16,7 @@ use diesel::{
 };
 
 use relm4::tokio::sync::oneshot;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 use walkdir::WalkDir;
 
 use crate::{
@@ -20,7 +25,7 @@ use crate::{
   schema::{libraries, tracks},
   settings::Settings,
   track::{self, CleanUpSidecarFilesOptions, FetchLyricsOptions, NewTrack, Track},
-  util::{self, now},
+  util::{self, now, reporter::IntervalReporter},
 };
 
 /// Represents a library path.
@@ -194,7 +199,7 @@ impl Library {
     let mut conn = DB_POOL.get()?;
     let now = now();
 
-    on_progress("Discovering paths…".into());
+    on_progress("Discovering paths…\n".into());
     let paths = self
       .file_paths()
       .iter()
@@ -208,12 +213,56 @@ impl Library {
 
     let rows = conn.immediate_transaction::<usize, _, _>(|conn| {
       // Get existing and missing tracks
-      let (existing_tracks, missing_tracks): (Vec<Track>, Vec<Track>) = tracks::table
+      let (mut existing_tracks, missing_tracks): (Vec<Track>, Vec<Track>) = tracks::table
         .filter(tracks::library_id.eq(&self.id))
         .load::<Track>(conn)?
         .into_iter()
         .partition(|t| paths.contains(&t.path));
       existing_count = existing_tracks.len();
+
+      // Discard unchanged files
+      existing_tracks = if scan_new_only {
+        on_progress("Checking for modified files…\n".into());
+
+        let mut reporter = IntervalReporter::builder()
+          .id("CheckFilesModified")
+          .target(existing_count)
+          .report_interval(Duration::from_secs(1))
+          .report_threshold(5)
+          .callback(|stats| {
+            on_progress(format!(
+              "Checking for modified files… {:.0} %\n(about {} remaining)",
+              stats.percent_processed, stats.human_time_remaining
+            ));
+          })
+          .build();
+
+        let mut modified_tracks = Vec::with_capacity(existing_count);
+
+        for track in existing_tracks {
+          // Cancelled?
+          if cancel_on_close
+            .try_recv()
+            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
+          {
+            return Err(
+              anyhow!(diesel::result::Error::RollbackTransaction)
+                .context("User cancelled the library refresh operation"),
+            );
+          }
+
+          if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
+            modified_tracks.push(track);
+          }
+
+          // Track progress and report time remaining
+          reporter.tick();
+        }
+
+        modified_tracks
+      } else {
+        existing_tracks
+      };
 
       // Build new tracks from paths not in the database
       let existing_track_paths = existing_tracks
@@ -246,9 +295,23 @@ impl Library {
         .filter(tracks::added_at.eq(now))
         .load::<Track>(conn)?;
 
-      // Refresh metadata from files & write to database; discard files that fail to update metadata
-      let mut new_tracks = vec![];
-      let mut errored_new_tracks = vec![];
+      let mut reporter = IntervalReporter::builder()
+        .id("RefreshTracks")
+        .target(inserted_new_tracks.len() + existing_tracks.len())
+        .report_interval(Duration::from_secs(1))
+        .report_threshold(5)
+        .callback(|stats| {
+          on_progress(format!(
+            "Scanning tracks… {:.0} %\n(about {} remaining)",
+            stats.percent_processed, stats.human_time_remaining
+          ));
+        })
+        .build();
+
+      on_progress("Scanning tracks…\n".into());
+
+      // Get metadata from new files and write to database;
+      // delete DB row where metadata read fails
       for mut track in inserted_new_tracks {
         // Task cancelled?
         if cancel_on_close
@@ -262,81 +325,34 @@ impl Library {
         }
 
         if track.scan_and_update().conn(conn).call().is_ok() {
-          new_tracks.push(track);
           new_refreshed_count += 1;
-
-          // Report back progress periodically
-          if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-            on_progress(format!(
-              "Found {} tracks",
-              new_refreshed_count + existing_refreshed_count
-            ));
-          }
         } else {
-          errored_new_tracks.push(track);
+          track.delete_from_db().conn(conn).call()?;
         }
+
+        // Track progress and report time remaining
+        reporter.tick();
       }
 
-      if scan_new_only {
-        // Refresh tracks with changed modified timestamps
-        for mut track in existing_tracks {
-          // Task cancelled?
-          if cancel_on_close
-            .try_recv()
-            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-          {
-            return Err(
-              anyhow!(diesel::result::Error::RollbackTransaction)
-                .context("User cancelled the library refresh operation"),
-            );
-          }
-
-          if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
-            trace!("{} file has changed and will be re-scanned", &track);
-            if track.scan_and_update().conn(conn).call().is_ok() {
-              existing_refreshed_count += 1;
-
-              // Report back progress periodically
-              if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-                on_progress(format!(
-                  "Found {} tracks",
-                  new_refreshed_count + existing_refreshed_count
-                ));
-              }
-            }
-          }
+      // Refresh existing tracks
+      for mut track in existing_tracks {
+        // Task cancelled?
+        if cancel_on_close
+          .try_recv()
+          .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
+        {
+          return Err(
+            anyhow!(diesel::result::Error::RollbackTransaction)
+              .context("User cancelled the library refresh operation"),
+          );
         }
-      } else {
-        // Refresh existing tracks
-        for mut track in existing_tracks {
-          // Task cancelled?
-          if cancel_on_close
-            .try_recv()
-            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-          {
-            return Err(
-              anyhow!(diesel::result::Error::RollbackTransaction)
-                .context("User cancelled the library refresh operation"),
-            );
-          }
 
-          if track.scan_and_update().conn(conn).call().is_ok() {
-            existing_refreshed_count += 1;
-
-            // Report back progress periodically
-            if (new_refreshed_count + existing_refreshed_count).is_multiple_of(5) {
-              on_progress(format!(
-                "Found {} tracks",
-                new_refreshed_count + existing_refreshed_count
-              ));
-            }
-          }
+        if track.scan_and_update().conn(conn).call().is_ok() {
+          existing_refreshed_count += 1;
         }
-      }
 
-      // Clean up rows created for new tracks that we failed to get metadata for
-      for track in errored_new_tracks {
-        track.delete_from_db().conn(conn).call()?;
+        // Track progress and report time remaining
+        reporter.tick();
       }
 
       // Delete missing tracks (path not found)
@@ -386,6 +402,19 @@ impl Library {
       "Clean Up Sidecar Files for {}: Started with options: {:?}",
       &self, options
     );
+
+    // let mut reporter = IntervalReporter::builder()
+    //   .id("RefreshTracks")
+    //   .target(inserted_new_tracks.len() + existing_tracks.len())
+    //   .report_interval(Duration::from_secs(1))
+    //   .report_threshold(5)
+    //   .callback(|stats| {
+    //     on_progress(format!(
+    //       "Scanning tracks… {:.0} %\n(about {} remaining)",
+    //       stats.percent_processed, stats.human_time_remaining
+    //     ));
+    //   })
+    //   .build();
 
     // Make sure progress is shown without delay
     on_progress(0);
