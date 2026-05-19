@@ -14,6 +14,7 @@ use diesel::{
   sql_types::Text,
   sqlite::Sqlite,
 };
+use serde::{Deserialize, Serialize};
 use tracing::error;
 
 use crate::{
@@ -50,7 +51,20 @@ impl Lyrics {
 }
 
 // Variants are given discriminants for sorting (lower values sorted first)
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, AsExpression, FromSqlRow)]
+#[derive(
+  Debug,
+  Clone,
+  Copy,
+  Default,
+  PartialEq,
+  Eq,
+  PartialOrd,
+  Ord,
+  Serialize,
+  Deserialize,
+  AsExpression,
+  FromSqlRow,
+)]
 #[diesel(sql_type = Text)]
 pub enum LyricsType {
   #[default]
@@ -61,16 +75,10 @@ pub enum LyricsType {
 impl FromSql<Text, Sqlite> for LyricsType {
   fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
     let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-    match s.as_ref() {
-      "Sync" => Ok(Self::Sync),
-      "Plain" => Ok(Self::Plain),
-      _ => {
-        let error =
-          format!("unexpected value \"{s}\" encountered while serialising LyricsType enum");
-        error!(error);
-        Err(error.into())
-      }
-    }
+    ron::from_str(&s).map_err(|error| {
+      error!("Error deserializing enum `LyricsType` from database value \"{s}\": {error}");
+      error.into()
+    })
   }
 }
 
@@ -79,7 +87,7 @@ impl ToSql<Text, Sqlite> for LyricsType {
     &'b self,
     out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
   ) -> diesel::serialize::Result {
-    out.set_value(self.to_string());
+    out.set_value(ron::to_string(&self)?);
     Ok(diesel::serialize::IsNull::No)
   }
 }
