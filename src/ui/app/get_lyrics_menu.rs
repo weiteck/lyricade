@@ -1,13 +1,22 @@
 use std::sync::LazyLock;
 
 use chrono::NaiveDateTime;
+use diesel::{
+  backend::Backend,
+  deserialize::{FromSql, FromSqlRow},
+  expression::AsExpression,
+  serialize::ToSql,
+  sql_types::Text,
+  sqlite::Sqlite,
+};
 use relm4::{
   actions::{RelmAction, RelmActionGroup},
   prelude::*,
 };
-use tracing::trace;
+use serde::{Deserialize, Serialize};
+use tracing::{error, trace};
 
-use crate::{lyrics::LyricsType, track::Track, util::now};
+use crate::{SETTINGS, lyrics::LyricsType, track::Track, util::now};
 
 // Cache dates used for filtering Tracks
 static TODAY: LazyLock<NaiveDateTime> = LazyLock::new(now);
@@ -23,20 +32,6 @@ static YEAR_AGO: LazyLock<Option<NaiveDateTime>> =
 #[derive(Debug, Clone)]
 pub(super) struct GetLyricsButtonModel {
   state: GetLyricsMenuState,
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum Type {
-  NoLyrics,
-  NotPreferred,
-}
-
-#[derive(Debug, Clone)]
-pub(super) enum Checked {
-  Never,
-  Months(u32),
-  Year,
-  Any,
 }
 
 #[derive(Debug)]
@@ -83,14 +78,33 @@ impl SimpleComponent for GetLyricsButtonModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
+    // Restore saved settings
+    let (lyrics_type_from_settings, last_checked_from_settings) = {
+      let guard = SETTINGS.read();
+      let lyrics_type = guard
+        .as_ref()
+        .map_or(Type::default(), |settings| settings.get_lyrics_menu_lyrics_type.clone());
+      let last_checked = guard
+        .as_ref()
+        .map_or(Checked::default(), |settings| settings.get_lyrics_menu_last_checked.clone());
+      (
+        ron::to_string(&lyrics_type).unwrap_or_else(|_| {
+          ron::to_string(&Type::default()).unwrap_or_else(|_| "NotPreferred".to_string())
+        }),
+        ron::to_string(&last_checked).unwrap_or_else(|_| {
+          ron::to_string(&Checked::default()).unwrap_or_else(|_| "Any".to_string())
+        }),
+      )
+    };
+
     let mut menu_action_group = RelmActionGroup::<GroupGetLyrics>::new();
 
     let sender_handle = sender.clone();
     let action_set_type: RelmAction<ActionGetLyricsMenuLyricsType> =
       RelmAction::new_stateful_with_target_value(
-        &"not_preferred".to_string(),
+        &lyrics_type_from_settings,
         move |_action, state, value: String| {
-          if value.as_str() == "no_lyrics" {
+          if value.as_str() == "NoLyrics" {
             sender_handle.input(GetLyricsButtonModelMsg::TypeChanged(Type::NoLyrics));
           } else {
             sender_handle.input(GetLyricsButtonModelMsg::TypeChanged(Type::NotPreferred));
@@ -102,29 +116,29 @@ impl SimpleComponent for GetLyricsButtonModel {
     menu_action_group.add_action(action_set_type);
 
     let menu_lyrics_type_section = gtk::gio::Menu::new();
-    menu_lyrics_type_section.append(Some("_No Lyrics"), Some("get_lyrics.lyrics_type::no_lyrics"));
+    menu_lyrics_type_section.append(Some("_No Lyrics"), Some("get_lyrics.lyrics_type::NoLyrics"));
     menu_lyrics_type_section
-      .append(Some("Not _Preferred"), Some("get_lyrics.lyrics_type::not_preferred"));
+      .append(Some("Not _Preferred"), Some("get_lyrics.lyrics_type::NotPreferred"));
 
     let sender_handle = sender.clone();
     let action_set_last_checked: RelmAction<ActionGetLyricsMenuLastChecked> =
       RelmAction::new_stateful_with_target_value(
-        &"any".to_string(),
+        &last_checked_from_settings,
         move |_action, state, value: String| {
           match value.as_str() {
-            "never" => {
+            "Never" => {
               sender_handle.input(GetLyricsButtonModelMsg::CheckedChanged(Checked::Never));
             }
-            "months_1" => {
+            "Months(1)" => {
               sender_handle.input(GetLyricsButtonModelMsg::CheckedChanged(Checked::Months(1)));
             }
-            "months_3" => {
+            "Months(3)" => {
               sender_handle.input(GetLyricsButtonModelMsg::CheckedChanged(Checked::Months(3)));
             }
-            "months_6" => {
+            "Months(6)" => {
               sender_handle.input(GetLyricsButtonModelMsg::CheckedChanged(Checked::Months(6)));
             }
-            "year" => {
+            "Year" => {
               sender_handle.input(GetLyricsButtonModelMsg::CheckedChanged(Checked::Year));
             }
             _ => {
@@ -138,12 +152,12 @@ impl SimpleComponent for GetLyricsButtonModel {
     menu_action_group.add_action(action_set_last_checked);
 
     let menu_time_section = gtk::gio::Menu::new();
-    menu_time_section.append(Some("Ne_ver"), Some("get_lyrics.last_checked::never"));
-    menu_time_section.append(Some("> _1 Month"), Some("get_lyrics.last_checked::months_1"));
-    menu_time_section.append(Some("> _3 Months"), Some("get_lyrics.last_checked::months_3"));
-    menu_time_section.append(Some("> _6 Months"), Some("get_lyrics.last_checked::months_6"));
-    menu_time_section.append(Some("> 1 _Year"), Some("get_lyrics.last_checked::year"));
-    menu_time_section.append(Some("_Any"), Some("get_lyrics.last_checked::any"));
+    menu_time_section.append(Some("Ne_ver"), Some("get_lyrics.last_checked::Never"));
+    menu_time_section.append(Some("> _1 Month"), Some("get_lyrics.last_checked::Months(1)"));
+    menu_time_section.append(Some("> _3 Months"), Some("get_lyrics.last_checked::Months(3)"));
+    menu_time_section.append(Some("> _6 Months"), Some("get_lyrics.last_checked::Months(6)"));
+    menu_time_section.append(Some("> 1 _Year"), Some("get_lyrics.last_checked::Year"));
+    menu_time_section.append(Some("_Any"), Some("get_lyrics.last_checked::Any"));
 
     let menu = gtk::gio::Menu::new();
     menu.append_section(Some("Lyrics"), &menu_lyrics_type_section);
@@ -245,5 +259,69 @@ impl GetLyricsMenuState {
       }
       _ => true, // handle `Any` variant
     }
+  }
+}
+
+#[derive(
+  Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+)]
+#[diesel(sql_type = Text)]
+pub enum Type {
+  NoLyrics,
+  #[default]
+  NotPreferred,
+}
+
+#[derive(
+  Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+)]
+#[diesel(sql_type = Text)]
+pub enum Checked {
+  Never,
+  Months(u32),
+  Year,
+  #[default]
+  Any,
+}
+
+impl FromSql<Text, Sqlite> for Type {
+  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+    ron::from_str(&s).map_err(|error| {
+      error!(
+        "Error deserializing `GetLyricsMenuState` enum `Type` from database value \"{s}\": {error}"
+      );
+      error.into()
+    })
+  }
+}
+
+impl ToSql<Text, Sqlite> for Type {
+  fn to_sql<'b>(
+    &'b self,
+    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+  ) -> diesel::serialize::Result {
+    out.set_value(ron::to_string(&self)?);
+    Ok(diesel::serialize::IsNull::No)
+  }
+}
+
+impl FromSql<Text, Sqlite> for Checked {
+  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+    ron::from_str(&s).map_err(|error| {
+      error!("Error deserializing `GetLyricsMenuState` enum `Checked` from database value \"{s}\": {error}");
+      error.into()
+    })
+  }
+}
+
+impl ToSql<Text, Sqlite> for Checked {
+  fn to_sql<'b>(
+    &'b self,
+    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+  ) -> diesel::serialize::Result {
+    out.set_value(ron::to_string(&self)?);
+    Ok(diesel::serialize::IsNull::No)
   }
 }

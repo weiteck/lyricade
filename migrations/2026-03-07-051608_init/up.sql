@@ -53,6 +53,9 @@ CREATE TABLE IF NOT EXISTS settings (
   update_lyrics_tag_on_fetch BOOLEAN NOT NULL DEFAULT 0,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
 
+  get_lyrics_menu_lyrics_type TEXT NOT NULL DEFAULT 'NotPreferred',
+  get_lyrics_menu_last_checked TEXT NOT NULL DEFAULT 'Any',
+
   -- GUI settings
   window_width INTEGER NOT NULL DEFAULT 1000,
   window_height INTEGER NOT NULL DEFAULT 600,

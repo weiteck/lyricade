@@ -27,8 +27,8 @@ use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
-mod get_lyrics_menu;
-pub mod main_menu;
+pub mod get_lyrics_menu;
+mod main_menu;
 mod track_stats;
 
 #[expect(clippy::struct_excessive_bools)]
@@ -862,6 +862,13 @@ impl AsyncComponent for AppModel {
     match message {
       AppMsg::GetLyricsMenuChanged(state) => {
         debug!("Get Lyrics menu state updated: {:#?}", &state);
+
+        if let Ok(mut guard) = SETTINGS.write() {
+          let state = state.clone();
+          guard.get_lyrics_menu_lyrics_type = state.lyrics_type;
+          guard.get_lyrics_menu_last_checked = state.last_checked;
+        }
+
         self.get_lyrics_menu_state = state;
       }
 

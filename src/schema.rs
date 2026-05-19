@@ -22,6 +22,8 @@ diesel::table! {
         ignore_plain_lyrics_on_fetch -> Bool,
         update_lyrics_tag_on_fetch -> Bool,
         save_sidecar_file_on_fetch -> Bool,
+        get_lyrics_menu_lyrics_type -> Text,
+        get_lyrics_menu_last_checked -> Text,
         window_width -> Integer,
         window_height -> Integer,
         sidebar_pinned -> Bool,

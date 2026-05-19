@@ -6,7 +6,9 @@ use diesel::prelude::*;
 use directories::ProjectDirs;
 use tracing::{debug, error, info};
 
-use crate::{DB_POOL, Result, lyrics::LyricsType, schema::settings, util::now};
+use crate::{
+  DB_POOL, Result, lyrics::LyricsType, schema::settings, ui::app::get_lyrics_menu, util::now,
+};
 
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
   LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", APP_NAME));
@@ -65,6 +67,9 @@ pub struct Settings {
   pub ignore_plain_lyrics_on_fetch: bool,
   pub update_lyrics_tag_on_fetch: bool,
   pub save_sidecar_file_on_fetch: bool,
+
+  pub get_lyrics_menu_lyrics_type: get_lyrics_menu::Type,
+  pub get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
 
   // GUI state
   pub window_width: i32,
@@ -152,6 +157,8 @@ impl Default for Settings {
       ignore_plain_lyrics_on_fetch: false,
       update_lyrics_tag_on_fetch: false,
       save_sidecar_file_on_fetch: true,
+      get_lyrics_menu_lyrics_type: get_lyrics_menu::Type::default(),
+      get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
       window_width: 1000,
       window_height: 600,
       sidebar_pinned: false,
