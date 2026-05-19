@@ -13,8 +13,12 @@ use relm4::{RelmContainerExt, prelude::*};
 use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, error, trace, warn};
 
+use crate::lyrics::LyricsType;
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
 use crate::ui::about::{AboutModel, AboutOutput};
+use crate::ui::app::get_lyrics_menu::{
+  GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
+};
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
@@ -23,12 +27,17 @@ use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
+mod get_lyrics_menu;
+
 #[expect(clippy::struct_excessive_bools)]
 struct AppModel {
   sender: AsyncComponentSender<Self>,
   libraries: Vec<Library>,
   tracks: Vec<Track>,
   track_stats: TrackStats,
+
+  get_lyrics_button: Controller<GetLyricsButtonModel>,
+  get_lyrics_menu_state: GetLyricsMenuState,
 
   tracks_table_widget: Controller<TracksTableModel>,
   prefs_widget: Option<Controller<PrefsModel>>,
@@ -101,6 +110,7 @@ enum AppMsg {
   ShowPrefsWindow,
   ClosePrefsWindow,
 
+  GetLyricsMenuChanged(GetLyricsMenuState),
   RequestConfirmGetLyrics,
   HandleGetLyricsResponse(AlertResponse),
 
@@ -199,7 +209,8 @@ impl AsyncComponent for AppModel {
       },
 
       // Lyrics fetch button shown if fetching not in progress
-      pack_end = &gtk::Button {
+      #[local_ref]
+      pack_end = get_lyrics_button -> adw::SplitButton {
         #[watch]
         set_label: if model.get_lyrics_requires_confirmation { "_Get Lyrics…" } else { "_Get Lyrics" },
         set_use_underline: true,
@@ -732,6 +743,14 @@ impl AsyncComponent for AppModel {
     // Prepare logging, database and settings
     init_app().await.expect("Failed to initialise app");
 
+    let get_lyrics_button =
+      GetLyricsButtonModel::builder()
+        .launch(())
+        .forward(sender.input_sender(), |msg| match msg {
+          GetLyricsButtonOutput::GetLyricsMenuChanged(state) => AppMsg::GetLyricsMenuChanged(state),
+        });
+    let get_lyrics_menu_state = get_lyrics_button.model().state();
+
     let tracks_table_widget =
       TracksTableModel::builder()
         .launch(())
@@ -759,15 +778,15 @@ impl AsyncComponent for AppModel {
         option_label: None,
         extra_child: None,
       })
-      .forward(sender.input_sender(), |msg| {
-        AppMsg::HandleGetLyricsResponse(msg)
-      });
+      .forward(sender.input_sender(), AppMsg::HandleGetLyricsResponse);
 
     let mut model = AppModel {
       sender: sender.clone(),
       libraries: vec![],
       tracks: vec![],
       track_stats: TrackStats::default(),
+      get_lyrics_button,
+      get_lyrics_menu_state,
       tracks_table_widget,
       prefs_widget: None,
       about_widget,
@@ -806,6 +825,7 @@ impl AsyncComponent for AppModel {
     model.refresh_from_settings(&root, &sender);
 
     // References used in `view` macro
+    let get_lyrics_button = model.get_lyrics_button.widget();
     let toast_overlay = model.toaster.overlay_widget();
     let tracks_table = model.tracks_table_widget.widget();
     let search_entry = &model.search_entry;
@@ -844,11 +864,7 @@ impl AsyncComponent for AppModel {
     relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
     let mut menu_actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
 
-    relm4::new_stateless_action!(
-      ActionRefreshLibraries,
-      MainMenuActionGroup,
-      "refresh_libraries"
-    );
+    relm4::new_stateless_action!(ActionRefreshLibraries, MainMenuActionGroup, "refresh_libraries");
     let action_refresh_libraries: RelmAction<ActionRefreshLibraries> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
@@ -910,10 +926,8 @@ impl AsyncComponent for AppModel {
     let action_test_spinner: RelmAction<ActionTestSpinner> = {
       let sender = sender.clone();
       RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowSpinner((
-          "I'm spinning around…".into(),
-          "Get out of my way".into(),
-        )));
+        sender
+          .input(AppMsg::ShowSpinner(("I'm spinning around…".into(), "Get out of my way".into())));
       })
     };
     menu_actions_group.add_action(action_test_spinner);
@@ -971,6 +985,11 @@ impl AsyncComponent for AppModel {
     root: &Self::Root,
   ) {
     match message {
+      AppMsg::GetLyricsMenuChanged(state) => {
+        debug!("Get Lyrics menu state updated: {:#?}", &state);
+        self.get_lyrics_menu_state = state;
+      }
+
       AppMsg::RequestConfirmGetLyrics => {
         // Show confirmation dialog only if tags will be written
         if self.get_lyrics_requires_confirmation {
@@ -1018,9 +1037,23 @@ impl AsyncComponent for AppModel {
           progress: 0.0,
         }));
 
+        let preferred_lyrics_type = SETTINGS
+          .read()
+          .map_or(LyricsType::Sync, |settings| settings.prefer_lyrics_type);
+        let filtered_tracks = self
+          .tracks
+          .iter()
+          .filter(|track| {
+            self
+              .get_lyrics_menu_state
+              .filter_track(track, preferred_lyrics_type)
+          })
+          .cloned()
+          .collect::<Vec<_>>();
+
         let total = self.tracks.len();
         let completed = Arc::new(AtomicUsize::new(0));
-        let stream = futures::stream::iter(self.tracks.clone());
+        let stream = futures::stream::iter(filtered_tracks);
         let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
 
         // Batch process tracks and update progress
@@ -1222,10 +1255,8 @@ impl AsyncComponent for AppModel {
               let name = lib.name();
               let progress_sender = sender_handle.clone();
               let progress_callback = move |msg| {
-                progress_sender.input(AppMsg::ShowSpinner((
-                  format!("Scanning new library “{name}”…"),
-                  msg,
-                )));
+                progress_sender
+                  .input(AppMsg::ShowSpinner((format!("Scanning new library “{name}”…"), msg)));
               };
 
               let _ = lib
@@ -1298,9 +1329,7 @@ impl AsyncComponent for AppModel {
         if self
           .load_libraries()
           .inspect_err(|e| {
-            sender.input(AppMsg::ShowToast(format!(
-              "Error loading music libraries: {e}"
-            )));
+            sender.input(AppMsg::ShowToast(format!("Error loading music libraries: {e}")));
           })
           .is_ok()
         {
@@ -1358,10 +1387,8 @@ impl AsyncComponent for AppModel {
             let name = lib.name();
             let progress_sender = sender_handle.clone();
             let progress_callback = move |msg| {
-              progress_sender.input(AppMsg::ShowSpinner((
-                format!("Refreshing library “{name}”"),
-                msg,
-              )));
+              progress_sender
+                .input(AppMsg::ShowSpinner((format!("Refreshing library “{name}”"), msg)));
             };
 
             let _ = lib
@@ -1642,11 +1669,7 @@ impl AppModel {
     self.track_count = self.tracks.len() as u32;
     self.update_track_stats();
 
-    debug!(
-      "Loaded {} Tracks from {} Libraries",
-      self.tracks.len(),
-      self.libraries.len()
-    );
+    debug!("Loaded {} Tracks from {} Libraries", self.tracks.len(), self.libraries.len());
 
     self.no_tracks = self.tracks.is_empty();
   }
@@ -1690,9 +1713,7 @@ impl AppModel {
           option_label: None,
           extra_child: None,
         })
-        .forward(sender.input_sender(), |msg| {
-          AppMsg::HandleCleanUpSidecarFilesResponse(msg)
-        });
+        .forward(sender.input_sender(), AppMsg::HandleCleanUpSidecarFilesResponse);
 
       self.confirm_clean_up_sidecar_files_dialog = Some(confirm_clean_up_sidecar_files_dialog);
     }
@@ -1751,11 +1772,7 @@ impl AppModel {
       let ar = adw::ActionRow::new();
       ar.set_title("Duration");
       let duration = track.duration.round();
-      ar.set_subtitle(&format!(
-        "{}:{:02}",
-        duration as u32 / 60,
-        duration as u32 % 60
-      ));
+      ar.set_subtitle(&format!("{}:{:02}", duration as u32 / 60, duration as u32 % 60));
       ar.set_use_markup(false);
       pg.container_add(&ar);
 
