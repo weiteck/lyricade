@@ -66,7 +66,7 @@ relm4::new_stateful_action!(
   String
 );
 
-#[relm4::component(pub)]
+#[relm4::component(pub(super))]
 impl SimpleComponent for GetLyricsButtonModel {
   type Init = ();
   type Input = GetLyricsButtonModelMsg;
@@ -102,9 +102,9 @@ impl SimpleComponent for GetLyricsButtonModel {
     menu_action_group.add_action(action_set_type);
 
     let menu_lyrics_type_section = gtk::gio::Menu::new();
-    menu_lyrics_type_section.append(Some("No Lyrics"), Some("get_lyrics.lyrics_type::no_lyrics"));
+    menu_lyrics_type_section.append(Some("_No Lyrics"), Some("get_lyrics.lyrics_type::no_lyrics"));
     menu_lyrics_type_section
-      .append(Some("Not Preferred"), Some("get_lyrics.lyrics_type::not_preferred"));
+      .append(Some("Not _Preferred"), Some("get_lyrics.lyrics_type::not_preferred"));
 
     let sender_handle = sender.clone();
     let action_set_last_checked: RelmAction<ActionGetLyricsMenuLastChecked> =
@@ -138,12 +138,12 @@ impl SimpleComponent for GetLyricsButtonModel {
     menu_action_group.add_action(action_set_last_checked);
 
     let menu_time_section = gtk::gio::Menu::new();
-    menu_time_section.append(Some("Never"), Some("get_lyrics.last_checked::never"));
-    menu_time_section.append(Some("> 1 Month"), Some("get_lyrics.last_checked::months_1"));
-    menu_time_section.append(Some("> 3 Months"), Some("get_lyrics.last_checked::months_3"));
-    menu_time_section.append(Some("> 6 Months"), Some("get_lyrics.last_checked::months_6"));
-    menu_time_section.append(Some("> 1 Year"), Some("get_lyrics.last_checked::year"));
-    menu_time_section.append(Some("Any"), Some("get_lyrics.last_checked::any"));
+    menu_time_section.append(Some("Ne_ver"), Some("get_lyrics.last_checked::never"));
+    menu_time_section.append(Some("> _1 Month"), Some("get_lyrics.last_checked::months_1"));
+    menu_time_section.append(Some("> _3 Months"), Some("get_lyrics.last_checked::months_3"));
+    menu_time_section.append(Some("> _6 Months"), Some("get_lyrics.last_checked::months_6"));
+    menu_time_section.append(Some("> 1 _Year"), Some("get_lyrics.last_checked::year"));
+    menu_time_section.append(Some("_Any"), Some("get_lyrics.last_checked::any"));
 
     let menu = gtk::gio::Menu::new();
     menu.append_section(Some("Lyrics"), &menu_lyrics_type_section);

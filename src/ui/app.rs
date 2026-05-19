@@ -4,8 +4,6 @@ use std::sync::atomic::AtomicUsize;
 
 use futures::stream::StreamExt;
 use relm4::abstractions::Toaster;
-use relm4::actions::AccelsPlus;
-use relm4::actions::{RelmAction, RelmActionGroup};
 use relm4::adw::prelude::*;
 use relm4::tokio::sync::oneshot;
 use relm4::tokio::task::AbortHandle;
@@ -19,6 +17,8 @@ use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
 };
+use crate::ui::app::main_menu::MainMenuButtonModel;
+use crate::ui::app::track_stats::TrackStats;
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::tracks_table::{
   TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
@@ -28,6 +28,8 @@ use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
 mod get_lyrics_menu;
+pub mod main_menu;
+mod track_stats;
 
 #[expect(clippy::struct_excessive_bools)]
 struct AppModel {
@@ -36,6 +38,7 @@ struct AppModel {
   tracks: Vec<Track>,
   track_stats: TrackStats,
 
+  main_menu_button: Controller<MainMenuButtonModel>,
   get_lyrics_button: Controller<GetLyricsButtonModel>,
   get_lyrics_menu_state: GetLyricsMenuState,
 
@@ -178,11 +181,12 @@ impl AsyncComponent for AppModel {
         },
       },
 
-      pack_end = &gtk::MenuButton {
+      #[local_ref]
+      pack_end = main_menu_button -> gtk::MenuButton {
         set_icon_name: "open-menu-symbolic",
         set_primary: true,
         set_tooltip: "Main Menu",
-        set_menu_model: Some(&main_menu),
+        // set_menu_model: Some(&main_menu),
       },
 
       pack_end = &gtk::ToggleButton {
@@ -715,26 +719,6 @@ impl AsyncComponent for AppModel {
     },
   }
 
-  menu! {
-    main_menu: {
-      "_Get Lyrics" => ActionFetchLyrics,
-      section! {
-        "_Refresh Libraries" => ActionRefreshLibraries,
-        "_Clean Up Sidecar Files" => ActionCleanUpSidecarFiles,
-      },
-      section! {
-        "_Preferences" => ActionPrefs,
-        &format!("_About {APP_NAME_PRETTY}") => ActionAbout,
-      },
-      // section! {
-      //   "_Debug" {
-      //     "Test _Toast" => ActionTestToast,
-      //     "Test _Spinner" => ActionTestSpinner,
-      //   }
-      // }
-    }
-  }
-
   async fn init(
     _init: Self::Init,
     root: Self::Root,
@@ -742,6 +726,10 @@ impl AsyncComponent for AppModel {
   ) -> AsyncComponentParts<Self> {
     // Prepare logging, database and settings
     init_app().await.expect("Failed to initialise app");
+
+    let main_menu_button = MainMenuButtonModel::builder()
+      .launch(root.clone())
+      .forward(sender.input_sender(), |msg| msg);
 
     let get_lyrics_button =
       GetLyricsButtonModel::builder()
@@ -785,6 +773,7 @@ impl AsyncComponent for AppModel {
       libraries: vec![],
       tracks: vec![],
       track_stats: TrackStats::default(),
+      main_menu_button,
       get_lyrics_button,
       get_lyrics_menu_state,
       tracks_table_widget,
@@ -825,6 +814,7 @@ impl AsyncComponent for AppModel {
     model.refresh_from_settings(&root, &sender);
 
     // References used in `view` macro
+    let main_menu_button = model.main_menu_button.widget();
     let get_lyrics_button = model.get_lyrics_button.widget();
     let toast_overlay = model.toaster.overlay_widget();
     let tracks_table = model.tracks_table_widget.widget();
@@ -859,121 +849,6 @@ impl AsyncComponent for AppModel {
 
     // Load libraries and tracks and populate table view
     sender.input(AppMsg::LoadLibraries);
-
-    // Main menu actions
-    relm4::new_action_group!(pub MainMenuActionGroup, "main_menu_action_group");
-    let mut menu_actions_group = RelmActionGroup::<MainMenuActionGroup>::new();
-
-    relm4::new_stateless_action!(ActionRefreshLibraries, MainMenuActionGroup, "refresh_libraries");
-    let action_refresh_libraries: RelmAction<ActionRefreshLibraries> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::RefreshLibraries);
-      })
-    };
-    menu_actions_group.add_action(action_refresh_libraries);
-
-    relm4::new_stateless_action!(ActionFetchLyrics, MainMenuActionGroup, "fetch_lyrics");
-    let action_fetch_lyrics: RelmAction<ActionFetchLyrics> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::RequestConfirmGetLyrics);
-      })
-    };
-    menu_actions_group.add_action(action_fetch_lyrics);
-
-    relm4::new_stateless_action!(
-      ActionCleanUpSidecarFiles,
-      MainMenuActionGroup,
-      "clean_up_sidecar_files"
-    );
-    let action_clean_up_sidecar_files: RelmAction<ActionCleanUpSidecarFiles> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::RequestConfirmCleanUpSidecarFiles);
-      })
-    };
-    menu_actions_group.add_action(action_clean_up_sidecar_files);
-
-    relm4::new_stateless_action!(ActionPrefs, MainMenuActionGroup, "prefs");
-    let action_prefs: RelmAction<ActionPrefs> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowPrefsWindow);
-      })
-    };
-    menu_actions_group.add_action(action_prefs);
-
-    relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
-    let action_about: RelmAction<ActionAbout> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowAboutWindow);
-      })
-    };
-    menu_actions_group.add_action(action_about);
-
-    relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
-    let action_test_toast: RelmAction<ActionTestToast> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowToast("Testing toast notification".into()));
-      })
-    };
-    menu_actions_group.add_action(action_test_toast);
-
-    relm4::new_stateless_action!(ActionTestSpinner, MainMenuActionGroup, "test_spinner");
-    let action_test_spinner: RelmAction<ActionTestSpinner> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender
-          .input(AppMsg::ShowSpinner(("I'm spinning around…".into(), "Get out of my way".into())));
-      })
-    };
-    menu_actions_group.add_action(action_test_spinner);
-
-    // Keyboard actions
-    relm4::new_action_group!(pub WindowActionGroup, "window_action_group");
-    let mut window_actions_group = RelmActionGroup::<WindowActionGroup>::new();
-
-    relm4::new_stateless_action!(ActionQuit, WindowActionGroup, "quit");
-    let action_quit: RelmAction<ActionQuit> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::Quit);
-      })
-    };
-    window_actions_group.add_action(action_quit);
-
-    relm4::new_stateless_action!(ActionSearch, WindowActionGroup, "search");
-    let action_search: RelmAction<ActionSearch> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::ShowSearch(true));
-      })
-    };
-    window_actions_group.add_action(action_search);
-
-    relm4::new_stateless_action!(ActionPinSidebar, WindowActionGroup, "pin_sidebar");
-    let pin_sidebar: RelmAction<ActionPinSidebar> = {
-      let sender = sender.clone();
-      RelmAction::new_stateless(move |_| {
-        sender.input(AppMsg::TogglePinTrackDetailsSidebar);
-      })
-    };
-    window_actions_group.add_action(pin_sidebar);
-
-    // Keyboard shortcuts
-    let app = relm4::main_adw_application();
-    app.set_accelerators_for_action::<ActionSearch>(&["<primary>f"]);
-    app.set_accelerators_for_action::<ActionPinSidebar>(&["F9"]);
-    app.set_accelerators_for_action::<ActionRefreshLibraries>(&["<primary>r"]);
-    app.set_accelerators_for_action::<ActionPrefs>(&["<primary>comma"]);
-    app.set_accelerators_for_action::<ActionQuit>(&["<primary>q"]);
-
-    // Register menu/keyboard actions for main window
-    menu_actions_group.register_for_widget(&widgets.main_window);
-    window_actions_group.register_for_widget(&widgets.main_window);
 
     AsyncComponentParts { model, widgets }
   }
@@ -1961,104 +1836,6 @@ impl AppModel {
     if self.is_sidebar_revealed {
       self.rebuild_sidebar_widget();
     }
-  }
-}
-
-#[derive(Debug, Clone, Default)]
-struct TrackStats {
-  instrumental_set: HashSet<i32>,
-  not_instrumental_set: HashSet<i32>,
-  never_checked_set: HashSet<i32>,
-  sync_lyrics_set: HashSet<i32>,
-  plain_lyrics_set: HashSet<i32>,
-  tagged_lyrics_set: HashSet<i32>,
-  sidecar_file_set: HashSet<i32>,
-
-  count: usize,
-  instrumental: usize,
-  not_instrumental: usize,
-  never_checked: usize,
-  sync_lyrics: usize,
-  plain_lyrics: usize,
-  tagged_lyrics: usize,
-  sidecar_file: usize,
-}
-
-impl TrackStats {
-  fn update(&mut self, tracks: &[Track]) {
-    trace!("Building TrackStats");
-
-    *self = Self::default();
-
-    self.count = tracks.len();
-
-    for track in tracks {
-      if track.last_api_check_at.is_none() {
-        self.never_checked_set.insert(track.id);
-      }
-
-      if track.instrumental.is_some_and(|b| b) {
-        self.instrumental_set.insert(track.id);
-      } else {
-        self.not_instrumental_set.insert(track.id);
-
-        if track.lyrics_synchronised || track.lyrics_sidecar_lrc_file.is_some() {
-          self.sync_lyrics_set.insert(track.id);
-        }
-
-        if !track.lyrics_synchronised
-          && (track.lyrics.is_some() || track.lyrics_sidecar_txt_file.is_some())
-        {
-          self.plain_lyrics_set.insert(track.id);
-        }
-
-        if track.lyrics.is_some() {
-          self.tagged_lyrics_set.insert(track.id);
-        }
-
-        if track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some() {
-          self.sidecar_file_set.insert(track.id);
-        }
-      }
-    }
-
-    self.instrumental = self.instrumental_set.len();
-    self.not_instrumental = self.not_instrumental_set.len();
-    self.never_checked = self.never_checked_set.len();
-    self.sync_lyrics = self.sync_lyrics_set.len();
-    self.plain_lyrics = self.plain_lyrics_set.len();
-    self.tagged_lyrics = self.tagged_lyrics_set.len();
-    self.sidecar_file = self.sidecar_file_set.len();
-  }
-
-  fn refresh_from_filtered(&mut self, track_ids: &HashSet<i32>) {
-    self.instrumental = self.instrumental_set.intersection(track_ids).count();
-    self.not_instrumental = self.not_instrumental_set.intersection(track_ids).count();
-    self.never_checked = self.never_checked_set.intersection(track_ids).count();
-    self.sync_lyrics = self.sync_lyrics_set.intersection(track_ids).count();
-    self.plain_lyrics = self.plain_lyrics_set.intersection(track_ids).count();
-    self.tagged_lyrics = self.tagged_lyrics_set.intersection(track_ids).count();
-    self.sidecar_file = self.sidecar_file_set.intersection(track_ids).count();
-  }
-
-  fn not_instrumental_percent(&self) -> f64 {
-    (self.not_instrumental as f64 / self.count as f64) * 100.0
-  }
-
-  fn sync_lyrics_percent(&self) -> f64 {
-    (self.sync_lyrics as f64 / self.not_instrumental as f64) * 100.0
-  }
-
-  fn plain_lyrics_percent(&self) -> f64 {
-    (self.plain_lyrics as f64 / self.not_instrumental as f64) * 100.0
-  }
-
-  fn tagged_lyrics_percent(&self) -> f64 {
-    (self.tagged_lyrics as f64 / self.not_instrumental as f64) * 100.0
-  }
-
-  fn sidecar_file_percent(&self) -> f64 {
-    (self.sidecar_file as f64 / self.not_instrumental as f64) * 100.0
   }
 }
 
