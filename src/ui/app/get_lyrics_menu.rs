@@ -230,12 +230,14 @@ impl GetLyricsMenuState {
       }
       Type::NotPreferred => !match preferred_lyrics_type {
         LyricsType::Sync => {
-          (track.lyrics.is_some() && track.lyrics_synchronised)
-            || track.lyrics_sidecar_lrc_file.is_some()
+          ((track.lyrics.is_some() && track.lyrics_synchronised)
+            || (track.lyrics.is_none() && track.lyrics_sidecar_lrc_file.is_some()))
+            && track.lyrics_sidecar_txt_file.is_none()
         }
         LyricsType::Plain => {
-          (track.lyrics.is_some() && !track.lyrics_synchronised)
-            || track.lyrics_sidecar_txt_file.is_some()
+          ((track.lyrics.is_some() && !track.lyrics_synchronised)
+            || (track.lyrics.is_none() && track.lyrics_sidecar_txt_file.is_some()))
+            && track.lyrics_sidecar_lrc_file.is_none()
         }
       },
     } {
@@ -246,6 +248,7 @@ impl GetLyricsMenuState {
 
     match self.last_checked {
       _ if track.last_api_check_at.is_none() => true, // always match if track never checked for lyrics
+      Checked::Never => track.last_api_check_at.is_none(),
       Checked::Months(months) if let Some(last_checked) = track.last_api_check_at => match months {
         1 => MONTHS_AGO_1.is_some_and(|cutoff| last_checked < cutoff),
         3 => MONTHS_AGO_3.is_some_and(|cutoff| last_checked < cutoff),
@@ -323,5 +326,98 @@ impl ToSql<Text, Sqlite> for Checked {
   ) -> diesel::serialize::Result {
     out.set_value(ron::to_string(&self)?);
     Ok(diesel::serialize::IsNull::No)
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn filter_track_no_lyrics() {
+    let mut track = Track::default();
+    let state = GetLyricsMenuState {
+      lyrics_type: Type::NoLyrics,
+      last_checked: Checked::Any,
+    };
+
+    // No lyrics of any type - should be `true`
+    assert!(state.filter_track(&track, LyricsType::Sync));
+
+    // Any lyrics - should be `false`
+    track.lyrics = Some("plain lyrics".into());
+    assert!(!state.filter_track(&track, LyricsType::Sync));
+
+    track.lyrics = None;
+    track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
+    assert!(!state.filter_track(&track, LyricsType::Sync));
+  }
+
+  #[test]
+  fn filter_track_not_preferred_lyrics() {
+    let mut track = Track::default();
+    let state = GetLyricsMenuState {
+      lyrics_type: Type::NotPreferred,
+      last_checked: Checked::Any,
+    };
+
+    // No lyrics - should be `true`
+    assert!(state.filter_track(&track, LyricsType::Sync));
+
+    // Plain lyrics with Sync preferred - should be `true`
+    track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
+    assert!(state.filter_track(&track, LyricsType::Sync));
+
+    track.lyrics_sidecar_txt_file = None;
+    track.lyrics = Some("plain lyrics".into());
+    assert!(state.filter_track(&track, LyricsType::Sync));
+
+    // Sync lyrics with Plain preferred - should be `true`
+    track.lyrics = Some("[01:00:00]sync lyrics\n".into());
+    track.lyrics_synchronised = true;
+    assert!(state.filter_track(&track, LyricsType::Plain));
+
+    // Sync+Plain lyrics with Plain preferred - should be `true`
+    track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
+    assert!(state.filter_track(&track, LyricsType::Plain));
+
+    // Sync lyrics with Plain preferred - should be `true`
+    track.lyrics = None;
+    track.lyrics_synchronised = false;
+    track.lyrics_sidecar_txt_file = None;
+    track.lyrics_sidecar_lrc_file = Some("[01:00:00]sync lyrics\n".into());
+    assert!(state.filter_track(&track, LyricsType::Plain));
+  }
+
+  #[test]
+  fn filter_track_last_checked() {
+    let mut track = Track::default();
+    let mut state = GetLyricsMenuState {
+      lyrics_type: Type::NoLyrics,
+      last_checked: Checked::Any,
+    };
+
+    // No date - should be `true`
+    assert!(state.filter_track(&track, LyricsType::Plain));
+
+    // Just now with Any selected - should be `true`
+    track.last_api_check_at = Some(now());
+    assert!(state.filter_track(&track, LyricsType::Plain));
+
+    // Just now with Never selected - should be `false`
+    state.last_checked = Checked::Never;
+    assert!(!state.filter_track(&track, LyricsType::Plain));
+
+    // Just now with 1 Month selected - should be `false`
+    state.last_checked = Checked::Months(1);
+    assert!(!state.filter_track(&track, LyricsType::Plain));
+
+    // Just now with Year selected - should be `false`
+    state.last_checked = Checked::Year;
+    assert!(!state.filter_track(&track, LyricsType::Plain));
+
+    // 366 days ago with Year selected - should be `true`
+    track.last_api_check_at = Some(now() - chrono::Days::new(366));
+    assert!(state.filter_track(&track, LyricsType::Plain));
   }
 }
