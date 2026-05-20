@@ -19,7 +19,7 @@ use tracing::error;
 
 use crate::{
   Result,
-  lyrics::lrc::{LRC_LYRICS_REGEX, LRC_LYRICS_STRIP_REGEX},
+  lyrics::lrc::{LRC_LYRICS_REGEX, LRC_LYRICS_STRIP_REGEX, LRC_TAG_REGEX},
   track::Track,
 };
 
@@ -36,13 +36,26 @@ pub struct Lyrics {
 }
 
 impl Lyrics {
-  /// If lyrics are synchronous, remove timestamps.
+  /// If lyrics are synchronous, remove timestamps, tags, and comments.
+  /// Noop for `LyricsType::Plain`.
   #[must_use]
   pub fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
-      self.contents = LRC_LYRICS_STRIP_REGEX
-        .replace_all(&self.contents, "")
-        .to_string();
+      self.contents = self
+        .contents
+        .lines()
+        .filter(|line| !line.is_empty())
+        .map(str::trim)
+        // Skip comments and tags
+        .filter(|line| !(line.starts_with('#') || LRC_TAG_REGEX.is_match(line)))
+        // Remove timestamps; add new line
+        .fold(String::with_capacity(self.contents.len()), |mut buffer, line| {
+          let stripped = LRC_LYRICS_STRIP_REGEX.replace(line, "");
+          buffer.push_str(&stripped);
+          buffer.push('\n');
+          buffer
+        });
+
       self.lyrics_type = LyricsType::Plain;
     }
 
@@ -301,5 +314,42 @@ mod tests {
       *sl.unwrap(),
       "worst sync lyrics candidate should be sorted last"
     );
+  }
+
+  #[test]
+  fn sync_lyrics_to_plain() {
+    let sync_lyrics = Lyrics {
+      lyrics_type: LyricsType::Sync,
+      contents: r"
+# comment preceded by empty line
+[ar:Artist Name]
+[ti:Song Title]
+[al:Album Name]
+[by:Creator Name]
+#another comment
+
+
+[1:12.34]line of lyrics, 1x minute digit
+[01:18.50]  line of lyrics prefixed with whitespace
+[01:20.00]
+[02:25.20]line of lyrics, preceded by retained empty line
+[1001:25.20]line of lyrics, 4x minute digits
+
+"
+      .to_string(),
+    };
+
+    let plain_lyrics = Lyrics {
+      lyrics_type: LyricsType::Plain,
+      contents: r"line of lyrics, 1x minute digit
+line of lyrics prefixed with whitespace
+
+line of lyrics, preceded by retained empty line
+line of lyrics, 4x minute digits
+"
+      .to_string(),
+    };
+
+    assert_eq!(sync_lyrics.into_plain().contents, plain_lyrics.contents);
   }
 }
