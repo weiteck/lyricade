@@ -185,9 +185,7 @@ impl SimpleComponent for TracksTableModel {
           .inspect_err(|_| {
             error!("Settings lock is poisoned while calling ClearAndAppend on TracksTable");
           })
-          .map_or(self.prefer_accurate_timestamps, |g| {
-            g.prefer_accurate_timestamps
-          });
+          .map_or(self.prefer_accurate_timestamps, |g| g.prefer_accurate_timestamps);
 
         if prefer_accurate_timestamps != self.prefer_accurate_timestamps {
           debug!("Datetime format has changed; replacing columns");
@@ -196,10 +194,9 @@ impl SimpleComponent for TracksTableModel {
 
           // Remove existing columns
           let columns = self.table.get_columns();
-          if let (Some(col_checked), Some(col_modified)) = (
-            columns.get(COLUMN_TITLE_CHECKED),
-            columns.get(COLUMN_TITLE_MODIFIED),
-          ) {
+          if let (Some(col_checked), Some(col_modified)) =
+            (columns.get(COLUMN_TITLE_CHECKED), columns.get(COLUMN_TITLE_MODIFIED))
+          {
             self.table.view.remove_column(col_checked);
             self.table.view.remove_column(col_modified);
           }
@@ -497,7 +494,7 @@ impl RelmColumn for TracksTableColumnTrack {
     track_label.set_label(&item.track_name);
     track_label.set_tooltip(&item.path);
 
-    if item.instrumental.is_some_and(|b| b) {
+    if item.instrumental.unwrap_or(false) {
       inst_tag.set_label("INST");
       inst_tag.set_tooltip("Instrumental Track");
       inst_tag.add_css_class("caption");
@@ -669,9 +666,7 @@ impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| {
-      a.last_api_check_at.cmp(&b.last_api_check_at)
-    }))
+    Some(Box::new(|a, b| a.last_api_check_at.cmp(&b.last_api_check_at)))
   }
 }
 
@@ -729,10 +724,7 @@ impl RelmColumn for TracksTableColumnCheckedAccurateFormat {
       let iso = util::ndt_utc_to_ui_string(ndt);
       (iso, None)
     } else {
-      (
-        "Never".to_string(),
-        Some("Never Checked for Lyrics".to_string()),
-      )
+      ("Never".to_string(), Some("Never Checked for Lyrics".to_string()))
     };
 
     root.set_label(&label);
@@ -743,9 +735,7 @@ impl RelmColumn for TracksTableColumnCheckedAccurateFormat {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| {
-      a.last_api_check_at.cmp(&b.last_api_check_at)
-    }))
+    Some(Box::new(|a, b| a.last_api_check_at.cmp(&b.last_api_check_at)))
   }
 }
 

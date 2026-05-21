@@ -222,6 +222,11 @@ pub(super) struct GetLyricsMenuState {
 impl GetLyricsMenuState {
   /// Returns `true` if the `Track` does not meet requirements set in the 'Get Lyrics' menu.
   pub(super) fn filter_track(&self, track: &Track, preferred_lyrics_type: LyricsType) -> bool {
+    // Ignore tracks known to be instrumental
+    if track.instrumental.unwrap_or(false) {
+      return false;
+    }
+
     if !match self.lyrics_type {
       Type::NoLyrics => {
         !(track.lyrics.is_some()

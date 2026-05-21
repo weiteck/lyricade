@@ -1730,7 +1730,7 @@ impl AppModel {
         inner.append(&pg);
       }
 
-      if track.instrumental.is_some_and(|b| b) {
+      if track.instrumental.unwrap_or(false) {
         let pg = adw::PreferencesGroup::new();
 
         let ar = adw::ActionRow::new();

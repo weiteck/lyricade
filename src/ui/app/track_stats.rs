@@ -37,7 +37,7 @@ impl TrackStats {
         self.never_checked_set.insert(track.id);
       }
 
-      if track.instrumental.is_some_and(|b| b) {
+      if track.instrumental.unwrap_or(false) {
         self.instrumental_set.insert(track.id);
       } else {
         self.not_instrumental_set.insert(track.id);
