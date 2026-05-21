@@ -5,7 +5,7 @@ use tracing::trace;
 use crate::{
   lyrics::lyrics_line::LyricsLine,
   track::Track,
-  ui::view_lyrics::{line::ViewLyricsLine, tag::ViewLyricsLrcTag},
+  ui::viewer::{line::ViewLyricsLine, tag::ViewLyricsLrcTag},
 };
 
 pub mod line;
@@ -206,10 +206,7 @@ impl SimpleComponent for ViewLyricsModel {
 
 fn build_factories(
   lyrics: &str,
-) -> (
-  FactoryVecDeque<ViewLyricsLine>,
-  FactoryVecDeque<ViewLyricsLrcTag>,
-) {
+) -> (FactoryVecDeque<ViewLyricsLine>, FactoryVecDeque<ViewLyricsLrcTag>) {
   let (lines, tags) = LyricsLine::from_lyrics(lyrics);
 
   let mut lyrics_lines = FactoryVecDeque::builder()

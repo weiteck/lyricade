@@ -20,10 +20,8 @@ use crate::ui::app::get_lyrics_menu::{
 use crate::ui::app::main_menu::MainMenuButtonModel;
 use crate::ui::app::track_stats::TrackStats;
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
-use crate::ui::tracks_table::{
-  TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput,
-};
-use crate::ui::view_lyrics::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
+use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
+use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
