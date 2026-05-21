@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
@@ -7,6 +8,7 @@ use relm4::typed_view::column::{RelmColumn, TypedColumnView};
 use tracing::{debug, error, trace};
 
 use crate::SETTINGS;
+use crate::lyrics::LyricsType;
 use crate::settings::Settings;
 use crate::track::Track;
 use crate::util::{self};
@@ -19,8 +21,11 @@ pub struct TracksTableModel {
   prefer_accurate_timestamps: bool,
 }
 
+static COLUMN_TITLE_SIDECAR: &str = "Sidecar";
 static COLUMN_TITLE_CHECKED: &str = "Checked";
 static COLUMN_TITLE_MODIFIED: &str = "Modified";
+
+static PREFER_SYNC_LYRICS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug)]
 pub enum TracksTableMsg {
@@ -95,13 +100,18 @@ impl SimpleComponent for TracksTableModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let prefer_accurate_timestamps = SETTINGS
+    let (prefer_accurate_timestamps, prefer_lyrics_type) = SETTINGS
       .read()
       .inspect_err(|_| error!("Settings lock is poisoned while initialising TracksTable"))
       .map_or_else(
-        |_| Settings::default().prefer_accurate_timestamps,
-        |g| g.prefer_accurate_timestamps,
+        |_| {
+          let default = Settings::default();
+          (default.prefer_accurate_timestamps, default.prefer_lyrics_type)
+        },
+        |g| (g.prefer_accurate_timestamps, g.prefer_lyrics_type),
       );
+
+    PREFER_SYNC_LYRICS.store(prefer_lyrics_type == LyricsType::Sync, Ordering::SeqCst);
 
     let table = create_table(&sender, prefer_accurate_timestamps);
 
@@ -180,13 +190,46 @@ impl SimpleComponent for TracksTableModel {
         self.table.clear();
 
         // Replace datetime columns if format has changed
-        let prefer_accurate_timestamps = SETTINGS
+        let (prefer_accurate_timestamps, prefer_lyrics_type) = SETTINGS
           .read()
           .inspect_err(|_| {
-            error!("Settings lock is poisoned while calling ClearAndAppend on TracksTable");
+            error!("Settings lock is poisoned while calling `ClearAndAppend` on TracksTable");
           })
-          .map_or(self.prefer_accurate_timestamps, |g| g.prefer_accurate_timestamps);
+          .map_or_else(
+            |_| {
+              let default = Settings::default();
+              (default.prefer_accurate_timestamps, default.prefer_lyrics_type)
+            },
+            |g| (g.prefer_accurate_timestamps, g.prefer_lyrics_type),
+          );
 
+        // Re-add 'Sidecar' column to use the appropriate sort function defined in the `RelmColumn` impl
+        if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) != (prefer_lyrics_type == LyricsType::Sync) {
+          debug!("Preferred lyrics type has changed; replacing sidecar column");
+
+          PREFER_SYNC_LYRICS.store(prefer_lyrics_type == LyricsType::Sync, Ordering::SeqCst);
+
+          // Remove existing column
+          let columns = self.table.get_columns();
+          if let Some(col_sidecar) = columns.get(COLUMN_TITLE_SIDECAR) {
+            // Hide table during column changes
+            self.table.view.set_visible(false);
+
+            self.table.view.remove_column(col_sidecar);
+
+            // Append new column
+            self.table.append_column::<TracksTableColumnSidecar>();
+
+            // Reorder column
+            let columns = self.table.get_columns();
+            if let Some(col_sidecar) = columns.get(COLUMN_TITLE_SIDECAR) {
+              self.table.view.remove_column(col_sidecar);
+              self.table.view.insert_column(4, col_sidecar);
+            }
+          }
+        }
+
+        // Replace datetime columns if preferred format has changed
         if prefer_accurate_timestamps != self.prefer_accurate_timestamps {
           debug!("Datetime format has changed; replacing columns");
 
@@ -197,27 +240,33 @@ impl SimpleComponent for TracksTableModel {
           if let (Some(col_checked), Some(col_modified)) =
             (columns.get(COLUMN_TITLE_CHECKED), columns.get(COLUMN_TITLE_MODIFIED))
           {
+            // Hide table during column changes
+            self.table.view.set_visible(false);
+
             self.table.view.remove_column(col_checked);
             self.table.view.remove_column(col_modified);
-          }
 
-          // Append new columns
-          if self.prefer_accurate_timestamps {
-            self
-              .table
-              .append_column::<TracksTableColumnCheckedAccurateFormat>();
-            self
-              .table
-              .append_column::<TracksTableColumnModifiedAccurateFormat>();
-          } else {
-            self
-              .table
-              .append_column::<TracksTableColumnCheckedSimpleFormat>();
-            self
-              .table
-              .append_column::<TracksTableColumnModifiedSimpleFormat>();
+            // Append new columns
+            if self.prefer_accurate_timestamps {
+              self
+                .table
+                .append_column::<TracksTableColumnCheckedAccurateFormat>();
+              self
+                .table
+                .append_column::<TracksTableColumnModifiedAccurateFormat>();
+            } else {
+              self
+                .table
+                .append_column::<TracksTableColumnCheckedSimpleFormat>();
+              self
+                .table
+                .append_column::<TracksTableColumnModifiedSimpleFormat>();
+            }
           }
         }
+
+        // Restore table in case it was hidden for column changes
+        self.table.view.set_visible(true);
 
         self.table.extend_from_iter(tracks);
 
@@ -541,12 +590,16 @@ impl RelmColumn for TracksTableColumnLyricsTag {
       label.set_label("Sync");
       root.set_tooltip("Sync Lyrics Tag");
       icon.set_icon_name(Some("audio-x-generic-symbolic"));
-      root.add_css_class("sync");
+      if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+        root.add_css_class("preferred");
+      }
     } else if item.lyrics.is_some() && !item.lyrics_synchronised {
       label.set_label("Plain");
       root.set_tooltip("Plain Lyrics Tag");
       icon.set_icon_name(Some("audio-x-generic-symbolic"));
-      root.add_css_class("plain");
+      if !PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+        root.add_css_class("preferred");
+      }
     }
   }
 
@@ -554,9 +607,7 @@ impl RelmColumn for TracksTableColumnLyricsTag {
     icon.set_icon_name(None);
     label.set_label("");
     root.set_tooltip("");
-    root.set_visible(false);
-    root.remove_css_class("sync");
-    root.remove_css_class("plain");
+    root.remove_css_class("preferred");
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -575,7 +626,7 @@ impl RelmColumn for TracksTableColumnSidecar {
   type Widgets = (gtk::Image, gtk::Label);
   type Item = Track;
 
-  const COLUMN_NAME: &'static str = "Sidecar";
+  const COLUMN_NAME: &'static str = COLUMN_TITLE_SIDECAR;
   const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
@@ -598,16 +649,32 @@ impl RelmColumn for TracksTableColumnSidecar {
   }
 
   fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
-    if item.lyrics_sidecar_lrc_file.is_some() {
+    if item.lyrics_sidecar_lrc_file.is_some() && item.lyrics_sidecar_txt_file.is_some() {
+      if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+        label.set_label("Sync+");
+        root.set_tooltip("Multiple Sidecar Files");
+        root.add_css_class("preferred");
+        icon.set_icon_name(Some("text-x-generic-symbolic"));
+      } else {
+        label.set_label("Plain+");
+        root.set_tooltip("Multiple Sidecar Files");
+        root.add_css_class("preferred");
+        icon.set_icon_name(Some("text-x-generic-symbolic"));
+      }
+    } else if item.lyrics_sidecar_lrc_file.is_some() {
       label.set_label("Sync");
       root.set_tooltip("Sync Sidecar File");
       icon.set_icon_name(Some("text-x-generic-symbolic"));
-      root.add_css_class("sync");
+      if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+        root.add_css_class("preferred");
+      }
     } else if item.lyrics_sidecar_txt_file.is_some() {
       label.set_label("Plain");
       root.set_tooltip("Plain Sidecar File");
       icon.set_icon_name(Some("text-x-generic-symbolic"));
-      root.add_css_class("plain");
+      if !PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+        root.add_css_class("preferred");
+      }
     }
   }
 
@@ -615,21 +682,41 @@ impl RelmColumn for TracksTableColumnSidecar {
     icon.set_icon_name(None);
     label.set_label("");
     root.set_tooltip("");
-    root.remove_css_class("sync");
-    root.remove_css_class("plain");
+    root.remove_css_class("preferred");
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| {
-      a.lyrics_sidecar_lrc_file
-        .is_some()
-        .cmp(&b.lyrics_sidecar_lrc_file.is_some())
-        .then_with(|| {
-          a.lyrics_sidecar_txt_file
-            .is_some()
-            .cmp(&b.lyrics_sidecar_txt_file.is_some())
-        })
-    }))
+    if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+      Some(Box::new(|a, b| {
+        (a.lyrics_sidecar_lrc_file.is_some() && a.lyrics_sidecar_txt_file.is_some())
+          .cmp(&(b.lyrics_sidecar_lrc_file.is_some() && b.lyrics_sidecar_txt_file.is_some()))
+          .then_with(|| {
+            a.lyrics_sidecar_lrc_file
+              .is_some()
+              .cmp(&b.lyrics_sidecar_lrc_file.is_some())
+          })
+          .then_with(|| {
+            a.lyrics_sidecar_txt_file
+              .is_some()
+              .cmp(&b.lyrics_sidecar_txt_file.is_some())
+          })
+      }))
+    } else {
+      Some(Box::new(|a, b| {
+        (a.lyrics_sidecar_lrc_file.is_some() && a.lyrics_sidecar_txt_file.is_some())
+          .cmp(&(b.lyrics_sidecar_lrc_file.is_some() && b.lyrics_sidecar_txt_file.is_some()))
+          .then_with(|| {
+            a.lyrics_sidecar_txt_file
+              .is_some()
+              .cmp(&b.lyrics_sidecar_txt_file.is_some())
+          })
+          .then_with(|| {
+            a.lyrics_sidecar_lrc_file
+              .is_some()
+              .cmp(&b.lyrics_sidecar_lrc_file.is_some())
+          })
+      }))
+    }
   }
 }
 

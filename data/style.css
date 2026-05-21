@@ -67,12 +67,12 @@ label.view-lyrics.text {
   font-size: 1.5rem;
 }
 
-.table-cell.lyrics.sync {
-  font-weight: bold;
-  opacity: 1;
-}
-
-.table-cell.lyrics.plain {
+.table-cell.lyrics {
   font-weight: normal;
   opacity: 0.67;
+}
+
+.table-cell.lyrics.preferred {
+  font-weight: bold;
+  opacity: 1;
 }
