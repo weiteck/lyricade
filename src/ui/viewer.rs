@@ -1,6 +1,6 @@
 use adw::prelude::*;
 use relm4::{gtk::EventControllerKey, prelude::*};
-use tracing::trace;
+use tracing::{debug, trace};
 
 use crate::{
   lyrics::lyrics_line::LyricsLine,
@@ -23,6 +23,12 @@ pub struct ViewLyricsModel {
   lyrics: String,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
   lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
+  is_viewing_raw: bool,
+}
+
+#[derive(Debug)]
+pub enum ViewLyricsMsg {
+  SetViewingRaw(bool),
 }
 
 #[derive(Debug)]
@@ -32,7 +38,7 @@ pub enum ViewLyricsOutput {
 
 #[relm4::component(pub)]
 impl SimpleComponent for ViewLyricsModel {
-  type Input = ();
+  type Input = ViewLyricsMsg;
   type Output = ViewLyricsOutput;
   type Init = (Box<Track>, ViewLyricsSource);
 
@@ -45,14 +51,16 @@ impl SimpleComponent for ViewLyricsModel {
       #[wrap(Some)]
       set_content = &adw::ToolbarView {
         add_top_bar = &adw::HeaderBar {
-        },
+          pack_start = &gtk::ToggleButton {
+            set_icon_name: "format-text-rich-symbolic",
+            add_css_class: "flat",
+            set_tooltip: "View Raw Text",
+            #[watch]
+            set_active: model.is_viewing_raw,
 
-        add_bottom_bar = &gtk::Box {
-          set_halign: gtk::Align::Center,
-
-          adw::ViewSwitcher {
-            set_policy: adw::ViewSwitcherPolicy::Wide,
-            set_stack: Some(&view_stack),
+            connect_toggled[sender] => move |btn| {
+              sender.input(ViewLyricsMsg::SetViewingRaw(btn.is_active()));
+            },
           },
         },
 
@@ -64,6 +72,9 @@ impl SimpleComponent for ViewLyricsModel {
     #[name = "view_stack"]
     // Stylised lyrics page
     adw::ViewStack {
+      #[watch]
+      set_visible_child_name: if model.is_viewing_raw { "raw" } else { "stylised" },
+
       add = &gtk::ScrolledWindow {
         gtk::Box {
           set_orientation: gtk::Orientation::Vertical,
@@ -72,6 +83,7 @@ impl SimpleComponent for ViewLyricsModel {
           gtk::Box {
             set_orientation: gtk::Orientation::Vertical,
             set_margin_horizontal: 24,
+            set_margin_top: 24,
             set_css_classes: &["view-lyrics", "track-info"],
 
             gtk::Label {
@@ -129,6 +141,7 @@ impl SimpleComponent for ViewLyricsModel {
       } -> {
         // returned `ViewStackPage`
         set_title: Some("Stylised"),
+        set_name: Some("stylised"),
         set_icon_name: Some("magic-wand-symbolic"),
       },
 
@@ -147,6 +160,7 @@ impl SimpleComponent for ViewLyricsModel {
       } -> {
         // returned `ViewStackPage`
         set_title: Some("Raw"),
+        set_name: Some("raw"),
         set_icon_name: Some("format-text-rich-symbolic"),
       },
     },
@@ -179,6 +193,7 @@ impl SimpleComponent for ViewLyricsModel {
       lyrics,
       lyrics_lines,
       lrc_tags,
+      is_viewing_raw: false,
     };
 
     let lyrics_lines_box = model.lyrics_lines.widget();
@@ -201,6 +216,15 @@ impl SimpleComponent for ViewLyricsModel {
     root.add_controller(controller);
 
     ComponentParts { model, widgets }
+  }
+
+  fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    match message {
+      ViewLyricsMsg::SetViewingRaw(enabled) => {
+        debug!("ViewLyrics: Viewing raw text page: {}", enabled);
+        self.is_viewing_raw = enabled;
+      }
+    }
   }
 }
 
