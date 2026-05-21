@@ -921,10 +921,13 @@ impl AsyncComponent for AppModel {
 
         let preferred_lyrics_type = SETTINGS
           .read()
-          .map_or(LyricsType::Sync, |settings| settings.prefer_lyrics_type);
+          .map_or(LyricsType::default(), |settings| settings.prefer_lyrics_type);
         let filtered_tracks = self
           .tracks
           .iter()
+          .filter(|track| {
+            !self.get_lyrics_menu_state.filtered || self.filtered_track_ids.contains(&track.id)
+          })
           .filter(|track| {
             self
               .get_lyrics_menu_state
