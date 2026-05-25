@@ -173,10 +173,11 @@ impl Track {
     let album_name = tag
       .get_string(tag::ItemKey::AlbumTitle)
       .map(ToString::to_string);
-    // TODO: Read/write to `UnsyncLyrics` tag as appropriate
-    // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics
+    // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics + handle conversion to LRC
     let lyrics = tag
       .get_string(tag::ItemKey::Lyrics)
+      .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags
+      .filter(|&s| !s.is_empty())
       .map(ToString::to_string);
 
     let lyrics_embedded_synchronised = lyrics
@@ -400,22 +401,34 @@ impl Track {
       .ok_or_else(|| anyhow!("{} write updated tag: No primary tag in file", &self))?;
 
     let track_lyrics = self.lyrics.clone().unwrap_or_default();
-    let file_lyrics = tag.get_string(tag::ItemKey::Lyrics).unwrap_or_default();
+    let file_lyrics = tag
+      .get_string(tag::ItemKey::Lyrics)
+      .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags
+      .unwrap_or_default();
+
+    // TODO: For ID3v2 tags, optionally convert LRC to SLYT frame binary format
 
     // Check that lyrics have changed before writing
-    if file_lyrics != track_lyrics
-      && (tag.insert_text(lofty::tag::ItemKey::Lyrics, track_lyrics)
-        && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok())
-    {
-      debug!("{} write updated tag: Lyrics tag updated in file", &self);
+    if file_lyrics != track_lyrics {
+      let inserted = if tag.tag_type() == tag::TagType::Id3v2 {
+        tag.remove_key(tag::ItemKey::UnsyncLyrics);
+        tag.insert_text(tag::ItemKey::UnsyncLyrics, track_lyrics)
+      } else {
+        tag.remove_key(tag::ItemKey::Lyrics);
+        tag.insert_text(tag::ItemKey::Lyrics, track_lyrics)
+      };
 
-      // Update track modified timestamp in DB
-      self.file_modified_at = util::file_modified_at()
-        .path(&self.path())
-        .file(&file)
-        .call();
-    } else {
-      debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
+      if inserted && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok() {
+        debug!("{} write updated tag: Lyrics tag updated in file", &self);
+
+        // Update track modified timestamp in DB
+        self.file_modified_at = util::file_modified_at()
+          .path(&self.path())
+          .file(&file)
+          .call();
+      } else {
+        debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
+      }
     }
 
     // Update database
