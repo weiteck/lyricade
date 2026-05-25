@@ -872,9 +872,10 @@ impl AsyncComponent for AppModel {
         debug!("Get Lyrics menu state updated: {:#?}", &state);
 
         if let Ok(mut guard) = SETTINGS.write() {
-          let state = state.clone();
           guard.get_lyrics_menu_lyrics_type = state.lyrics_type;
           guard.get_lyrics_menu_last_checked = state.last_checked;
+          guard.get_lyrics_menu_filtered = state.filtered;
+          guard.get_lyrics_menu_selected = state.selected;
         }
 
         self.get_lyrics_menu_state = state;
@@ -915,6 +916,9 @@ impl AsyncComponent for AppModel {
           .iter()
           .filter(|track| {
             !self.get_lyrics_menu_state.filtered || self.filtered_track_ids.contains(&track.id)
+          })
+          .filter(|track| {
+            !self.get_lyrics_menu_state.selected || self.selected_track_ids.contains(&track.id)
           })
           .filter(|track| self.get_lyrics_menu_state.filter_track(track))
           .cloned()

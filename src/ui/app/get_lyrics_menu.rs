@@ -40,6 +40,7 @@ pub(super) enum GetLyricsButtonModelMsg {
   SetType(Type),
   SetChecked(Checked),
   SetFiltered(bool),
+  SetSelected(bool),
 }
 
 #[derive(Debug)]
@@ -63,6 +64,7 @@ relm4::new_stateful_action!(
   String
 );
 relm4::new_stateful_action!(ActionGetLyricsMenuFiltered, GroupGetLyrics, "filtered", (), bool);
+relm4::new_stateful_action!(ActionGetLyricsMenuSelected, GroupGetLyrics, "selected", (), bool);
 
 #[relm4::component(pub(super))]
 impl SimpleComponent for GetLyricsButtonModel {
@@ -82,22 +84,37 @@ impl SimpleComponent for GetLyricsButtonModel {
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
     // Restore saved settings
-    let (lyrics_type_from_settings, last_checked_from_settings) = {
+    let lyrics_type_from_settings;
+    let lyrics_type_from_settings_str;
+    let last_checked_from_settings;
+    let last_checked_from_settings_str;
+    let filtered_from_settings;
+    let selected_from_settings;
+    {
       let guard = SETTINGS.read();
-      let lyrics_type = guard
+      lyrics_type_from_settings = guard
         .as_ref()
-        .map_or(Type::default(), |settings| settings.get_lyrics_menu_lyrics_type.clone());
-      let last_checked = guard
-        .as_ref()
-        .map_or(Checked::default(), |settings| settings.get_lyrics_menu_last_checked.clone());
-      (
-        ron::to_string(&lyrics_type).unwrap_or_else(|_| {
+        .map_or(Type::default(), |settings| settings.get_lyrics_menu_lyrics_type);
+      lyrics_type_from_settings_str =
+        ron::to_string(&lyrics_type_from_settings).unwrap_or_else(|_| {
           ron::to_string(&Type::default()).unwrap_or_else(|_| "NotPreferred".to_string())
-        }),
-        ron::to_string(&last_checked).unwrap_or_else(|_| {
+        });
+
+      last_checked_from_settings = guard
+        .as_ref()
+        .map_or(Checked::default(), |settings| settings.get_lyrics_menu_last_checked);
+      last_checked_from_settings_str =
+        ron::to_string(&last_checked_from_settings).unwrap_or_else(|_| {
           ron::to_string(&Checked::default()).unwrap_or_else(|_| "Any".to_string())
-        }),
-      )
+        });
+
+      filtered_from_settings = guard
+        .as_ref()
+        .is_ok_and(|settings| settings.get_lyrics_menu_filtered);
+
+      selected_from_settings = guard
+        .as_ref()
+        .is_ok_and(|settings| settings.get_lyrics_menu_selected);
     };
 
     let mut menu_action_group = RelmActionGroup::<GroupGetLyrics>::new();
@@ -106,7 +123,7 @@ impl SimpleComponent for GetLyricsButtonModel {
     let sender_handle = sender.clone();
     let action_set_type: RelmAction<ActionGetLyricsMenuLyricsType> =
       RelmAction::new_stateful_with_target_value(
-        &lyrics_type_from_settings,
+        &lyrics_type_from_settings_str,
         move |_action, state, value: String| {
           if value.as_str() == "NoLyrics" {
             sender_handle.input(GetLyricsButtonModelMsg::SetType(Type::NoLyrics));
@@ -127,7 +144,7 @@ impl SimpleComponent for GetLyricsButtonModel {
     let sender_handle = sender.clone();
     let action_set_last_checked: RelmAction<ActionGetLyricsMenuLastChecked> =
       RelmAction::new_stateful_with_target_value(
-        &last_checked_from_settings,
+        &last_checked_from_settings_str,
         move |_action, state, value: String| {
           match value.as_str() {
             "Never" => {
@@ -166,7 +183,7 @@ impl SimpleComponent for GetLyricsButtonModel {
     // Filtered option
     let sender_handle = sender.clone();
     let action_set_filtered: RelmAction<ActionGetLyricsMenuFiltered> =
-      RelmAction::new_stateful(&false, move |_action, state: &mut bool| {
+      RelmAction::new_stateful(&filtered_from_settings, move |_action, state: &mut bool| {
         *state = !*state;
 
         sender_handle.input(GetLyricsButtonModelMsg::SetFiltered(*state));
@@ -176,18 +193,33 @@ impl SimpleComponent for GetLyricsButtonModel {
     let menu_filtered_section = gtk::gio::Menu::new();
     menu_filtered_section.append(Some("_Filtered"), Some("get_lyrics.filtered"));
 
+    // Selected option
+    let sender_handle = sender.clone();
+    let action_set_selected: RelmAction<ActionGetLyricsMenuSelected> =
+      RelmAction::new_stateful(&selected_from_settings, move |_action, state: &mut bool| {
+        *state = !*state;
+
+        sender_handle.input(GetLyricsButtonModelMsg::SetSelected(*state));
+      });
+    menu_action_group.add_action(action_set_selected);
+
+    let menu_selected_section = gtk::gio::Menu::new();
+    menu_selected_section.append(Some("_Selected"), Some("get_lyrics.selected"));
+
     let menu = gtk::gio::Menu::new();
     menu.append_section(Some("Lyrics"), &menu_lyrics_type_section);
     menu.append_section(Some("Last Checked"), &menu_time_section);
     menu.append_section(None, &menu_filtered_section);
+    menu.append_section(None, &menu_selected_section);
 
     menu_action_group.register_for_widget(&root);
 
     let model = GetLyricsButtonModel {
       state: GetLyricsMenuState {
-        lyrics_type: Type::NotSync,
-        last_checked: Checked::Any,
-        filtered: false,
+        lyrics_type: lyrics_type_from_settings,
+        last_checked: last_checked_from_settings,
+        filtered: filtered_from_settings,
+        selected: selected_from_settings,
       },
     };
 
@@ -210,6 +242,7 @@ impl SimpleComponent for GetLyricsButtonModel {
           .output(GetLyricsButtonOutput::GetLyricsMenuChanged(self.state.clone()))
           .expect("GetLyricsButtonOutput receiver dropped");
       }
+
       GetLyricsButtonModelMsg::SetChecked(last_checked) => {
         trace!(
           "Get Lyrics menu: Lyrics type changed from {:?} to {:?}",
@@ -222,10 +255,21 @@ impl SimpleComponent for GetLyricsButtonModel {
           .output(GetLyricsButtonOutput::GetLyricsMenuChanged(self.state.clone()))
           .expect("GetLyricsButtonOutput receiver dropped");
       }
+
       GetLyricsButtonModelMsg::SetFiltered(enabled) => {
         trace!("Get Lyrics menu: Filtered enabled: {}", enabled);
 
         self.state.filtered = enabled;
+
+        sender
+          .output(GetLyricsButtonOutput::GetLyricsMenuChanged(self.state.clone()))
+          .expect("GetLyricsButtonOutput receiver dropped");
+      }
+
+      GetLyricsButtonModelMsg::SetSelected(enabled) => {
+        trace!("Get Lyrics menu: Selected enabled: {}", enabled);
+
+        self.state.selected = enabled;
 
         sender
           .output(GetLyricsButtonOutput::GetLyricsMenuChanged(self.state.clone()))
@@ -246,6 +290,7 @@ pub(super) struct GetLyricsMenuState {
   pub(super) lyrics_type: Type,
   pub(super) last_checked: Checked,
   pub(super) filtered: bool,
+  pub(super) selected: bool,
 }
 
 impl GetLyricsMenuState {
@@ -294,7 +339,7 @@ impl GetLyricsMenuState {
 }
 
 #[derive(
-  Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+  Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
 pub enum Type {
@@ -304,7 +349,7 @@ pub enum Type {
 }
 
 #[derive(
-  Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+  Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
 pub enum Checked {
@@ -368,6 +413,7 @@ mod tests {
       lyrics_type: Type::NoLyrics,
       last_checked: Checked::Any,
       filtered: false,
+      selected: false,
     };
 
     // No lyrics of any type - should be `true`
@@ -389,6 +435,7 @@ mod tests {
       lyrics_type: Type::NotSync,
       last_checked: Checked::Any,
       filtered: false,
+      selected: false,
     };
 
     // No lyrics - should be `true`
@@ -419,6 +466,7 @@ mod tests {
       lyrics_type: Type::NoLyrics,
       last_checked: Checked::Any,
       filtered: false,
+      selected: false,
     };
 
     // No date - should be `true`
