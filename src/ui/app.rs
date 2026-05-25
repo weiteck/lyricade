@@ -11,7 +11,7 @@ use relm4::{RelmContainerExt, prelude::*};
 use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, error, trace, warn};
 
-use crate::lyrics::LyricsType;
+use crate::manage::ManageLyricsOptions;
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
 use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::app::get_lyrics_menu::{
@@ -19,6 +19,7 @@ use crate::ui::app::get_lyrics_menu::{
 };
 use crate::ui::app::main_menu::MainMenuButtonModel;
 use crate::ui::app::track_stats::TrackStats;
+use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
@@ -44,11 +45,13 @@ struct AppModel {
   prefs_widget: Option<Controller<PrefsModel>>,
   about_widget: Controller<AboutModel>,
   view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
-  confirm_get_lyrics_dialog: Controller<Alert>,
-  confirm_clean_up_sidecar_files_dialog: Option<Controller<Alert>>,
+  manage_lyrics_widget: Controller<ManageLyricsModel>,
+
   sidebar_widget: gtk::Box,
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
+
+  confirm_get_lyrics_dialog: Controller<Alert>,
 
   get_lyrics_requires_confirmation: bool,
 
@@ -72,8 +75,8 @@ struct AppModel {
   is_fetching_lyrics: bool,
   fetch_lyrics_abort_handle: Option<AbortHandle>,
 
-  is_cleaning_up_sidecar_files: bool,
-  clean_up_sidecar_files_cancel_token: Option<oneshot::Sender<()>>,
+  is_applying_manage_lyrics: bool,
+  manage_lyrics_cancel_token: Option<oneshot::Sender<()>>,
 
   refresh_library_cancel_token: Option<oneshot::Sender<()>>,
 
@@ -93,8 +96,8 @@ struct AppModel {
 enum AppMsg {
   FetchLyrics,
   FetchLyricsComplete,
-  CleanUpSidecarFiles,
-  CleanUpSidecarFilesComplete,
+  ApplyManageLyricsChanges(ManageLyricsOptions),
+  ApplyManageLyricsChangesComplete,
   CancelOperation,
   /// Load libraries and tracks from the database.
   LoadLibraries,
@@ -110,13 +113,12 @@ enum AppMsg {
   CloseLyricsWindow,
   ShowPrefsWindow,
   ClosePrefsWindow,
+  ShowManageLyricsWindow,
+  CloseManageLyricsWindow,
 
   GetLyricsMenuChanged(GetLyricsMenuState),
   RequestConfirmGetLyrics,
   HandleGetLyricsResponse(AlertResponse),
-
-  RequestConfirmCleanUpSidecarFiles,
-  HandleCleanUpSidecarFilesResponse(AlertResponse),
 
   ShowToast(String),
 
@@ -528,7 +530,7 @@ impl AsyncComponent for AppModel {
                           set_icon_name: "window-close-symbolic",
                           set_css_classes: &["flat", "circular", "mini-cancel"],
                           #[watch]
-                          set_visible: model.is_fetching_lyrics || model.is_cleaning_up_sidecar_files,
+                          set_visible: model.is_fetching_lyrics,
                           connect_clicked => AppMsg::CancelOperation,
                         },
 
@@ -746,6 +748,14 @@ impl AsyncComponent for AppModel {
           TracksTableOutput::TrackIdsVisible(set) => AppMsg::UpdateFiltered(set),
         });
 
+    let manage_lyrics_widget =
+      ManageLyricsModel::builder()
+        .launch(())
+        .forward(sender.input_sender(), |msg| match msg {
+          ManageLyricsOutput::Close => AppMsg::CloseManageLyricsWindow,
+          ManageLyricsOutput::Confirm(opts) => AppMsg::ApplyManageLyricsChanges(opts),
+        });
+
     let about_widget = AboutModel::builder()
       .launch(())
       .forward(sender.input_sender(), |msg| match msg {
@@ -779,8 +789,8 @@ impl AsyncComponent for AppModel {
       about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
+      manage_lyrics_widget,
       confirm_get_lyrics_dialog,
-      confirm_clean_up_sidecar_files_dialog: None,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       get_lyrics_requires_confirmation: true,
@@ -799,8 +809,8 @@ impl AsyncComponent for AppModel {
       is_sidebar_revealed: false,
       is_fetching_lyrics: false,
       fetch_lyrics_abort_handle: None,
-      is_cleaning_up_sidecar_files: false,
-      clean_up_sidecar_files_cancel_token: None,
+      is_applying_manage_lyrics: false,
+      manage_lyrics_cancel_token: None,
       refresh_library_cancel_token: None,
       progress_task: None,
       progress_step: None,
@@ -889,23 +899,6 @@ impl AsyncComponent for AppModel {
         }
       }
 
-      AppMsg::RequestConfirmCleanUpSidecarFiles => {
-        debug!("Showing CleanUpSidecarFiles confirmation alert");
-        self
-          .confirm_clean_up_sidecar_files_dialog
-          .as_ref()
-          .inspect(|alert| alert.emit(AlertMsg::Show));
-      }
-
-      AppMsg::HandleCleanUpSidecarFilesResponse(response) => {
-        if let AlertResponse::Confirm = response {
-          debug!("User confirmed CleanUpSidecarFiles request");
-          sender.input(AppMsg::CleanUpSidecarFiles);
-        } else {
-          debug!("User cancelled CleanUpSidecarFiles request");
-        }
-      }
-
       #[expect(clippy::cast_possible_truncation)]
       AppMsg::FetchLyrics => {
         self.is_fetching_lyrics = true;
@@ -917,20 +910,13 @@ impl AsyncComponent for AppModel {
           progress: 0.0,
         }));
 
-        let preferred_lyrics_type = SETTINGS
-          .read()
-          .map_or(LyricsType::default(), |settings| settings.prefer_lyrics_type);
         let filtered_tracks = self
           .tracks
           .iter()
           .filter(|track| {
             !self.get_lyrics_menu_state.filtered || self.filtered_track_ids.contains(&track.id)
           })
-          .filter(|track| {
-            self
-              .get_lyrics_menu_state
-              .filter_track(track, preferred_lyrics_type)
-          })
+          .filter(|track| self.get_lyrics_menu_state.filter_track(track))
           .cloned()
           .collect::<Vec<_>>();
 
@@ -977,61 +963,45 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::ProgressComplete);
       }
 
-      AppMsg::CleanUpSidecarFiles => {
-        self.is_cleaning_up_sidecar_files = true;
+      AppMsg::ApplyManageLyricsChanges(opts) => {
+        self.is_applying_manage_lyrics = true;
+        self.manage_lyrics_widget.widget().close();
 
-        let total = self.tracks.len();
         let tracks = self.tracks.clone();
 
         // Display progress
-        sender.input(AppMsg::ProgressStart("Cleaning up sidecar files…".into()));
-        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("0 / {} done", total)),
-          progress: 0.0,
-        }));
+        sender
+          .input(AppMsg::ShowSpinner(("Applying Manage Lyrics changes…".into(), String::new())));
 
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        self.clean_up_sidecar_files_cancel_token = Some(cancel_tx);
+        self.manage_lyrics_cancel_token = Some(cancel_tx);
+
+        let sender_handle = sender.clone();
 
         // Process tracks in background thread and update progress
         relm4::spawn_blocking(move || {
-          let sender = sender.clone();
+          let progress_sender = sender_handle.clone();
+          let progress_callback = move |msg| {
+            progress_sender
+              .input(AppMsg::ShowSpinner(("Applying Manage Lyrics changes…".to_string(), msg)));
+          };
 
-          for (idx, mut track) in tracks.into_iter().enumerate() {
-            // Cancel operation if sender was dropped
-            if cancel_rx
-              .try_recv()
-              .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-            {
-              break;
-            }
-
-            let _ = track.clean_up_sidecar_files().call();
-
-            sender
-              .command_sender()
-              .emit(AppCommand::TrackUpdated(track));
-
-            let completed = idx + 1;
-            if completed.is_multiple_of(5) {
-              sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                step: Some(format!("{completed} / {total} done")),
-                progress: completed as f64 / total as f64,
-              }));
-            }
-          }
+          let _ = opts
+            .apply(tracks, progress_callback, &mut cancel_rx)
+            .inspect_err(|error| sender_handle.input(AppMsg::ShowToast(error.to_string())));
 
           // End display progress
-          sender.input(AppMsg::CleanUpSidecarFilesComplete);
+          sender_handle.input(AppMsg::ApplyManageLyricsChangesComplete);
         });
       }
 
-      AppMsg::CleanUpSidecarFilesComplete => {
+      AppMsg::ApplyManageLyricsChangesComplete => {
         debug!("CleanUpSidecarFiles completed");
-        self.clean_up_sidecar_files_cancel_token = None;
-        self.is_cleaning_up_sidecar_files = false;
-        self.update_track_stats();
-        sender.input(AppMsg::ProgressComplete);
+
+        self.manage_lyrics_cancel_token = None;
+        self.is_applying_manage_lyrics = false;
+        sender.input(AppMsg::LoadLibraries);
+        sender.input(AppMsg::HideSpinner);
       }
 
       // Cancel either fetching lyrics, clean up sidecar files, or refresh libraries operations
@@ -1044,7 +1014,7 @@ impl AsyncComponent for AppModel {
         }
 
         // Drop the sender to cancel the clean up task
-        if self.clean_up_sidecar_files_cancel_token.take().is_some() {
+        if self.manage_lyrics_cancel_token.take().is_some() {
           debug!("CleanUpSidecarFiles cancelled by user");
           sender.input(AppMsg::ProgressComplete);
         }
@@ -1057,7 +1027,7 @@ impl AsyncComponent for AppModel {
         }
 
         self.is_fetching_lyrics = false;
-        self.is_cleaning_up_sidecar_files = false;
+        self.is_applying_manage_lyrics = false;
 
         self.update_track_stats();
       }
@@ -1163,6 +1133,21 @@ impl AsyncComponent for AppModel {
         }
 
         self.refresh_from_settings(root, &sender);
+      }
+
+      AppMsg::ShowManageLyricsWindow => {
+        debug!("Showing ManageLyrics window");
+
+        let window = self.manage_lyrics_widget.widget();
+        window.set_transient_for(Some(root));
+        window.set_hide_on_close(true);
+        window.present();
+      }
+
+      AppMsg::CloseManageLyricsWindow => {
+        debug!("Closing ManageLyrics window");
+
+        self.manage_lyrics_widget.widget().close();
       }
 
       AppMsg::ShowLyricsWindow(source) => {
@@ -1564,41 +1549,11 @@ impl AppModel {
   /// Update flags and dialogs based on current `Settings`.
   fn refresh_from_settings(
     &mut self,
-    root: &adw::ApplicationWindow,
-    sender: &AsyncComponentSender<AppModel>,
+    _root: &adw::ApplicationWindow,
+    _sender: &AsyncComponentSender<AppModel>,
   ) {
     if let Ok(guard) = SETTINGS.read() {
       self.get_lyrics_requires_confirmation = guard.update_lyrics_tag_on_fetch;
-
-      let secondary_text = if guard.upgrade_lyrics_tag_on_scan
-        && (guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan)
-      {
-        String::from("Sidecar files will be deleted and tags will be written to your files.")
-      } else if guard.delete_sidecar_files_on_scan || guard.keep_one_sidecar_file_on_scan {
-        String::from("Sidecar files will be deleted.")
-      } else if guard.upgrade_lyrics_tag_on_scan {
-        String::from("Lyrics tags will be written to your files.")
-      } else {
-        String::from("This will have no effect with the options set in Preferences.")
-      };
-
-      drop(guard);
-
-      let confirm_clean_up_sidecar_files_dialog = Alert::builder()
-        .transient_for(root)
-        .launch(AlertSettings {
-          text: Some("Are you sure?".into()),
-          secondary_text: Some(secondary_text),
-          is_modal: true,
-          destructive_accept: true,
-          confirm_label: Some("Confirm".into()),
-          cancel_label: Some("Cancel".into()),
-          option_label: None,
-          extra_child: None,
-        })
-        .forward(sender.input_sender(), AppMsg::HandleCleanUpSidecarFilesResponse);
-
-      self.confirm_clean_up_sidecar_files_dialog = Some(confirm_clean_up_sidecar_files_dialog);
     }
   }
 

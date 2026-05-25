@@ -24,7 +24,7 @@ use crate::{
   lyrics::LyricsType,
   schema::{libraries, tracks},
   settings::Settings,
-  track::{self, CleanUpSidecarFilesOptions, FetchLyricsOptions, NewTrack, Track},
+  track::{FetchLyricsOptions, NewTrack, Track},
   util::{self, now, reporter::IntervalReporter},
 };
 
@@ -69,19 +69,13 @@ pub struct NewLibrary {
 #[derive(Debug, Default, Clone, Copy)]
 pub struct RefreshOptions {
   pub scan_new_only: bool,
-  pub scan_options: track::CleanUpSidecarFilesOptions,
+  // pub scan_options: track::CleanUpSidecarFilesOptions,
 }
 
 impl From<&Settings> for RefreshOptions {
   fn from(value: &Settings) -> Self {
     RefreshOptions {
       scan_new_only: value.scan_new_files_only,
-      scan_options: track::CleanUpSidecarFilesOptions {
-        prefer_lyrics_type: value.prefer_lyrics_type,
-        upgrade_lyrics_tag: value.upgrade_lyrics_tag_on_scan,
-        delete_sidecar_files: value.delete_sidecar_files_on_scan,
-        keep_one_sidecar_file: value.keep_one_sidecar_file_on_scan,
-      },
     }
   }
 }
@@ -184,10 +178,7 @@ impl Library {
     let scan_new_only = SETTINGS
       .read()
       .inspect_err(|_| error!("Settings lock was poisoned while refreshing {}", &self))
-      .map_or_else(
-        |_| Settings::default().scan_new_files_only,
-        |g| g.scan_new_files_only,
-      );
+      .map_or_else(|_| Settings::default().scan_new_files_only, |g| g.scan_new_files_only);
 
     if scan_new_only {
       info!("{} refresh: Started (new/modified files only)", &self);
@@ -384,99 +375,14 @@ impl Library {
   }
 
   #[builder]
-  /// Based on `Settings` flags or the provided options, upgrade lyrics tags from sidecar files
-  /// and delete sidecar files.
-  pub fn clean_up_sidecar_files<F>(
-    &self,
-    options: Option<CleanUpSidecarFilesOptions>,
-    on_progress: F,
-  ) -> Result<usize>
-  where
-    F: Fn(usize) + Send + 'static,
-  {
-    let options = {
-      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
-      options.unwrap_or_else(|| CleanUpSidecarFilesOptions::from(settings))
-    };
-    info!(
-      "Clean Up Sidecar Files for {}: Started with options: {:?}",
-      &self, options
-    );
-
-    // let mut reporter = IntervalReporter::builder()
-    //   .id("RefreshTracks")
-    //   .target(inserted_new_tracks.len() + existing_tracks.len())
-    //   .report_interval(Duration::from_secs(1))
-    //   .report_threshold(5)
-    //   .callback(|stats| {
-    //     on_progress(format!(
-    //       "Scanning tracks… {:.0} %\n(about {} remaining)",
-    //       stats.percent_processed, stats.human_time_remaining
-    //     ));
-    //   })
-    //   .build();
-
-    // Make sure progress is shown without delay
-    on_progress(0);
-
-    let start = Instant::now();
-    let mut conn = DB_POOL.get()?;
-    let mut existing_count = 0_usize;
-    let mut processed_count = 0_usize;
-
-    let rows = conn.immediate_transaction::<usize, _, _>(|conn| {
-      // Get existing tracks
-      let tracks = tracks::table
-        .filter(tracks::library_id.eq(&self.id))
-        .load::<Track>(conn)?;
-      existing_count = tracks.len();
-
-      // Clean up sidecar files
-      for mut track in tracks {
-        if track
-          .clean_up_sidecar_files()
-          .options(options)
-          .conn(conn)
-          .call()
-          .is_ok()
-        {
-          processed_count += 1;
-
-          // Report back progress periodically
-          if processed_count.is_multiple_of(5) {
-            on_progress(processed_count);
-          }
-        }
-      }
-
-      Ok::<usize, anyhow::Error>(processed_count)
-    })?;
-
-    info!(
-      "Clean Up Sidecar Files for {}: Completed in {:.1}s: Processed {}/{} existing tracks",
-      &self,
-      start.elapsed().as_secs_f32(),
-      processed_count,
-      existing_count,
-    );
-
-    Ok(rows)
-  }
-
-  #[builder]
   /// Fetch lyrics for tracks in this library, if track lyrics are missing or do not meet the
   /// requirements of `FetchLyricsOptions`.
   pub async fn fetch_lyrics(&self, options: Option<FetchLyricsOptions>) -> Result<usize> {
-    // TODO: Use multiple async threads
-
     let options = {
       let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
       options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
     };
-    info!(
-      "{} fetch lyrics: Started with options: {:?}",
-      &self, options
-    );
+    info!("{} fetch lyrics: Started with options: {:?}", &self, options);
 
     let start = Instant::now();
     let mut attempted_fetches = 0_usize;
@@ -540,8 +446,7 @@ impl Library {
     }
   }
 
-  /// Remove a library path and all `Track`s belonging to it (unless the `Track` exists in another
-  /// library path).
+  /// Remove a library path and all `Track`s belonging to it.
   pub fn remove(&self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 

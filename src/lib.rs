@@ -24,6 +24,7 @@ use crate::{
 pub mod library;
 pub mod lrclib;
 pub mod lyrics;
+pub mod manage;
 pub mod schema;
 pub mod settings;
 pub mod track;
@@ -79,11 +80,8 @@ pub async fn init_app() -> Result<()> {
 
   init_db_pool()?;
 
-  let pkg_name_and_version = format!(
-    ":::::::::::: {}  v{} ::::::::::::",
-    env!("CARGO_PKG_NAME"),
-    env!("CARGO_PKG_VERSION")
-  );
+  let pkg_name_and_version =
+    format!(":::::::::::: {}  v{} ::::::::::::", env!("CARGO_PKG_NAME"), env!("CARGO_PKG_VERSION"));
   let separator = "`".repeat(pkg_name_and_version.len());
   let settings = &*SETTINGS
     .read()
@@ -154,16 +152,10 @@ fn clean_up_log_files(log_dir: impl AsRef<Path>) -> Result<()> {
       .expect("should be able to read log file modified date")
   });
 
-  debug!(
-    "Found {} existing log files (keeping: {MAX_LOG_FILES})",
-    files.len()
-  );
+  debug!("Found {} existing log files (keeping: {MAX_LOG_FILES})", files.len());
 
   for file in files.iter().rev().skip(MAX_LOG_FILES) {
-    debug!(
-      "Deleting old log file \"{}\"",
-      file.file_name().to_string_lossy()
-    );
+    debug!("Deleting old log file \"{}\"", file.file_name().to_string_lossy());
 
     fs::remove_file(file.path())?;
   }

@@ -109,66 +109,33 @@ pub struct NewTrack {
   pub file_modified_at: NaiveDateTime,
 }
 
-#[derive(Debug, Default, Clone, Copy)]
-pub struct CleanUpSidecarFilesOptions {
-  /// Used to choose lyrics type to upgrade with or keep as a sidecar file.
-  pub prefer_lyrics_type: LyricsType,
-  /// Embed sidecar lyrics if lyrics tag is empty or not the preferred type.
-  pub upgrade_lyrics_tag: bool,
-  /// Delete any _<audio-filename>.lrc_ or _<audio-filename>.txt_ sidecar lyrics files
-  /// (optionally after embedding in file).
-  pub delete_sidecar_files: bool,
-  /// Keep only one sidecar file matching `preferred_lyrics_type`. This option causes the
-  /// `delete_sidecar_files` option to be ignored.
-  pub keep_one_sidecar_file: bool,
-}
-
-impl From<&Settings> for CleanUpSidecarFilesOptions {
-  fn from(settings: &Settings) -> Self {
-    CleanUpSidecarFilesOptions {
-      prefer_lyrics_type: settings.prefer_lyrics_type,
-      upgrade_lyrics_tag: settings.upgrade_lyrics_tag_on_scan,
-      delete_sidecar_files: settings.delete_sidecar_files_on_scan,
-      keep_one_sidecar_file: settings.keep_one_sidecar_file_on_scan,
-    }
-  }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct FetchLyricsOptions {
-  pub prefer_lyrics_type: lyrics::LyricsType,
-  pub ignore_plain_lyrics: bool,
-  pub update_lyrics_tag: bool,
-  pub save_sidecar_file: bool,
-}
-
-impl Default for FetchLyricsOptions {
-  fn default() -> Self {
-    Self {
-      prefer_lyrics_type: lyrics::LyricsType::Sync,
-      ignore_plain_lyrics: false,
-      update_lyrics_tag: false,
-      save_sidecar_file: true,
-    }
-  }
-}
-
-impl From<&Settings> for FetchLyricsOptions {
-  fn from(settings: &Settings) -> Self {
-    FetchLyricsOptions {
-      prefer_lyrics_type: settings.prefer_lyrics_type,
-      ignore_plain_lyrics: settings.ignore_plain_lyrics_on_fetch,
-      update_lyrics_tag: settings.update_lyrics_tag_on_fetch,
-      save_sidecar_file: settings.save_sidecar_file_on_fetch,
-    }
-  }
-}
-
 #[bon]
 impl Track {
   #[must_use]
   pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
+  }
+
+  #[must_use]
+  pub fn lrc_file_path(&self) -> Option<Utf8PathBuf> {
+    if self.lyrics_sidecar_lrc_file.is_some() {
+      let mut path = self.path();
+      path.set_extension("lrc");
+      Some(path)
+    } else {
+      None
+    }
+  }
+
+  #[must_use]
+  pub fn txt_file_path(&self) -> Option<Utf8PathBuf> {
+    if self.lyrics_sidecar_txt_file.is_some() {
+      let mut path = self.path();
+      path.set_extension("txt");
+      Some(path)
+    } else {
+      None
+    }
   }
 
   #[builder]
@@ -178,10 +145,7 @@ impl Track {
     /// Will obtain a connection from the pool if none passed.
     conn: Option<&mut SqliteConnection>,
   ) -> Result<()> {
-    trace!(
-      "{} scan: Scan and update: Refreshing metadata and sidecars",
-      &self
-    );
+    trace!("{} scan: Scan and update: Refreshing metadata and sidecars", &self);
 
     ///////////////////////////
     ///// Handle metadata /////
@@ -261,158 +225,6 @@ impl Track {
     Ok(())
   }
 
-  #[builder]
-  pub fn clean_up_sidecar_files(
-    &mut self,
-    /// Will use `Settings` if `None` passed.
-    options: Option<CleanUpSidecarFilesOptions>,
-    /// Database connection. Intended for use as part of a transaction.
-    /// Will obtain a connection from the pool if none passed.
-    conn: Option<&mut SqliteConnection>,
-  ) -> Result<()> {
-    let options = {
-      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
-      options.unwrap_or_else(|| CleanUpSidecarFilesOptions::from(settings))
-    };
-    trace!("Cleaning Up Sidecar Files for {}", &self);
-
-    // Was the `Track` updated?
-    let mut db_requires_update = false;
-
-    // Was the lyrics tag updated?
-    let mut file_requires_update = false;
-
-    if let Some(sidecar_lyrics) = LyricsFile::from_track(self) {
-      // Add sidecar lyrics to `Track`
-      for lyrics_file in &sidecar_lyrics {
-        match lyrics_file.file_type {
-          LyricsFileType::Lrc => {
-            db_requires_update =
-              self.lyrics_sidecar_lrc_file.as_ref() != Some(&lyrics_file.lyrics.contents);
-
-            self.lyrics_sidecar_lrc_file = Some(lyrics_file.lyrics.contents.clone());
-          }
-          LyricsFileType::Txt => {
-            db_requires_update =
-              self.lyrics_sidecar_txt_file.as_ref() != Some(&lyrics_file.lyrics.contents);
-
-            self.lyrics_sidecar_txt_file = Some(lyrics_file.lyrics.contents.clone());
-          }
-        }
-      }
-
-      if options.upgrade_lyrics_tag {
-        match options.prefer_lyrics_type {
-          LyricsType::Sync => {
-            // Collection is sorted - best sync candidate is first
-            if let Some(lf) = sidecar_lyrics.first()
-              && (!self.lyrics_synchronised || self.lyrics.is_none())
-            {
-              let sync = lf.lyrics.lyrics_type == LyricsType::Sync;
-
-              if sync || self.lyrics.is_some() {
-                debug!(
-                  "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
-                  &self, &lf.path
-                );
-
-                self.lyrics = Some(lf.lyrics.contents.clone());
-                self.lyrics_synchronised = sync;
-
-                db_requires_update = true;
-                file_requires_update = true;
-              }
-            }
-          }
-
-          LyricsType::Plain => {
-            // Collection is sorted - best plain candidate is last
-            if let Some(lf) = sidecar_lyrics.last()
-              && (self.lyrics_synchronised || self.lyrics.is_none())
-            {
-              // Convert sync lyrics to plain if required
-              let lyrics = match lf.lyrics.lyrics_type {
-                LyricsType::Sync => lf.lyrics.clone().into_plain().contents,
-                LyricsType::Plain => lf.lyrics.clone().contents,
-              };
-
-              debug!(
-                "{} scan: Upgrade lyrics tag: Inserting lyrics from sidecar file \"{}\"",
-                &self, &lf.path
-              );
-
-              self.lyrics = Some(lyrics);
-              self.lyrics_synchronised = false;
-
-              db_requires_update = true;
-              file_requires_update = true;
-            }
-          }
-        }
-      }
-
-      if options.keep_one_sidecar_file {
-        sidecar_lyrics
-          .iter()
-          .filter(|&lf| lf.lyrics.lyrics_type != options.prefer_lyrics_type)
-          .for_each(|lf| {
-            debug!(
-              "{} scan: Keep one sidecar file: deleting redundant file \"{}\"",
-              &self, &lf.path
-            );
-
-            fs::remove_file(&lf.path).unwrap_or_else(|error| error!("{error}"));
-
-            match lf.lyrics.lyrics_type {
-              LyricsType::Sync => {
-                db_requires_update = self.lyrics_sidecar_lrc_file.take().is_some();
-              }
-              LyricsType::Plain => {
-                db_requires_update = self.lyrics_sidecar_txt_file.take().is_some();
-              }
-            }
-          });
-      } else if options.delete_sidecar_files {
-        for lyrics_file in &sidecar_lyrics {
-          debug!(
-            "{} scan: Deleting sidecar files: deleting file \"{}\"",
-            &self, lyrics_file.path
-          );
-
-          fs::remove_file(&lyrics_file.path).unwrap_or_else(|error| error!("{error}"));
-
-          db_requires_update = true;
-        }
-
-        self.lyrics_sidecar_lrc_file = None;
-        self.lyrics_sidecar_txt_file = None;
-      }
-    } else {
-      // No sidecar files found; make sure the `Track` matches
-      let (lrc_changed, txt_changed) = (
-        self.lyrics_sidecar_lrc_file.take().is_some(),
-        self.lyrics_sidecar_txt_file.take().is_some(),
-      );
-      db_requires_update = lrc_changed || txt_changed;
-    }
-
-    if file_requires_update {
-      // Lyrics tag changed - update file and database
-      match conn {
-        Some(conn) => self.write_to_file_and_db().conn(conn).call()?,
-        None => self.write_to_file_and_db().call()?,
-      }
-    } else if db_requires_update {
-      // Update database
-      match conn {
-        Some(conn) => self.write_to_db().conn(conn).call()?,
-        None => self.write_to_db().call()?,
-      }
-    }
-
-    Ok(())
-  }
-
   /// Does nothing but sleeps for 500ms.
   #[allow(unused_variables)]
   #[builder]
@@ -467,18 +279,11 @@ impl Track {
         && ((lyrics.lyrics_type == LyricsType::Sync && self.lyrics_sidecar_lrc_file.is_none())
           || (lyrics.lyrics_type == LyricsType::Plain && self.lyrics_sidecar_txt_file.is_none()))
       {
-        let file_type = LyricsFileType::from(lyrics.lyrics_type);
-        let path = self.path().with_extension(file_type.file_extension());
-        let sidecar_file = LyricsFile {
-          lyrics: lyrics.clone(),
-          file_type,
-          path,
-        };
-        sidecar_file.save()?;
+        self.save_sidecar_file(lyrics)?;
 
-        match sidecar_file.file_type {
-          LyricsFileType::Lrc => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
-          LyricsFileType::Txt => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
+        match lyrics.lyrics_type {
+          LyricsType::Sync => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
+          LyricsType::Plain => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
         }
 
         modified = true;
@@ -519,6 +324,19 @@ impl Track {
     }
 
     Ok(modified)
+  }
+
+  pub fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {
+    let file_type = LyricsFileType::from(lyrics.lyrics_type);
+    let path = self.path().with_extension(file_type.file_extension());
+    let sidecar_file = LyricsFile {
+      lyrics: lyrics.clone(),
+      file_type,
+      path,
+    };
+    sidecar_file.save()?;
+
+    Ok(())
   }
 
   /// Insert or update track in database.
@@ -562,38 +380,42 @@ impl Track {
     /// Will obtain a connection from the pool if none passed.
     conn: Option<&mut SqliteConnection>,
   ) -> Result<()> {
-    if let Some(lyrics) = &self.lyrics {
-      // Update lyrics tag (the only tag we ever change)
-      let file = std::fs::File::options()
-        .read(true)
-        .write(true)
-        .open(&self.path)
-        .inspect_err(|error| error!("{error}"))?;
-      let reader = io::BufReader::new(&file);
-      let mut tagged_file = Probe::new(reader)
-        .options(*TAG_PARSE_OPTIONS)
-        .guess_file_type()
-        .inspect_err(|error| warn!("{} write updated tag: {error}", &self))?
-        .read()?;
-      let tag = tagged_file
-        .primary_tag_mut()
-        .ok_or_else(|| anyhow!("{} write updated tag: No primary tag in file", &self))?;
+    // Update lyrics tag (the only tag we ever change)
+    let file = std::fs::File::options()
+      .read(true)
+      .write(true)
+      .open(&self.path)
+      .inspect_err(|error| error!("{error}"))?;
 
-      // Check that lyrics have changed before writing
-      if tag
-        .get_string(tag::ItemKey::Lyrics)
-        .is_some_and(|l| l != lyrics.as_str())
-        && (tag.insert_text(lofty::tag::ItemKey::Lyrics, lyrics.clone())
-          && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok())
-      {
-        debug!("{} write updated tag: Lyrics tag updated in file", &self);
+    let reader = io::BufReader::new(&file);
 
-        // Update track modified timestamp in DB
-        self.file_modified_at = util::file_modified_at()
-          .path(&self.path())
-          .file(&file)
-          .call();
-      }
+    let mut tagged_file = Probe::new(reader)
+      .options(*TAG_PARSE_OPTIONS)
+      .guess_file_type()
+      .inspect_err(|error| warn!("{} write updated tag: {error}", &self))?
+      .read()?;
+
+    let tag = tagged_file
+      .primary_tag_mut()
+      .ok_or_else(|| anyhow!("{} write updated tag: No primary tag in file", &self))?;
+
+    let track_lyrics = self.lyrics.clone().unwrap_or_default();
+    let file_lyrics = tag.get_string(tag::ItemKey::Lyrics).unwrap_or_default();
+
+    // Check that lyrics have changed before writing
+    if file_lyrics != track_lyrics
+      && (tag.insert_text(lofty::tag::ItemKey::Lyrics, track_lyrics)
+        && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok())
+    {
+      debug!("{} write updated tag: Lyrics tag updated in file", &self);
+
+      // Update track modified timestamp in DB
+      self.file_modified_at = util::file_modified_at()
+        .path(&self.path())
+        .file(&file)
+        .call();
+    } else {
+      debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
     }
 
     // Update database
@@ -629,5 +451,35 @@ impl Track {
     }
 
     Ok(())
+  }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct FetchLyricsOptions {
+  pub prefer_lyrics_type: lyrics::LyricsType,
+  pub ignore_plain_lyrics: bool,
+  pub update_lyrics_tag: bool,
+  pub save_sidecar_file: bool,
+}
+
+impl Default for FetchLyricsOptions {
+  fn default() -> Self {
+    Self {
+      prefer_lyrics_type: lyrics::LyricsType::Sync,
+      ignore_plain_lyrics: false,
+      update_lyrics_tag: false,
+      save_sidecar_file: true,
+    }
+  }
+}
+
+impl From<&Settings> for FetchLyricsOptions {
+  fn from(settings: &Settings) -> Self {
+    FetchLyricsOptions {
+      prefer_lyrics_type: settings.prefer_lyrics_type,
+      ignore_plain_lyrics: settings.ignore_plain_lyrics_on_fetch,
+      update_lyrics_tag: settings.update_lyrics_tag_on_fetch,
+      save_sidecar_file: settings.save_sidecar_file_on_fetch,
+    }
   }
 }

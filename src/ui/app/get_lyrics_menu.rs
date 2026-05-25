@@ -16,7 +16,7 @@ use relm4::{
 use serde::{Deserialize, Serialize};
 use tracing::{error, trace};
 
-use crate::{SETTINGS, lyrics::LyricsType, track::Track, util::now};
+use crate::{SETTINGS, track::Track, util::now};
 
 // Cache dates used for filtering Tracks
 static TODAY: LazyLock<NaiveDateTime> = LazyLock::new(now);
@@ -111,7 +111,7 @@ impl SimpleComponent for GetLyricsButtonModel {
           if value.as_str() == "NoLyrics" {
             sender_handle.input(GetLyricsButtonModelMsg::SetType(Type::NoLyrics));
           } else {
-            sender_handle.input(GetLyricsButtonModelMsg::SetType(Type::NotPreferred));
+            sender_handle.input(GetLyricsButtonModelMsg::SetType(Type::NotSync));
           }
 
           *state = value;
@@ -121,8 +121,7 @@ impl SimpleComponent for GetLyricsButtonModel {
 
     let menu_lyrics_type_section = gtk::gio::Menu::new();
     menu_lyrics_type_section.append(Some("_No Lyrics"), Some("get_lyrics.lyrics_type::NoLyrics"));
-    menu_lyrics_type_section
-      .append(Some("Not _Preferred"), Some("get_lyrics.lyrics_type::NotPreferred"));
+    menu_lyrics_type_section.append(Some("Not _Sync"), Some("get_lyrics.lyrics_type::NotSync"));
 
     // Last checked options
     let sender_handle = sender.clone();
@@ -186,7 +185,7 @@ impl SimpleComponent for GetLyricsButtonModel {
 
     let model = GetLyricsButtonModel {
       state: GetLyricsMenuState {
-        lyrics_type: Type::NotPreferred,
+        lyrics_type: Type::NotSync,
         last_checked: Checked::Any,
         filtered: false,
       },
@@ -251,31 +250,25 @@ pub(super) struct GetLyricsMenuState {
 
 impl GetLyricsMenuState {
   /// Returns `true` if the `Track` does not meet requirements set in the 'Get Lyrics' menu.
-  pub(super) fn filter_track(&self, track: &Track, preferred_lyrics_type: LyricsType) -> bool {
+  pub(super) fn filter_track(&self, track: &Track) -> bool {
     // Ignore tracks known to be instrumental
     if track.instrumental.unwrap_or(false) {
       return false;
     }
 
-    if !match self.lyrics_type {
+    let meets_lyrics_requirements = match self.lyrics_type {
       Type::NoLyrics => {
         !(track.lyrics.is_some()
           || track.lyrics_sidecar_lrc_file.is_some()
           || track.lyrics_sidecar_txt_file.is_some())
       }
-      Type::NotPreferred => !match preferred_lyrics_type {
-        LyricsType::Sync => {
-          ((track.lyrics.is_some() && track.lyrics_synchronised)
-            || (track.lyrics.is_none() && track.lyrics_sidecar_lrc_file.is_some()))
-            && track.lyrics_sidecar_txt_file.is_none()
-        }
-        LyricsType::Plain => {
-          ((track.lyrics.is_some() && !track.lyrics_synchronised)
-            || (track.lyrics.is_none() && track.lyrics_sidecar_txt_file.is_some()))
-            && track.lyrics_sidecar_lrc_file.is_none()
-        }
-      },
-    } {
+      Type::NotSync => {
+        !((track.lyrics.is_some() && track.lyrics_synchronised)
+          || track.lyrics_sidecar_lrc_file.is_some())
+      }
+    };
+
+    if !meets_lyrics_requirements {
       // Short circuit if the track already meets lyrics requirement;
       // there's no need to evaluate the last checked date
       return false;
@@ -307,7 +300,7 @@ impl GetLyricsMenuState {
 pub enum Type {
   NoLyrics,
   #[default]
-  NotPreferred,
+  NotSync,
 }
 
 #[derive(
@@ -378,52 +371,45 @@ mod tests {
     };
 
     // No lyrics of any type - should be `true`
-    assert!(state.filter_track(&track, LyricsType::Sync));
+    assert!(state.filter_track(&track));
 
     // Any lyrics - should be `false`
     track.lyrics = Some("plain lyrics".into());
-    assert!(!state.filter_track(&track, LyricsType::Sync));
+    assert!(!state.filter_track(&track));
 
     track.lyrics = None;
     track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
-    assert!(!state.filter_track(&track, LyricsType::Sync));
+    assert!(!state.filter_track(&track));
   }
 
   #[test]
-  fn filter_track_not_preferred_lyrics() {
+  fn filter_track_not_sync_lyrics() {
     let mut track = Track::default();
     let state = GetLyricsMenuState {
-      lyrics_type: Type::NotPreferred,
+      lyrics_type: Type::NotSync,
       last_checked: Checked::Any,
       filtered: false,
     };
 
     // No lyrics - should be `true`
-    assert!(state.filter_track(&track, LyricsType::Sync));
+    assert!(state.filter_track(&track));
 
-    // Plain lyrics with Sync preferred - should be `true`
+    // Plain lyrics - should be `true`
     track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
-    assert!(state.filter_track(&track, LyricsType::Sync));
+    assert!(state.filter_track(&track));
 
     track.lyrics_sidecar_txt_file = None;
     track.lyrics = Some("plain lyrics".into());
-    assert!(state.filter_track(&track, LyricsType::Sync));
+    assert!(state.filter_track(&track));
 
-    // Sync lyrics with Plain preferred - should be `true`
+    // Sync lyrics - should be `false`
     track.lyrics = Some("[01:00:00]sync lyrics\n".into());
     track.lyrics_synchronised = true;
-    assert!(state.filter_track(&track, LyricsType::Plain));
+    assert!(!state.filter_track(&track));
 
-    // Sync+Plain lyrics with Plain preferred - should be `true`
+    // Sync+Plain lyrics - should be `false`
     track.lyrics_sidecar_txt_file = Some("plain lyrics".into());
-    assert!(state.filter_track(&track, LyricsType::Plain));
-
-    // Sync lyrics with Plain preferred - should be `true`
-    track.lyrics = None;
-    track.lyrics_synchronised = false;
-    track.lyrics_sidecar_txt_file = None;
-    track.lyrics_sidecar_lrc_file = Some("[01:00:00]sync lyrics\n".into());
-    assert!(state.filter_track(&track, LyricsType::Plain));
+    assert!(!state.filter_track(&track));
   }
 
   #[test]
@@ -436,26 +422,26 @@ mod tests {
     };
 
     // No date - should be `true`
-    assert!(state.filter_track(&track, LyricsType::Plain));
+    assert!(state.filter_track(&track));
 
     // Just now with Any selected - should be `true`
     track.last_api_check_at = Some(now());
-    assert!(state.filter_track(&track, LyricsType::Plain));
+    assert!(state.filter_track(&track));
 
     // Just now with Never selected - should be `false`
     state.last_checked = Checked::Never;
-    assert!(!state.filter_track(&track, LyricsType::Plain));
+    assert!(!state.filter_track(&track));
 
     // Just now with 1 Month selected - should be `false`
     state.last_checked = Checked::Months(1);
-    assert!(!state.filter_track(&track, LyricsType::Plain));
+    assert!(!state.filter_track(&track));
 
     // Just now with Year selected - should be `false`
     state.last_checked = Checked::Year;
-    assert!(!state.filter_track(&track, LyricsType::Plain));
+    assert!(!state.filter_track(&track));
 
     // 366 days ago with Year selected - should be `true`
     track.last_api_check_at = Some(now() - chrono::Days::new(366));
-    assert!(state.filter_track(&track, LyricsType::Plain));
+    assert!(state.filter_track(&track));
   }
 }

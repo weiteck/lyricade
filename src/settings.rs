@@ -60,9 +60,6 @@ pub struct Settings {
   pub prefer_lyrics_type: LyricsType,
 
   pub scan_new_files_only: bool,
-  pub upgrade_lyrics_tag_on_scan: bool,
-  pub delete_sidecar_files_on_scan: bool,
-  pub keep_one_sidecar_file_on_scan: bool,
 
   pub ignore_plain_lyrics_on_fetch: bool,
   pub update_lyrics_tag_on_fetch: bool,
@@ -70,6 +67,8 @@ pub struct Settings {
 
   pub get_lyrics_menu_lyrics_type: get_lyrics_menu::Type,
   pub get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
+  pub get_lyrics_menu_filtered: bool,
+  pub get_lyrics_menu_selected: bool,
 
   // GUI state
   pub window_width: i32,
@@ -151,14 +150,13 @@ impl Default for Settings {
       prefer_accurate_timestamps: false,
       prefer_lyrics_type: LyricsType::Sync,
       scan_new_files_only: true,
-      upgrade_lyrics_tag_on_scan: false,
-      delete_sidecar_files_on_scan: false,
-      keep_one_sidecar_file_on_scan: false,
       ignore_plain_lyrics_on_fetch: false,
       update_lyrics_tag_on_fetch: false,
       save_sidecar_file_on_fetch: true,
       get_lyrics_menu_lyrics_type: get_lyrics_menu::Type::default(),
       get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
+      get_lyrics_menu_filtered: false,
+      get_lyrics_menu_selected: false,
       window_width: 1000,
       window_height: 600,
       sidebar_pinned: false,

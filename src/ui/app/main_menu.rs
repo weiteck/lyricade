@@ -10,11 +10,7 @@ pub(super) struct MainMenuButtonModel;
 
 relm4::new_action_group!(pub(super) MainMenuActionGroup, "main_menu");
 relm4::new_stateless_action!(ActionRefreshLibraries, MainMenuActionGroup, "refresh_libraries");
-relm4::new_stateless_action!(
-  ActionCleanUpSidecarFiles,
-  MainMenuActionGroup,
-  "clean_up_sidecar_files"
-);
+relm4::new_stateless_action!(ActionManageLyrics, MainMenuActionGroup, "manage_lyrics");
 relm4::new_stateless_action!(ActionPrefs, MainMenuActionGroup, "prefs");
 relm4::new_stateless_action!(ActionAbout, MainMenuActionGroup, "about");
 relm4::new_stateless_action!(ActionTestToast, MainMenuActionGroup, "test_toast");
@@ -55,13 +51,13 @@ impl SimpleComponent for MainMenuButtonModel {
     menu_actions_group.add_action(action_refresh_libraries);
 
     let sender_handle = sender.clone();
-    let action_clean_up_sidecar_files: RelmAction<ActionCleanUpSidecarFiles> =
+    let action_manage_lyrics: RelmAction<ActionManageLyrics> =
       RelmAction::new_stateless(move |_| {
         sender_handle
-          .output(AppMsg::RequestConfirmCleanUpSidecarFiles)
+          .output(AppMsg::ShowManageLyricsWindow)
           .expect("MainMenuButtonModel output receiver dropped");
       });
-    menu_actions_group.add_action(action_clean_up_sidecar_files);
+    menu_actions_group.add_action(action_manage_lyrics);
 
     let sender_handle = sender.clone();
     let action_prefs: RelmAction<ActionPrefs> = RelmAction::new_stateless(move |_| {
@@ -98,7 +94,7 @@ impl SimpleComponent for MainMenuButtonModel {
     // Main menu model
     let menu = gtk::gio::Menu::new();
     menu.append(Some("_Refresh Libraries"), Some("main_menu.refresh_libraries"));
-    menu.append(Some("_Clean Up Sidecar Files"), Some("main_menu.clean_up_sidecar_files"));
+    menu.append(Some("_Manage Lyrics…"), Some("main_menu.manage_lyrics"));
 
     let menu_section = gtk::gio::Menu::new();
     menu_section.append(Some("_Preferences"), Some("main_menu.prefs"));

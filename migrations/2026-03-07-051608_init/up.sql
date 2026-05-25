@@ -28,38 +28,34 @@ CREATE TABLE IF NOT EXISTS tracks (
   FOREIGN KEY (library_id)
     REFERENCES libraries (id)
       ON DELETE CASCADE
-      ON UPDATE CASCADE
 );
 
-CREATE INDEX idx_tracks_library_id ON tracks (library_id);
+CREATE INDEX IF NOT EXISTS idx_tracks_library_id ON tracks (library_id);
 
 CREATE TABLE IF NOT EXISTS settings (
   -- Singleton table
   id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
 
-  prefer_accurate_timestamps BOOLEAN NOT NULL DEFAULT 0,
+  prefer_accurate_timestamps BOOLEAN NOT NULL,
   prefer_lyrics_type TEXT NOT NULL CHECK (prefer_lyrics_type IN ('Sync', 'Plain')) DEFAULT 'Sync',
 
   -- RefreshOptions
-  scan_new_files_only BOOLEAN NOT NULL DEFAULT 0,
-
-  -- ScanOptions
-  upgrade_lyrics_tag_on_scan BOOLEAN NOT NULL DEFAULT 0,
-  delete_sidecar_files_on_scan BOOLEAN NOT NULL DEFAULT 0,
-  keep_one_sidecar_file_on_scan BOOLEAN NOT NULL DEFAULT 0,
+  scan_new_files_only BOOLEAN NOT NULL,
 
   -- FetchLyricsOptions
-  ignore_plain_lyrics_on_fetch BOOLEAN NOT NULL DEFAULT 0,
-  update_lyrics_tag_on_fetch BOOLEAN NOT NULL DEFAULT 0,
+  ignore_plain_lyrics_on_fetch BOOLEAN NOT NULL,
+  update_lyrics_tag_on_fetch BOOLEAN NOT NULL,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
 
   get_lyrics_menu_lyrics_type TEXT NOT NULL DEFAULT 'NotPreferred',
   get_lyrics_menu_last_checked TEXT NOT NULL DEFAULT 'Any',
+  get_lyrics_menu_filtered BOOLEAN NOT NULL,
+  get_lyrics_menu_selected BOOLEAN NOT NULL,
 
   -- GUI settings
   window_width INTEGER NOT NULL DEFAULT 1000,
   window_height INTEGER NOT NULL DEFAULT 600,
-  sidebar_pinned BOOLEAN NOT NULL DEFAULT 0,
+  sidebar_pinned BOOLEAN NOT NULL,
 
   added_at DATETIME NOT NULL DEFAULT 'now',
   updated_at DATETIME NOT NULL DEFAULT 'now'

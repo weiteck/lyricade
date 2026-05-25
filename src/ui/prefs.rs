@@ -1,5 +1,3 @@
-#![expect(clippy::bool_to_int_with_if)]
-
 use std::{collections::HashSet, path::PathBuf};
 
 use adw::prelude::*;
@@ -74,8 +72,6 @@ pub enum ExposedSetting {
   PreferIsoTimestamps(bool),
 
   ScanNewFilesOnly(bool),
-  UpgradeLyricsTagOnScan(bool),
-  HandleSidecar(HandleSidecarSetting),
 
   UpdateLyricsTagOnFetch(bool),
   SaveSidecarOnFetch(bool),
@@ -201,57 +197,6 @@ impl SimpleComponent for PrefsModel {
               sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
             },
 
-          },
-        },
-
-        adw::PreferencesGroup {
-          set_title: "Sidecar Files",
-          set_description: Some("How LRC/TXT lyrics files are scanned and managed."),
-
-          adw::SwitchRow {
-            set_title: "_Upgrade Lyrics Tag From File",
-            set_use_underline: true,
-            set_subtitle: "Upgrade lyrics tags to the preferred format if a sidecar file of that format is found",
-            #[watch]
-            set_active: model.settings_current.upgrade_lyrics_tag_on_scan,
-            connect_active_notify[sender] => move |btn| {
-              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::UpgradeLyricsTagOnScan(btn.is_active())));
-            }
-          },
-
-          adw::ComboRow {
-            set_title: "_Clean Up Sidecar Files",
-            set_use_underline: true,
-            #[watch]
-            set_subtitle: &format!("Whether lyrics files are deleted\n{}", if model.settings_current.delete_sidecar_files_on_scan {
-              "Action: All sibling files with the same name as an audio file but with a “.lrc” or “.txt” extension will be deleted"
-            } else if model.settings_current.keep_one_sidecar_file_on_scan  {
-              "Action: Keep only the preferred lyrics format if both sync and plain sidecar files are present"
-            } else {
-              "Action: Keep all sidecar files"
-            }),
-            set_model: Some(&gtk::StringList::new(&[
-              "Do Nothing",
-              "Keep One",
-              "Delete",
-            ])),
-            #[watch]
-            set_selected: if model.settings_current.delete_sidecar_files_on_scan { 2 }
-              else if model.settings_current.keep_one_sidecar_file_on_scan { 1 }
-              else { 0 },
-            connect_selected_item_notify[sender] => move |row| {
-              match row.selected() {
-                1 => {
-                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::KeepOne)));
-                }
-                2 => {
-                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::Delete)));
-                }
-                _ => {
-                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::HandleSidecar(HandleSidecarSetting::DoNothing)));
-                }
-              }
-            },
           },
         },
 
@@ -491,27 +436,6 @@ impl SimpleComponent for PrefsModel {
         ExposedSetting::ScanNewFilesOnly(active) => {
           debug!("UpdateSetting: ScanNewFilesOnly: {active}");
           self.settings_current.scan_new_files_only = active;
-        }
-        ExposedSetting::UpgradeLyricsTagOnScan(active) => {
-          debug!("UpdateSetting: UpgradeLyricsTagOnScan: {active}");
-          self.settings_current.upgrade_lyrics_tag_on_scan = active;
-        }
-        ExposedSetting::HandleSidecar(setting) => {
-          debug!("UpdateSetting: ManageSidecarFiles: {setting:?}");
-          match setting {
-            HandleSidecarSetting::DoNothing => {
-              self.settings_current.delete_sidecar_files_on_scan = false;
-              self.settings_current.keep_one_sidecar_file_on_scan = false;
-            }
-            HandleSidecarSetting::KeepOne => {
-              self.settings_current.delete_sidecar_files_on_scan = false;
-              self.settings_current.keep_one_sidecar_file_on_scan = true;
-            }
-            HandleSidecarSetting::Delete => {
-              self.settings_current.delete_sidecar_files_on_scan = true;
-              self.settings_current.keep_one_sidecar_file_on_scan = false;
-            }
-          }
         }
         ExposedSetting::UpdateLyricsTagOnFetch(active) => {
           debug!("UpdateSetting: UpdateLyricsTagOnFetch: {active}");

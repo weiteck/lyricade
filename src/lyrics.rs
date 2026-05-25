@@ -41,21 +41,7 @@ impl Lyrics {
   #[must_use]
   pub fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
-      self.contents = self
-        .contents
-        .lines()
-        .filter(|line| !line.is_empty())
-        .map(str::trim)
-        // Skip comments and tags
-        .filter(|line| !(line.starts_with('#') || LRC_TAG_REGEX.is_match(line)))
-        // Remove timestamps; add new line
-        .fold(String::with_capacity(self.contents.len()), |mut buffer, line| {
-          let stripped = LRC_LYRICS_STRIP_REGEX.replace(line, "");
-          buffer.push_str(&stripped);
-          buffer.push('\n');
-          buffer
-        });
-
+      self.contents = convert_sync_lyrics_to_plain(&self.contents);
       self.lyrics_type = LyricsType::Plain;
     }
 
@@ -240,8 +226,10 @@ impl LyricsFile {
 
   /// Write `lyrics.contents` to `path`. Any existing file will be overwritten.
   pub fn save(&self) -> Result<()> {
-    let mut file = std::fs::File::create(&self.path)?;
-    file.write_all(self.lyrics.contents.as_bytes())?;
+    let mut file = std::fs::File::create(&self.path).inspect_err(|error| error!("{error}"))?;
+    file
+      .write_all(self.lyrics.contents.as_bytes())
+      .inspect_err(|error| error!("{error}"))?;
     Ok(())
   }
 }
@@ -249,6 +237,27 @@ impl LyricsFile {
 /// Check if lyrics are synchronised using regex.
 pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
   LRC_LYRICS_REGEX.find(lyrics).is_some()
+}
+
+/// Convert sync lyrics (LRC) to plain text.
+pub fn convert_sync_lyrics_to_plain(lyrics: &str) -> String {
+  if lyrics_are_synchronised(lyrics) {
+    lyrics
+      .lines()
+      .filter(|line| !line.is_empty())
+      .map(str::trim)
+      // Skip comments and tags
+      .filter(|line| !(line.starts_with('#') || LRC_TAG_REGEX.is_match(line)))
+      // Remove timestamps; add new line
+      .fold(String::with_capacity(lyrics.len()), |mut buffer, line| {
+        let stripped = LRC_LYRICS_STRIP_REGEX.replace(line, "");
+        buffer.push_str(&stripped);
+        buffer.push('\n');
+        buffer
+      })
+  } else {
+    lyrics.into()
+  }
 }
 
 #[cfg(test)]
