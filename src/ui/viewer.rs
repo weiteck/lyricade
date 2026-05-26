@@ -72,9 +72,6 @@ impl SimpleComponent for ViewLyricsModel {
     #[name = "view_stack"]
     // Stylised lyrics page
     adw::ViewStack {
-      #[watch]
-      set_visible_child_name: if model.is_viewing_raw { "raw" } else { "stylised" },
-
       add = &gtk::ScrolledWindow {
         gtk::Box {
           set_orientation: gtk::Orientation::Vertical,
@@ -163,6 +160,9 @@ impl SimpleComponent for ViewLyricsModel {
         set_name: Some("raw"),
         set_icon_name: Some("format-text-rich-symbolic"),
       },
+
+      #[watch]
+      set_visible_child_name: if model.is_viewing_raw { "raw" } else { "stylised" },
     },
   }
 
