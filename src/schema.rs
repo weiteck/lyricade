@@ -14,8 +14,9 @@ diesel::table! {
     settings (id) {
         id -> Integer,
         prefer_accurate_timestamps -> Bool,
-        prefer_lyrics_type -> Text,
         scan_new_files_only -> Bool,
+        plain_lyrics_in_id3v2_uslt_frame -> Bool,
+        prefer_lyrics_type -> Text,
         ignore_plain_lyrics_on_fetch -> Bool,
         update_lyrics_tag_on_fetch -> Bool,
         save_sidecar_file_on_fetch -> Bool,

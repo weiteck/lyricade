@@ -75,6 +75,9 @@ pub enum ExposedSetting {
 
   UpdateLyricsTagOnFetch(bool),
   SaveSidecarOnFetch(bool),
+
+  // Advanced settings
+  PlainLyricsUsltFrame(bool),
 }
 
 #[derive(Debug)]
@@ -161,7 +164,7 @@ impl SimpleComponent for PrefsModel {
           set_description: Some("How audio files are scanned."),
 
           adw::SwitchRow {
-            set_title: "_Ignore Unchanged",
+            set_title: "Ignore _Unchanged",
             set_use_underline: true,
             set_subtitle: "Only scan new or modified files",
             #[watch]
@@ -196,7 +199,6 @@ impl SimpleComponent for PrefsModel {
             connect_active_notify[sender] => move |btn| {
               sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
             },
-
           },
         },
 
@@ -239,6 +241,25 @@ impl SimpleComponent for PrefsModel {
                 connect_toggled[sender] => move |btn| {
                   sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PreferIsoTimestamps(btn.is_active())));
                 },
+              },
+            },
+          },
+        },
+
+        adw::PreferencesGroup {
+          adw::ExpanderRow {
+            set_focusable: false,
+            set_selectable: false,
+            set_title: "Advanced Settings",
+
+            add_row = &adw::SwitchRow {
+              set_title: "Plain Lyrics in ID3v2 USLT Frame (MP3)",
+              set_use_underline: true,
+              set_subtitle: "Synchronous lyrics will be encoded in the SYLT synchronised text frame per the ID3v2 V3 spec, but a copy will also be inserted in the USLT unsynchronised text frame. Choose whether this copy is converted to plain text format or LRC sync format is retained. <b>It is recommended to disable this option for increased compatibility.</b>",
+              #[watch]
+              set_active: model.settings_current.plain_lyrics_in_id3v2_uslt_frame,
+              connect_active_notify[sender] => move |btn| {
+                sender.input(PrefsMsg::UpdateSetting(ExposedSetting::PlainLyricsUsltFrame(btn.is_active())));
               },
             },
           },
@@ -450,6 +471,10 @@ impl SimpleComponent for PrefsModel {
           if !active {
             self.settings_current.update_lyrics_tag_on_fetch = true;
           }
+        }
+        ExposedSetting::PlainLyricsUsltFrame(active) => {
+          debug!("UpdateSetting: PlainLyricsUsltFrame: {active}");
+          self.settings_current.plain_lyrics_in_id3v2_uslt_frame = active;
         }
       },
 

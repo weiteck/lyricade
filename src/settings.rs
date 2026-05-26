@@ -57,10 +57,10 @@ pub struct Settings {
 
   /// Prefer full datetime or humanised representation (e.g. "5 minutes ago").
   pub prefer_accurate_timestamps: bool,
-  pub prefer_lyrics_type: LyricsType,
-
   pub scan_new_files_only: bool,
+  pub plain_lyrics_in_id3v2_uslt_frame: bool,
 
+  pub prefer_lyrics_type: LyricsType,
   pub ignore_plain_lyrics_on_fetch: bool,
   pub update_lyrics_tag_on_fetch: bool,
   pub save_sidecar_file_on_fetch: bool,
@@ -148,18 +148,23 @@ impl Default for Settings {
     Self {
       id: 1,
       prefer_accurate_timestamps: false,
-      prefer_lyrics_type: LyricsType::Sync,
       scan_new_files_only: true,
+      plain_lyrics_in_id3v2_uslt_frame: false,
+
+      prefer_lyrics_type: LyricsType::Sync,
       ignore_plain_lyrics_on_fetch: false,
       update_lyrics_tag_on_fetch: false,
       save_sidecar_file_on_fetch: true,
+
       get_lyrics_menu_lyrics_type: get_lyrics_menu::Type::default(),
       get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
       get_lyrics_menu_filtered: false,
       get_lyrics_menu_selected: false,
+
       window_width: 1000,
       window_height: 600,
       sidebar_pinned: false,
+
       added_at: now,
       updated_at: now,
     }

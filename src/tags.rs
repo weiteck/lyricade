@@ -3,8 +3,8 @@ use std::{borrow::Cow, fmt::Write};
 use lofty::{
   file::AudioFile,
   id3::v2::{
-    BinaryFrame, Frame, FrameId, Id3v2Tag, SyncTextContentType, SynchronizedTextFrame,
-    TimestampFormat, UnsynchronizedTextFrame,
+    BinaryFrame, Frame, FrameId, Id3v2Tag, Id3v2Version, SyncTextContentType,
+    SynchronizedTextFrame, TimestampFormat, UnsynchronizedTextFrame,
   },
 };
 use tracing::{debug, trace, warn};
@@ -78,7 +78,7 @@ pub fn lrc_lyrics_from_id3v2(file: &lofty::mpeg::MpegFile) -> Option<Lyrics> {
 /// If `lyrics` contains an empty `String`, both USLT and SYLT frames are removed.
 pub fn insert_lyrics_into_id3v2(
   lyrics: Lyrics,
-  sync_in_uslt_frame: bool,
+  plain_lyrics_in_uslt_frame: bool,
   tag: &mut Id3v2Tag,
 ) -> bool {
   let _ = tag.remove(&ID3V2_USLT_FRAME_ID);
@@ -133,16 +133,21 @@ pub fn insert_lyrics_into_id3v2(
         sync_lines,
       );
 
+      // Keep V4 if already used
+      let use_id3v2_v3 = match tag.original_version() {
+        Id3v2Version::V2 | Id3v2Version::V3 => true,
+        Id3v2Version::V4 => false,
+      };
       let write_opts = lofty::config::WriteOptions::new()
         .lossy_text_encoding(true)
-        .use_id3v23(true);
+        .use_id3v23(use_id3v2_v3);
       if let Ok(bytes) = sylt_lyrics_frame.as_bytes(write_opts) {
         // Also insert into the unsync USLT frame as fallback
-        let uslt_lyrics = if sync_in_uslt_frame {
-          lyrics.contents
-        } else {
+        let uslt_lyrics = if plain_lyrics_in_uslt_frame {
           trace!("Using converted plain lyrics for fallback USLT frame");
           lyrics.into_plain().contents
+        } else {
+          lyrics.contents
         };
 
         let uslt_frame = UnsynchronizedTextFrame::new(

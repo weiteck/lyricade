@@ -333,7 +333,10 @@ impl Track {
           .is_some_and(|l| l.lyrics_type == LyricsType::Sync);
         self.lyrics = lyrics.as_ref().map(|l| l.contents.clone());
 
-        self.write_to_file_and_db().call()?;
+        self
+          .write_to_file_and_db()
+          .plain_lyrics_in_id3v2_uslt_frame(options.plain_lyrics_in_id3v2_uslt_frame)
+          .call()?;
         update_db = false;
         modified = true;
       }
@@ -396,6 +399,7 @@ impl Track {
   #[builder]
   pub fn write_to_file_and_db(
     &mut self,
+    plain_lyrics_in_id3v2_uslt_frame: bool,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
     conn: Option<&mut SqliteConnection>,
@@ -441,7 +445,7 @@ impl Track {
           };
 
           // Tag frames will be removed if lyrics is empty
-          insert_lyrics_into_id3v2(lyrics, true, tag);
+          insert_lyrics_into_id3v2(lyrics, plain_lyrics_in_id3v2_uslt_frame, tag);
 
           if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
             debug!("{self} write updated tag: Lyrics tag updated in file");
@@ -535,12 +539,14 @@ impl Track {
   }
 }
 
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
 pub struct FetchLyricsOptions {
   pub prefer_lyrics_type: lyrics::LyricsType,
   pub ignore_plain_lyrics: bool,
-  pub update_lyrics_tag: bool,
   pub save_sidecar_file: bool,
+  pub update_lyrics_tag: bool,
+  pub plain_lyrics_in_id3v2_uslt_frame: bool,
 }
 
 impl Default for FetchLyricsOptions {
@@ -548,8 +554,9 @@ impl Default for FetchLyricsOptions {
     Self {
       prefer_lyrics_type: lyrics::LyricsType::Sync,
       ignore_plain_lyrics: false,
-      update_lyrics_tag: false,
       save_sidecar_file: true,
+      update_lyrics_tag: false,
+      plain_lyrics_in_id3v2_uslt_frame: false,
     }
   }
 }
@@ -559,8 +566,9 @@ impl From<&Settings> for FetchLyricsOptions {
     FetchLyricsOptions {
       prefer_lyrics_type: settings.prefer_lyrics_type,
       ignore_plain_lyrics: settings.ignore_plain_lyrics_on_fetch,
-      update_lyrics_tag: settings.update_lyrics_tag_on_fetch,
       save_sidecar_file: settings.save_sidecar_file_on_fetch,
+      update_lyrics_tag: settings.update_lyrics_tag_on_fetch,
+      plain_lyrics_in_id3v2_uslt_frame: settings.plain_lyrics_in_id3v2_uslt_frame,
     }
   }
 }

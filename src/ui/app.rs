@@ -13,6 +13,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::manage::ManageLyricsOptions;
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
+use crate::track::FetchLyricsOptions;
 use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
@@ -928,6 +929,10 @@ impl AsyncComponent for AppModel {
         let completed = Arc::new(AtomicUsize::new(0));
         let stream = futures::stream::iter(filtered_tracks);
         let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
+        let opts = SETTINGS
+          .read()
+          .map(|settings| FetchLyricsOptions::from(&*settings))
+          .ok();
 
         // Batch process tracks and update progress
         let jh = relm4::spawn(async move {
@@ -937,7 +942,7 @@ impl AsyncComponent for AppModel {
               let completed = Arc::clone(&completed);
 
               async move {
-                let _ = track.fetch_lyrics().call().await;
+                let _ = track.fetch_lyrics().maybe_options(opts).call().await;
 
                 let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 sender
@@ -1000,7 +1005,7 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::ApplyManageLyricsChangesComplete => {
-        debug!("CleanUpSidecarFiles completed");
+        debug!("ApplyManageLyricsChanges completed");
 
         self.manage_lyrics_cancel_token = None;
         self.is_applying_manage_lyrics = false;
@@ -1008,7 +1013,7 @@ impl AsyncComponent for AppModel {
         sender.input(AppMsg::HideSpinner);
       }
 
-      // Cancel either fetching lyrics, clean up sidecar files, or refresh libraries operations
+      // Cancel either fetching lyrics, apply manage lyrics changes, or refresh libraries operations
       AppMsg::CancelOperation => {
         // Abort the async fetch lyrics task
         if let Some(handle) = self.fetch_lyrics_abort_handle.take() {
@@ -1017,13 +1022,13 @@ impl AsyncComponent for AppModel {
           sender.input(AppMsg::ProgressComplete);
         }
 
-        // Drop the sender to cancel the clean up task
+        // Drop the sender to cancel the apply manage lyrics task
         if self.manage_lyrics_cancel_token.take().is_some() {
-          debug!("CleanUpSidecarFiles cancelled by user");
+          debug!("ApplyManageLyricsChanges cancelled by user");
           sender.input(AppMsg::ProgressComplete);
         }
 
-        // Drop the sender to cancel the clean up task
+        // Drop the sender to cancel the refresh library task
         if self.refresh_library_cancel_token.take().is_some() {
           self.spinner_task = None;
           self.spinner_step = None;

@@ -37,12 +37,11 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1),
 
   prefer_accurate_timestamps BOOLEAN NOT NULL,
-  prefer_lyrics_type TEXT NOT NULL CHECK (prefer_lyrics_type IN ('Sync', 'Plain')) DEFAULT 'Sync',
-
-  -- RefreshOptions
   scan_new_files_only BOOLEAN NOT NULL,
+  plain_lyrics_in_id3v2_uslt_frame BOOLEAN NOT NULL,
 
-  -- FetchLyricsOptions
+  -- Fetching lyrics
+  prefer_lyrics_type TEXT NOT NULL CHECK (prefer_lyrics_type IN ('Sync', 'Plain')) DEFAULT 'Sync',
   ignore_plain_lyrics_on_fetch BOOLEAN NOT NULL,
   update_lyrics_tag_on_fetch BOOLEAN NOT NULL,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
@@ -52,7 +51,7 @@ CREATE TABLE IF NOT EXISTS settings (
   get_lyrics_menu_filtered BOOLEAN NOT NULL,
   get_lyrics_menu_selected BOOLEAN NOT NULL,
 
-  -- GUI settings
+  -- GUI
   window_width INTEGER NOT NULL DEFAULT 1000,
   window_height INTEGER NOT NULL DEFAULT 600,
   sidebar_pinned BOOLEAN NOT NULL,

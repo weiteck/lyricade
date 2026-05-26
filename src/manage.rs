@@ -5,7 +5,7 @@ use relm4::tokio::sync::oneshot;
 use tracing::{debug, error, info, trace};
 
 use crate::{
-  DB_POOL, Result,
+  DB_POOL, Result, SETTINGS,
   lyrics::{Lyrics, LyricsType, convert_sync_lyrics_to_plain},
   track::Track,
   util::reporter::IntervalReporter,
@@ -72,6 +72,10 @@ impl ManageLyricsOptions {
   {
     info!("ManageLyrics: Applying changes to {} tracks", tracks.len());
 
+    let plain_uslt = SETTINGS
+      .read()
+      .is_ok_and(|settings| settings.plain_lyrics_in_id3v2_uslt_frame);
+
     let mut reporter = IntervalReporter::builder()
       .id("ManageLyrics")
       .target(tracks.len())
@@ -120,7 +124,11 @@ impl ManageLyricsOptions {
         ManageLyricsResult::WriteToFileAndDb => {
           debug!("ManageLyrics: {track} lyrics tag changed: Writing to file and database");
 
-          track.write_to_file_and_db().conn(&mut conn).call()?;
+          track
+            .write_to_file_and_db()
+            .plain_lyrics_in_id3v2_uslt_frame(plain_uslt)
+            .conn(&mut conn)
+            .call()?;
         }
       }
 
