@@ -1,5 +1,6 @@
-# Config for codebook spellchecker
 words = [
+    "SYLT",
+    "USLT",
     "expander",
     "gresource",
     "gresources",
@@ -9,9 +10,4 @@ words = [
     "ndt",
     "unsync",
 ]
-
-ignore_patterns = [
-  # Ignore quoted words that include underscores that are
-  # used to define relm4 access key mnemonics, e.g. "Simpl_e"
-    '".*\w.*_.*"',
-]
+ignore_patterns = ['".*\w.*_.*"']

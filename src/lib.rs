@@ -27,6 +27,7 @@ pub mod lyrics;
 pub mod manage;
 pub mod schema;
 pub mod settings;
+pub mod tags;
 pub mod track;
 pub mod ui;
 pub mod util;

@@ -6,6 +6,7 @@ use diesel::prelude::*;
 use lofty::{
   config::{ParseOptions, WriteOptions},
   file::{AudioFile, TaggedFileExt},
+  mpeg,
   probe::Probe,
   tag::{self, TagExt},
 };
@@ -18,6 +19,7 @@ use crate::{
   lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType},
   schema::tracks,
   settings::Settings,
+  tags::{insert_lyrics_into_id3v2, lrc_lyrics_from_id3v2},
   util::{self, now},
 };
 
@@ -151,14 +153,28 @@ impl Track {
     ///// Handle metadata /////
     ///////////////////////////
     let file = fs::File::open(&self.path).inspect_err(|error| error!("{error}"))?;
-    let reader = io::BufReader::new(&file);
+    let mut reader = io::BufReader::new(&file);
 
-    let tagged_file = Probe::new(reader)
-      .options(*TAG_PARSE_OPTIONS)
-      .guess_file_type()
-      .inspect_err(|error| warn!("{} scan: {error}", &self))?
-      .read()
-      .inspect_err(|error| warn!("{} scan: {error}", &self))?;
+    let mut lrc_from_id3v2_sylt_frame = None;
+
+    // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
+    // (ID3v2 has a specific 'SYLT' frame for this, unlike other tag formats)
+    let tagged_file = if let Some("mp3") = &self.path().extension()
+      && let Ok(mpeg_file) = mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS)
+    {
+      lrc_from_id3v2_sylt_frame = lrc_lyrics_from_id3v2(&mpeg_file);
+
+      // Convert to generic `TaggedFile` type
+      mpeg_file.into()
+    } else {
+      Probe::new(reader)
+        .options(*TAG_PARSE_OPTIONS)
+        .guess_file_type()
+        .inspect_err(|error| warn!("{} scan: {error}", &self))?
+        .read()
+        .inspect_err(|error| warn!("{} scan: {error}", &self))?
+    };
+
     let tag = tagged_file
       .primary_tag()
       .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
@@ -173,14 +189,17 @@ impl Track {
     let album_name = tag
       .get_string(tag::ItemKey::AlbumTitle)
       .map(ToString::to_string);
-    // TODO: Also check if ID3v2 tag type and has SYLT (sync) lyrics + handle conversion to LRC
-    let lyrics = tag
-      .get_string(tag::ItemKey::Lyrics)
-      .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags
-      .filter(|&s| !s.is_empty())
-      .map(ToString::to_string);
+    let lyrics = lrc_from_id3v2_sylt_frame
+      .map(|l| l.contents)
+      .or(
+        tag
+          .get_string(tag::ItemKey::Lyrics)
+          .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags unsync lyrics
+          .map(ToString::to_string),
+      )
+      .filter(|s| !s.is_empty());
 
-    let lyrics_embedded_synchronised = lyrics
+    let lyrics_synchronised = lyrics
       .as_ref()
       .is_some_and(|l| lyrics::lyrics_are_synchronised(l));
 
@@ -191,7 +210,7 @@ impl Track {
     self.album_name = album_name.unwrap_or_default();
     self.duration = duration;
     self.lyrics = lyrics;
-    self.lyrics_synchronised = lyrics_embedded_synchronised;
+    self.lyrics_synchronised = lyrics_synchronised;
     self.updated_at = now;
     self.refreshed_at = now;
     self.file_modified_at = util::file_modified_at()
@@ -387,47 +406,96 @@ impl Track {
       .write(true)
       .open(&self.path)
       .inspect_err(|error| error!("{error}"))?;
+    let mut reader = io::BufReader::new(&file);
 
-    let reader = io::BufReader::new(&file);
+    // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
+    // (ID3v2 has a specific 'SYLT' frame for this, unlike other tag formats)
+    if let Some("mp3") = &self.path().extension()
+      && let Ok(mut mpeg_file) = mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS)
+      && mpeg_file.contains_tag_type(tag::TagType::Id3v2)
+    {
+      trace!("{self} write updated tag: Detected MP3 with \"{:?}\" type tag", tag::TagType::Id3v2);
 
-    let mut tagged_file = Probe::new(reader)
-      .options(*TAG_PARSE_OPTIONS)
-      .guess_file_type()
-      .inspect_err(|error| warn!("{} write updated tag: {error}", &self))?
-      .read()?;
+      let file_sync_lyrics = lrc_lyrics_from_id3v2(&mpeg_file).map(|l| l.contents);
 
-    let tag = tagged_file
-      .primary_tag_mut()
-      .ok_or_else(|| anyhow!("{} write updated tag: No primary tag in file", &self))?;
+      if let Some(tag) = mpeg_file.id3v2_mut() {
+        let file_plain_lyrics = tag
+          .unsync_text()
+          .filter(|frame| !frame.content.is_empty())
+          .map(|frame| frame.content.to_string())
+          .next();
 
-    let track_lyrics = self.lyrics.clone().unwrap_or_default();
-    let file_lyrics = tag
-      .get_string(tag::ItemKey::Lyrics)
-      .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags
-      .unwrap_or_default();
+        if (self.lyrics_synchronised && self.lyrics != file_sync_lyrics)
+          || self.lyrics != file_plain_lyrics
+          || (self.lyrics.is_none() && file_sync_lyrics.or(file_plain_lyrics).is_some())
+        {
+          trace!("{self} write updated tag: Lyrics do not match; write required");
 
-    // TODO: For ID3v2 tags, optionally convert LRC to SLYT frame binary format
+          let lyrics = Lyrics {
+            lyrics_type: if self.lyrics_synchronised {
+              LyricsType::Sync
+            } else {
+              LyricsType::Plain
+            },
+            contents: self.lyrics.clone().unwrap_or_default(),
+          };
 
-    // Check that lyrics have changed before writing
-    if file_lyrics != track_lyrics {
-      let inserted = if tag.tag_type() == tag::TagType::Id3v2 {
-        tag.remove_key(tag::ItemKey::UnsyncLyrics);
-        tag.insert_text(tag::ItemKey::UnsyncLyrics, track_lyrics)
-      } else {
+          // Tag frames will be removed if lyrics is empty
+          insert_lyrics_into_id3v2(lyrics, true, tag);
+
+          if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
+            debug!("{self} write updated tag: Lyrics tag updated in file");
+
+            // Update track modified timestamp in DB
+            self.file_modified_at = util::file_modified_at()
+              .path(&self.path())
+              .file(&file)
+              .call();
+          } else {
+            debug!("{self} write updated tag: Skipping (lyrics tag has not changed)");
+          }
+        }
+      }
+    } else {
+      // Probe file type and use abstract `TaggedFile`
+      let mut tagged_file = Probe::new(reader)
+        .options(*TAG_PARSE_OPTIONS)
+        .guess_file_type()
+        .inspect_err(|error| warn!("{} scan: {error}", &self))?
+        .read()
+        .inspect_err(|error| warn!("{} scan: {error}", &self))?;
+
+      let tag = tagged_file
+        .primary_tag_mut()
+        .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
+
+      trace!("{self} write updated tag: Detected \"{:?}\" type tag", tag.tag_type());
+
+      let file_lyrics = tag
+        .get_string(tag::ItemKey::Lyrics)
+        .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
+        .filter(|s| !s.is_empty())
+        .map(ToString::to_string);
+
+      // Check that lyrics have changed before writing
+      if self.lyrics != file_lyrics {
         tag.remove_key(tag::ItemKey::Lyrics);
-        tag.insert_text(tag::ItemKey::Lyrics, track_lyrics)
-      };
 
-      if inserted && tag.save_to_path(&self.path, *TAG_WRITE_OPTIONS).is_ok() {
-        debug!("{} write updated tag: Lyrics tag updated in file", &self);
+        if self.lyrics.is_some() {
+          tag.insert_text(tag::ItemKey::Lyrics, self.lyrics.clone().unwrap_or_default());
+        }
 
-        // Update track modified timestamp in DB
-        self.file_modified_at = util::file_modified_at()
-          .path(&self.path())
-          .file(&file)
-          .call();
-      } else {
-        debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
+        if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
+          debug!("{} write updated tag: Lyrics tag updated in file", &self);
+
+          // Update track modified timestamp in DB
+          self.file_modified_at = util::file_modified_at()
+            .path(&self.path())
+            .file(&file)
+            .call();
+        } else {
+          debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
+        }
       }
     }
 
