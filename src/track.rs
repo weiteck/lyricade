@@ -6,9 +6,10 @@ use diesel::prelude::*;
 use lofty::{
   config::{ParseOptions, WriteOptions},
   file::{AudioFile, TaggedFileExt},
+  id3::v2::Id3v2Tag,
   mpeg,
   probe::Probe,
-  tag::{self, TagExt},
+  tag::{self, Accessor, TagExt},
 };
 use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock, time::Duration};
 use tracing::{debug, error, trace, warn};
@@ -16,7 +17,7 @@ use tracing::{debug, error, trace, warn};
 use crate::{
   DB_POOL, LRCLIB_CLIENT, Result, SETTINGS,
   lrclib::LrcLibLyricsResponse,
-  lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType},
+  lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType, lyrics_are_synchronised},
   schema::tracks,
   settings::Settings,
   tags::{insert_lyrics_into_id3v2, lrc_lyrics_from_id3v2},
@@ -147,70 +148,136 @@ impl Track {
     /// Will obtain a connection from the pool if none passed.
     conn: Option<&mut SqliteConnection>,
   ) -> Result<()> {
-    trace!("{} scan: Scan and update: Refreshing metadata and sidecars", &self);
+    trace!("{self} scan: Scan and update: Refreshing metadata and sidecars");
 
     ///////////////////////////
     ///// Handle metadata /////
     ///////////////////////////
-    let file = fs::File::open(&self.path).inspect_err(|error| error!("{error}"))?;
+    let file = fs::File::open(self.path()).inspect_err(|error| error!("{error}"))?;
     let mut reader = io::BufReader::new(&file);
+    let probe = Probe::new(&mut reader)
+      .options(*TAG_PARSE_OPTIONS)
+      .guess_file_type()
+      .inspect_err(|error| warn!("{self} scan: {error}"))?;
 
-    let mut lrc_from_id3v2_sylt_frame = None;
+    let mut tag_read = false;
 
-    // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
-    // (ID3v2 has a specific 'SYLT' frame for this, unlike other tag formats)
-    let tagged_file = if let Some("mp3") = &self.path().extension()
-      && let Ok(mpeg_file) = mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS)
-    {
-      lrc_from_id3v2_sylt_frame = lrc_lyrics_from_id3v2(&mpeg_file);
+    let mut read_id3v2_tag = |tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>| {
+      tag_read = true;
 
-      // Convert to generic `TaggedFile` type
-      mpeg_file.into()
-    } else {
-      Probe::new(reader)
-        .options(*TAG_PARSE_OPTIONS)
-        .guess_file_type()
-        .inspect_err(|error| warn!("{} scan: {error}", &self))?
-        .read()
-        .inspect_err(|error| warn!("{} scan: {error}", &self))?
+      self.artist_name = tag.artist().map(String::from).unwrap_or_default();
+      self.album_name = tag.album().map(String::from).unwrap_or_default();
+      self.track_name = tag.title().map(String::from).unwrap_or_default();
+
+      self.lyrics = lrc_lyrics_from_id3v2(tag, mpeg_sample_rate)
+        .map(|l| l.contents)
+        .or(
+          tag
+            .unsync_text()
+            .filter(|frame| !frame.content.is_empty())
+            .map(|frame| frame.content.to_string())
+            .next(),
+        )
+        .filter(|s| !s.is_empty());
     };
 
-    let tag = tagged_file
-      .primary_tag()
-      .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
+    if let Some(file_type) = probe.file_type() {
+      // Try to get concrete ID3v2 tag type from supported formats so sync lyrics frames can be handled
+      match file_type {
+        lofty::file::FileType::Aac => {
+          if let Ok(file) = lofty::aac::AacFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+            self.duration = file.properties().duration().as_secs_f32();
+            file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
+          }
+        }
 
-    let duration = tagged_file.properties().duration().as_secs_f32();
-    let track_name = tag
-      .get_string(tag::ItemKey::TrackTitle)
-      .map(ToString::to_string);
-    let artist_name = tag
-      .get_string(tag::ItemKey::TrackArtist)
-      .map(ToString::to_string);
-    let album_name = tag
-      .get_string(tag::ItemKey::AlbumTitle)
-      .map(ToString::to_string);
-    let lyrics = lrc_from_id3v2_sylt_frame
-      .map(|l| l.contents)
-      .or(
-        tag
-          .get_string(tag::ItemKey::Lyrics)
-          .or(tag.get_string(tag::ItemKey::UnsyncLyrics)) // for ID3v2 tags unsync lyrics
-          .map(ToString::to_string),
-      )
-      .filter(|s| !s.is_empty());
+        lofty::file::FileType::Aiff => {
+          if let Ok(file) = lofty::iff::aiff::AiffFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+            self.duration = file.properties().duration().as_secs_f32();
+            file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
+          }
+        }
 
-    let lyrics_synchronised = lyrics
+        lofty::file::FileType::Mpeg => {
+          if let Ok(file) = lofty::mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+            self.duration = file.properties().duration().as_secs_f32();
+            file
+              .id3v2()
+              .inspect(|tag| read_id3v2_tag(tag, Some(file.properties().sample_rate())));
+          }
+        }
+
+        lofty::file::FileType::Wav => {
+          if let Ok(file) = lofty::iff::wav::WavFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+            self.duration = file.properties().duration().as_secs_f32();
+            file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
+          }
+        }
+
+        // Get generic `Tag` type for other formats
+        _ => {
+          let tag = probe
+            .read()
+            .inspect_err(|error| warn!("{self} scan: {error}"))
+            .ok()
+            .and_then(|tf| {
+              self.duration = tf.properties().duration().as_secs_f32();
+              tf.primary_tag().or(tf.first_tag()).cloned()
+            })
+            .ok_or(anyhow!("{self} scan: Failed to read metadata tag"))?;
+
+          tag_read = true;
+
+          self.artist_name = tag.artist().map(String::from).unwrap_or_default();
+          self.album_name = tag.album().map(String::from).unwrap_or_default();
+          self.track_name = tag.title().map(String::from).unwrap_or_default();
+
+          self.lyrics = tag
+            .get_string(tag::ItemKey::Lyrics)
+            .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
+            .map(ToString::to_string)
+            .filter(|s| !s.is_empty());
+        }
+      }
+    }
+
+    // Read the file again to get just the generic `Tag` type if it failed to read above,
+    // e.g. if an AIFF file had a tag that wasn't ID3v2 type
+    if !tag_read {
+      debug!(
+        "{self} scan: Failed to read tag on first pass; ignoring ID3v2 and trying to extract primary tag"
+      );
+
+      let tag = Probe::new(&mut reader)
+        .options(*TAG_PARSE_OPTIONS)
+        .guess_file_type()
+        .inspect_err(|error| warn!("{self} scan: {error}"))?
+        .read()
+        .inspect_err(|error| warn!("{self} scan: {error}"))
+        .ok()
+        .and_then(|tf| {
+          self.duration = tf.properties().duration().as_secs_f32();
+          tf.primary_tag().or(tf.first_tag()).cloned()
+        })
+        .ok_or(anyhow!("{self} scan: Failed to read metadata tag"))?;
+
+      self.artist_name = tag.artist().map(String::from).unwrap_or_default();
+      self.album_name = tag.album().map(String::from).unwrap_or_default();
+      self.track_name = tag.title().map(String::from).unwrap_or_default();
+
+      self.lyrics = tag
+        .get_string(tag::ItemKey::Lyrics)
+        .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
+        .map(ToString::to_string)
+        .filter(|s| !s.is_empty());
+    }
+
+    self.lyrics_synchronised = self
+      .lyrics
       .as_ref()
-      .is_some_and(|l| lyrics::lyrics_are_synchronised(l));
+      .is_some_and(|l| lyrics_are_synchronised(l));
 
     let now = now();
-
-    self.track_name = track_name.unwrap_or_default();
-    self.artist_name = artist_name.unwrap_or_default();
-    self.album_name = album_name.unwrap_or_default();
-    self.duration = duration;
-    self.lyrics = lyrics;
-    self.lyrics_synchronised = lyrics_synchronised;
     self.updated_at = now;
     self.refreshed_at = now;
     self.file_modified_at = util::file_modified_at()
@@ -238,11 +305,9 @@ impl Track {
 
     // Update database
     match conn {
-      Some(conn) => self.write_to_db().conn(conn).call()?,
-      None => self.write_to_db().call()?,
+      Some(conn) => self.write_to_db().conn(conn).call(),
+      None => self.write_to_db().call(),
     }
-
-    Ok(())
   }
 
   /// Does nothing but sleeps for 500ms.
@@ -418,11 +483,13 @@ impl Track {
       && let Ok(mut mpeg_file) = mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS)
       && mpeg_file.contains_tag_type(tag::TagType::Id3v2)
     {
-      trace!("{self} write updated tag: Detected MP3 with \"{:?}\" type tag", tag::TagType::Id3v2);
+      trace!("{self} write updated tag: Detected MP3 with ID3v2 type tag");
 
-      let file_sync_lyrics = lrc_lyrics_from_id3v2(&mpeg_file).map(|l| l.contents);
+      let sample_rate = mpeg_file.properties().sample_rate();
 
       if let Some(tag) = mpeg_file.id3v2_mut() {
+        let file_sync_lyrics = lrc_lyrics_from_id3v2(tag, Some(sample_rate)).map(|l| l.contents);
+
         let file_plain_lyrics = tag
           .unsync_text()
           .filter(|frame| !frame.content.is_empty())
@@ -465,51 +532,38 @@ impl Track {
       let mut tagged_file = Probe::new(reader)
         .options(*TAG_PARSE_OPTIONS)
         .guess_file_type()
-        .inspect_err(|error| warn!("{} scan: {error}", &self))?
+        .inspect_err(|error| warn!("{self} scan: {error}"))?
         .read()
-        .inspect_err(|error| warn!("{} scan: {error}", &self))?;
+        .inspect_err(|error| warn!("{self} scan: {error}"))?;
 
       let tag = tagged_file
         .primary_tag_mut()
-        .ok_or_else(|| anyhow!("{} scan: No primary tag in file", &self))?;
+        .ok_or_else(|| anyhow!("{self} scan: No primary tag in file"))?;
 
       trace!("{self} write updated tag: Detected \"{:?}\" type tag", tag.tag_type());
 
-      let file_lyrics = tag
-        .get_string(tag::ItemKey::Lyrics)
-        .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
-        .filter(|s| !s.is_empty())
-        .map(ToString::to_string);
+      tag.remove_key(tag::ItemKey::Lyrics);
 
-      // Check that lyrics have changed before writing
-      if self.lyrics != file_lyrics {
-        tag.remove_key(tag::ItemKey::Lyrics);
+      if self.lyrics.is_some() {
+        tag.insert_text(tag::ItemKey::Lyrics, self.lyrics.clone().unwrap_or_default());
+      }
 
-        if self.lyrics.is_some() {
-          tag.insert_text(tag::ItemKey::Lyrics, self.lyrics.clone().unwrap_or_default());
-        }
+      if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
+        debug!("{self} write updated tag: Lyrics tag updated in file");
 
-        if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
-          debug!("{} write updated tag: Lyrics tag updated in file", &self);
-
-          // Update track modified timestamp in DB
-          self.file_modified_at = util::file_modified_at()
-            .path(&self.path())
-            .file(&file)
-            .call();
-        } else {
-          debug!("{} write updated tag: Skipping (lyrics tag has not changed)", &self);
-        }
+        // Update track modified timestamp in DB
+        self.file_modified_at = util::file_modified_at()
+          .path(&self.path())
+          .file(&file)
+          .call();
       }
     }
 
     // Update database
     match conn {
-      Some(conn) => self.write_to_db().conn(conn).call()?,
-      None => self.write_to_db().call()?,
+      Some(conn) => self.write_to_db().conn(conn).call(),
+      None => self.write_to_db().call(),
     }
-
-    Ok(())
   }
 
   /// Delete track row in database.

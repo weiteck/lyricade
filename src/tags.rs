@@ -1,11 +1,8 @@
 use std::{borrow::Cow, fmt::Write};
 
-use lofty::{
-  file::AudioFile,
-  id3::v2::{
-    BinaryFrame, Frame, FrameId, Id3v2Tag, Id3v2Version, SyncTextContentType,
-    SynchronizedTextFrame, TimestampFormat, UnsynchronizedTextFrame,
-  },
+use lofty::id3::v2::{
+  BinaryFrame, Frame, FrameId, Id3v2Tag, Id3v2Version, SyncTextContentType, SynchronizedTextFrame,
+  TimestampFormat, UnsynchronizedTextFrame,
 };
 use tracing::{debug, trace, warn};
 
@@ -18,20 +15,26 @@ const ID3V2_SYLT_FRAME_ID: FrameId<'static> = FrameId::Valid(Cow::Borrowed("SYLT
 /// Convert ID3v2 tag SYLT frame (synchronous text) to LRC-formatted lyrics.
 #[allow(clippy::cast_possible_truncation)]
 #[must_use]
-pub fn lrc_lyrics_from_id3v2(file: &lofty::mpeg::MpegFile) -> Option<Lyrics> {
-  if let Some(tag) = file.id3v2()
-    && let Some(Frame::Binary(frame)) = tag.get(&ID3V2_SYLT_FRAME_ID)
+pub fn lrc_lyrics_from_id3v2(tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>) -> Option<Lyrics> {
+  if let Some(Frame::Binary(frame)) = tag.get(&ID3V2_SYLT_FRAME_ID)
     && let Ok(sylt) = SynchronizedTextFrame::parse(frame.as_bytes().as_slice(), frame.flags())
     && sylt.content_type == SyncTextContentType::Lyrics
   {
-    // Convert MPEG frame index timestamps to milliseconds, if required
     let lines = match sylt.timestamp_format {
       TimestampFormat::MS => sylt.content,
+
+      // This is only ever likely for MP3 files
       TimestampFormat::MPEG => {
         trace!("Converting MPEG frame indices to millisecond timestamps");
 
-        let sample_rate = file.properties().sample_rate();
+        if mpeg_sample_rate.is_none() {
+          warn!(
+            "No sample rate provided while decoding ID3v2 SYLT frame with MPEG frame indices timestamps (using default: 44,100)"
+          );
+        }
+        let sample_rate = mpeg_sample_rate.unwrap_or(44_100);
         let samples_per_frame = 1_152; // assuming MPEG-1 Layer III standard
+
         sylt
           .content
           .into_iter()
