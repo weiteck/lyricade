@@ -67,8 +67,8 @@ pub struct Settings {
 
   pub get_lyrics_menu_lyrics_type: get_lyrics_menu::Type,
   pub get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
-  pub get_lyrics_menu_filtered: bool,
-  pub get_lyrics_menu_selected: bool,
+  pub get_lyrics_menu_target_visible: bool,
+  pub get_lyrics_menu_target_selected: bool,
 
   // GUI state
   pub window_width: i32,
@@ -158,8 +158,8 @@ impl Default for Settings {
 
       get_lyrics_menu_lyrics_type: get_lyrics_menu::Type::default(),
       get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
-      get_lyrics_menu_filtered: false,
-      get_lyrics_menu_selected: false,
+      get_lyrics_menu_target_visible: false,
+      get_lyrics_menu_target_selected: false,
 
       window_width: 1000,
       window_height: 600,

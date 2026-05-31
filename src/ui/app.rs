@@ -875,8 +875,8 @@ impl AsyncComponent for AppModel {
         if let Ok(mut guard) = SETTINGS.write() {
           guard.get_lyrics_menu_lyrics_type = state.lyrics_type;
           guard.get_lyrics_menu_last_checked = state.last_checked;
-          guard.get_lyrics_menu_filtered = state.filtered;
-          guard.get_lyrics_menu_selected = state.selected;
+          guard.get_lyrics_menu_target_visible = state.visible;
+          guard.get_lyrics_menu_target_selected = state.selected;
         }
 
         self.get_lyrics_menu_state = state;
@@ -916,7 +916,7 @@ impl AsyncComponent for AppModel {
           .tracks
           .iter()
           .filter(|track| {
-            !self.get_lyrics_menu_state.filtered || self.filtered_track_ids.contains(&track.id)
+            !self.get_lyrics_menu_state.visible || self.filtered_track_ids.contains(&track.id)
           })
           .filter(|track| {
             !self.get_lyrics_menu_state.selected || self.selected_track_ids.contains(&track.id)
