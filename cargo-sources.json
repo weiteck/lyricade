@@ -171,6 +171,19 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/bstr/bstr-1.12.1.crate",
+        "sha256": "63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab",
+        "dest": "cargo/vendor/bstr-1.12.1"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"63044e1ae8e69f3b5a92c736ca6269b8d12fa7efe39bf34ddb06d102cf0e2cab\", \"files\": {}}",
+        "dest": "cargo/vendor/bstr-1.12.1",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/bumpalo/bumpalo-3.20.2.crate",
         "sha256": "5d20789868f4b01b2f2caec9f5c4e0213b41e3e5702a50157d699ae31ced2fcb",
         "dest": "cargo/vendor/bumpalo-3.20.2"

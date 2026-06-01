@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use bstr::ByteSlice;
 use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
@@ -289,11 +290,30 @@ impl SimpleComponent for TracksTableModel {
         }
 
         if let Some(query) = query {
-          for token in query.to_lowercase().split_whitespace().map(String::from) {
+          let segments = query
+            .to_lowercase()
+            .split_whitespace()
+            .map(String::from)
+            .collect::<Vec<_>>();
+
+          for segment in segments {
             self.table.add_filter(move |track| {
-              track.artist_name.to_lowercase().contains(&token)
-                || track.album_name.to_lowercase().contains(&token)
-                || track.track_name.to_lowercase().contains(&token)
+              track.path.as_bytes().to_lowercase().contains_str(&segment)
+                || track
+                  .artist_name
+                  .as_bytes()
+                  .to_lowercase()
+                  .contains_str(&segment)
+                || track
+                  .album_name
+                  .as_bytes()
+                  .to_lowercase()
+                  .contains_str(&segment)
+                || track
+                  .track_name
+                  .as_bytes()
+                  .to_lowercase()
+                  .contains_str(&segment)
             });
           }
         }

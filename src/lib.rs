@@ -14,7 +14,11 @@ use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use libsqlite3_sys::SQLITE_VERSION;
 use tracing::{debug, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::{EnvFilter, fmt, prelude::*};
+use tracing_subscriber::{
+  EnvFilter,
+  fmt::{self, format::FmtSpan},
+  prelude::*,
+};
 
 use crate::{
   lrclib::LrcLibClient,
@@ -131,7 +135,11 @@ fn init_logging() -> WorkerGuard {
 
   tracing_subscriber::registry()
     .with(filter)
-    .with(fmt::layer().with_ansi(true)) // console logs
+    .with(
+      fmt::layer()
+        .with_span_events(FmtSpan::CLOSE)
+        .with_ansi(true),
+    ) // console logs
     .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
     .init();
 
