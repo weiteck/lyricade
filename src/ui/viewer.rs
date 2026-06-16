@@ -8,17 +8,17 @@ use crate::{
   ui::viewer::{line::ViewLyricsLine, tag::ViewLyricsLrcTag},
 };
 
-pub mod line;
-pub mod tag;
+pub(crate) mod line;
+pub(crate) mod tag;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ViewLyricsSource {
+pub(crate) enum ViewLyricsSource {
   Tag,
   Lrc,
   Txt,
 }
 
-pub struct ViewLyricsModel {
+pub(crate) struct ViewLyricsModel {
   track: Track,
   lyrics: String,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
@@ -27,12 +27,12 @@ pub struct ViewLyricsModel {
 }
 
 #[derive(Debug)]
-pub enum ViewLyricsMsg {
+pub(crate) enum ViewLyricsMsg {
   SetViewingRaw(bool),
 }
 
 #[derive(Debug)]
-pub enum ViewLyricsOutput {
+pub(crate) enum ViewLyricsOutput {
   Close,
 }
 

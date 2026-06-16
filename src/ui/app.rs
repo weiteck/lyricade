@@ -27,7 +27,7 @@ use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::{Result, library::Library, track::Track};
 use crate::{SETTINGS, init_app, util};
 
-pub mod get_lyrics_menu;
+pub(crate) mod get_lyrics_menu;
 mod main_menu;
 mod track_stats;
 
@@ -1810,7 +1810,7 @@ impl AppModel {
   }
 }
 
-pub fn start() {
+pub(crate) fn start() {
   let app = RelmApp::new(APP_ID);
 
   // Custom icons

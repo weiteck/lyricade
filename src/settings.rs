@@ -13,7 +13,7 @@ use crate::{
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
   LazyLock::new(|| ProjectDirs::from("io", "github.weiteck", APP_NAME));
 
-pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
+pub(crate) static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {
     Utf8PathBuf::from("./dev-data") // use project dir
   } else {
@@ -27,15 +27,15 @@ pub static APP_DATA_DIR: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   }
 });
 
-pub const APP_ID: &str = "io.github.weiteck.Lyricade";
+pub(crate) const APP_ID: &str = "io.github.weiteck.Lyricade";
 
 /// Application name used in paths, etc.
-pub const APP_NAME: &str = "lyricade";
+pub(crate) const APP_NAME: &str = "lyricade";
 
 /// Application name presented in UI.
-pub const APP_NAME_PRETTY: &str = "Lyricade";
+pub(crate) const APP_NAME_PRETTY: &str = "Lyricade";
 
-pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
+pub(crate) static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
   if cfg!(debug_assertions) {
     APP_DATA_DIR.join("db.dev.sqlite3") // use project dir
   } else {
@@ -44,7 +44,7 @@ pub static APP_DB_FILE_PATH: LazyLock<Utf8PathBuf> = LazyLock::new(|| {
 });
 
 /// Maximum concurrent HTTP connections.
-pub const CONNECTION_LIMIT: usize = 20;
+pub(crate) const CONNECTION_LIMIT: usize = 20;
 
 #[expect(clippy::struct_excessive_bools)]
 #[derive(
@@ -52,36 +52,36 @@ pub const CONNECTION_LIMIT: usize = 20;
 )]
 #[diesel(table_name = crate::schema::settings)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct Settings {
-  pub id: i32,
+pub(crate) struct Settings {
+  pub(crate) id: i32,
 
   /// Prefer full datetime or humanised representation (e.g. "5 minutes ago").
-  pub prefer_accurate_timestamps: bool,
-  pub scan_new_files_only: bool,
-  pub plain_lyrics_in_id3v2_uslt_frame: bool,
+  pub(crate) prefer_accurate_timestamps: bool,
+  pub(crate) scan_new_files_only: bool,
+  pub(crate) plain_lyrics_in_id3v2_uslt_frame: bool,
 
-  pub prefer_lyrics_type: LyricsType,
-  pub ignore_plain_lyrics_on_fetch: bool,
-  pub update_lyrics_tag_on_fetch: bool,
-  pub save_sidecar_file_on_fetch: bool,
+  pub(crate) prefer_lyrics_type: LyricsType,
+  pub(crate) ignore_plain_lyrics_on_fetch: bool,
+  pub(crate) update_lyrics_tag_on_fetch: bool,
+  pub(crate) save_sidecar_file_on_fetch: bool,
 
-  pub get_lyrics_menu_lyrics_type: get_lyrics_menu::Type,
-  pub get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
-  pub get_lyrics_menu_target_visible: bool,
-  pub get_lyrics_menu_target_selected: bool,
+  pub(crate) get_lyrics_menu_lyrics_type: get_lyrics_menu::Type,
+  pub(crate) get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
+  pub(crate) get_lyrics_menu_target_visible: bool,
+  pub(crate) get_lyrics_menu_target_selected: bool,
 
   // GUI state
-  pub window_width: i32,
-  pub window_height: i32,
-  pub sidebar_pinned: bool,
+  pub(crate) window_width: i32,
+  pub(crate) window_height: i32,
+  pub(crate) sidebar_pinned: bool,
 
   #[diesel(skip_update)]
-  pub added_at: NaiveDateTime,
-  pub updated_at: NaiveDateTime,
+  pub(crate) added_at: NaiveDateTime,
+  pub(crate) updated_at: NaiveDateTime,
 }
 
 impl Settings {
-  pub fn load() -> Result<Self> {
+  pub(crate) fn load() -> Result<Self> {
     Self::create_app_dirs_if_not_exist()?;
 
     let mut conn = DB_POOL.get()?;
@@ -113,7 +113,7 @@ impl Settings {
     Ok(settings)
   }
 
-  pub fn save(&mut self) -> Result<()> {
+  pub(crate) fn save(&mut self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     self.updated_at = now();
@@ -134,7 +134,7 @@ impl Settings {
   }
 
   /// Create data directory.
-  pub fn create_app_dirs_if_not_exist() -> Result<()> {
+  pub(crate) fn create_app_dirs_if_not_exist() -> Result<()> {
     if !&APP_DATA_DIR.exists() {
       fs::create_dir(&*APP_DATA_DIR)?;
     }

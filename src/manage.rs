@@ -12,27 +12,27 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct ManageLyricsOptions {
-  pub tags: TagOptions,
-  pub sidecars: SidecarOptions,
+pub(crate) struct ManageLyricsOptions {
+  pub(crate) tags: TagOptions,
+  pub(crate) sidecars: SidecarOptions,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct TagOptions {
-  pub delete: ManageLyricsTarget,
-  pub copy: ManageLyricsTarget,
-  pub convert_to_plain: bool,
+pub(crate) struct TagOptions {
+  pub(crate) delete: ManageLyricsTarget,
+  pub(crate) copy: ManageLyricsTarget,
+  pub(crate) convert_to_plain: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct SidecarOptions {
-  pub delete: ManageLyricsTarget,
-  pub copy: ManageLyricsTarget,
-  pub convert_to_plain: bool,
+pub(crate) struct SidecarOptions {
+  pub(crate) delete: ManageLyricsTarget,
+  pub(crate) copy: ManageLyricsTarget,
+  pub(crate) convert_to_plain: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum ManageLyricsTarget {
+pub(crate) enum ManageLyricsTarget {
   #[default]
   None = 0,
   Plain = 1,
@@ -61,8 +61,8 @@ enum ManageLyricsResult {
 }
 
 impl ManageLyricsOptions {
-  pub fn apply<F>(
-    &self,
+  pub(crate) fn apply<F>(
+    self,
     tracks: Vec<Track>,
     on_progress: F,
     cancel_on_close: &mut oneshot::Receiver<()>,

@@ -25,10 +25,10 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct LrcLibLyricsResponse {
-  pub instrumental: bool,
-  pub plain_lyrics: Option<Lyrics>,
-  pub synced_lyrics: Option<Lyrics>,
+pub(crate) struct LrcLibLyricsResponse {
+  pub(crate) instrumental: bool,
+  pub(crate) plain_lyrics: Option<Lyrics>,
+  pub(crate) synced_lyrics: Option<Lyrics>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -36,12 +36,13 @@ pub struct LrcLibLyricsResponse {
 enum ApiResponse {
   #[serde(rename_all = "camelCase")]
   Success {
-    // id: i64,
-    // name: Option<String>,
-    // track_name: Option<String>,
-    // artist_name: Option<String>,
-    // album_name: Option<String>,
-    // duration: Option<f64>,
+    // Unused fields:
+    //   id: i64,
+    //   name: Option<String>,
+    //   track_name: Option<String>,
+    //   artist_name: Option<String>,
+    //   album_name: Option<String>,
+    //   duration: Option<f64>,
     instrumental: bool,
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
@@ -54,7 +55,7 @@ enum ApiResponse {
 }
 
 #[derive(Debug, Clone)]
-pub struct LrcLibClient {
+pub(crate) struct LrcLibClient {
   http_client: reqwest::Client,
   limiter: Arc<leaky_bucket::RateLimiter>,
   semaphore: Arc<tokio::sync::Semaphore>,
@@ -81,7 +82,7 @@ impl Default for LrcLibClient {
 
 impl LrcLibClient {
   #[must_use]
-  pub fn new() -> Self {
+  pub(crate) fn new() -> Self {
     let user_agent = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
 
     let http_client = match reqwest::Client::builder()
@@ -118,7 +119,7 @@ impl LrcLibClient {
     lrclib_client
   }
 
-  pub async fn lyrics_from_track_signature(
+  pub(crate) async fn lyrics_from_track_signature(
     &self,
     track: &mut Track,
   ) -> Result<LrcLibLyricsResponse> {
@@ -222,11 +223,6 @@ impl LrcLibClient {
     );
     error!("{error}");
     Err(anyhow!("{error}"))
-  }
-
-  #[must_use]
-  pub fn current_req_per_sec(&self) -> usize {
-    self.requests_per_second.load(atomic::Ordering::Relaxed)
   }
 
   /// Spawn background worker to log HTTP request rate.

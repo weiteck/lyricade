@@ -15,7 +15,10 @@ const ID3V2_SYLT_FRAME_ID: FrameId<'static> = FrameId::Valid(Cow::Borrowed("SYLT
 /// Convert ID3v2 tag SYLT frame (synchronous text) to LRC-formatted lyrics.
 #[allow(clippy::cast_possible_truncation)]
 #[must_use]
-pub fn lrc_lyrics_from_id3v2(tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>) -> Option<Lyrics> {
+pub(crate) fn lrc_lyrics_from_id3v2(
+  tag: &Id3v2Tag,
+  mpeg_sample_rate: Option<u32>,
+) -> Option<Lyrics> {
   if let Some(Frame::Binary(frame)) = tag.get(&ID3V2_SYLT_FRAME_ID)
     && let Ok(sylt) = SynchronizedTextFrame::parse(frame.as_bytes().as_slice(), frame.flags())
     && sylt.content_type == SyncTextContentType::Lyrics
@@ -79,7 +82,7 @@ pub fn lrc_lyrics_from_id3v2(tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>) -> O
 /// optionally converts to plain lyrics.
 ///
 /// If `lyrics` contains an empty `String`, both USLT and SYLT frames are removed.
-pub fn insert_lyrics_into_id3v2(
+pub(crate) fn insert_lyrics_into_id3v2(
   lyrics: Lyrics,
   plain_lyrics_in_uslt_frame: bool,
   tag: &mut Id3v2Tag,

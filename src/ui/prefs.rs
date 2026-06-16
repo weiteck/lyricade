@@ -23,7 +23,7 @@ use crate::{
 
 mod library_row;
 
-pub struct PrefsModel {
+pub(crate) struct PrefsModel {
   root: PreferencesWindow,
 
   libraries: HashSet<Library>,
@@ -40,7 +40,7 @@ pub struct PrefsModel {
 }
 
 #[derive(Debug)]
-pub enum PrefsMsg {
+pub(crate) enum PrefsMsg {
   DefaultSettings,
   RevertSettings,
   SaveSettings,
@@ -62,12 +62,12 @@ pub enum PrefsMsg {
 }
 
 #[derive(Debug)]
-pub enum PrefsOutput {
+pub(crate) enum PrefsOutput {
   Close, // request parent window to close Prefs window
 }
 
 #[derive(Debug)]
-pub enum ExposedSetting {
+pub(crate) enum ExposedSetting {
   PreferLyricsType(LyricsType),
   PreferIsoTimestamps(bool),
 
@@ -78,13 +78,6 @@ pub enum ExposedSetting {
 
   // Advanced settings
   PlainLyricsUsltFrame(bool),
-}
-
-#[derive(Debug)]
-pub enum HandleSidecarSetting {
-  DoNothing,
-  KeepOne,
-  Delete,
 }
 
 #[relm4::component(pub)]

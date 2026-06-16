@@ -12,17 +12,18 @@ const GAP_TO_PREV_GRANULARITY: f64 = 4.0;
 /// and the normalised relative gap to the previous line of lyrics. A `gap_to_prev
 /// == 0.5` would mean this gap is about 50% that of the longest gap in all the lyrics.
 #[derive(Debug, Clone)]
-pub struct LyricsLine {
-  pub lyrics_type: LyricsType,
-  pub contents: String,
-  pub timestamp: Option<String>,
-  pub gap_to_prev: Option<f64>,
+pub(crate) struct LyricsLine {
+  #[allow(unused)]
+  pub(crate) lyrics_type: LyricsType,
+  pub(crate) contents: String,
+  pub(crate) timestamp: Option<String>,
+  pub(crate) gap_to_prev: Option<f64>,
 }
 
 #[allow(clippy::cast_possible_truncation)]
 impl LyricsLine {
   #[must_use]
-  pub fn from_lyrics(lyrics: &str) -> (Vec<LyricsLine>, Option<BTreeSet<LrcTag>>) {
+  pub(crate) fn from_lyrics(lyrics: &str) -> (Vec<LyricsLine>, Option<BTreeSet<LrcTag>>) {
     let mut line_count = 0_usize;
     let mut prev_ts_secs = 0.0;
     let mut longest_gap_secs = 0.0;
@@ -114,11 +115,7 @@ impl LyricsLine {
           LyricsLine {
             lyrics_type: LyricsType::Sync,
             contents: contents.to_string(),
-            timestamp: Some(format!(
-              "{}:{:02}",
-              (ts_secs as usize / 60),
-              ts_secs as usize % 60
-            )),
+            timestamp: Some(format!("{}:{:02}", (ts_secs as usize / 60), ts_secs as usize % 60)),
             gap_to_prev: Some(gap_to_prev),
           }
         })

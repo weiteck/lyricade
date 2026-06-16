@@ -5,14 +5,14 @@ use tracing::{debug, trace};
 
 use crate::manage::{ManageLyricsOptions, ManageLyricsTarget};
 
-pub struct ManageLyricsModel {
+pub(crate) struct ManageLyricsModel {
   state: ManageLyricsOptions,
   default_state: ManageLyricsOptions,
   confirm_dialog: Controller<Alert>,
 }
 
 #[derive(Debug)]
-pub enum ManageLyricsMsg {
+pub(crate) enum ManageLyricsMsg {
   UpdateState(ExposedSetting),
   ShowConfirmDialog,
   Confirm,
@@ -21,13 +21,13 @@ pub enum ManageLyricsMsg {
 }
 
 #[derive(Debug)]
-pub enum ManageLyricsOutput {
+pub(crate) enum ManageLyricsOutput {
   Close,
   Confirm(ManageLyricsOptions),
 }
 
 #[derive(Debug)]
-pub enum ExposedSetting {
+pub(crate) enum ExposedSetting {
   TagsDelete(ManageLyricsTarget),
   TagsCopy(ManageLyricsTarget),
   TagsConvertToPlain(bool),

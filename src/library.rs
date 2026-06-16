@@ -21,10 +21,9 @@ use walkdir::WalkDir;
 
 use crate::{
   AUDIO_FILE_EXTENSIONS, DB_POOL, Result, SETTINGS,
-  lyrics::LyricsType,
   schema::{libraries, tracks},
   settings::Settings,
-  track::{FetchLyricsOptions, NewTrack, Track},
+  track::{NewTrack, Track},
   util::{self, now, reporter::IntervalReporter},
 };
 
@@ -35,12 +34,12 @@ use crate::{
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct Library {
-  pub id: i32,
-  pub path: String,
-  pub name: Option<String>,
-  pub added_at: NaiveDateTime,
-  pub updated_at: NaiveDateTime,
+pub(crate) struct Library {
+  pub(crate) id: i32,
+  pub(crate) path: String,
+  pub(crate) name: Option<String>,
+  pub(crate) added_at: NaiveDateTime,
+  pub(crate) updated_at: NaiveDateTime,
 }
 
 impl PartialEq for Library {
@@ -59,30 +58,16 @@ impl Hash for Library {
 #[derive(Debug, Default, Clone, Insertable)]
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct NewLibrary {
-  pub path: String,
-  pub name: Option<String>,
-  pub added_at: NaiveDateTime,
-  pub updated_at: NaiveDateTime,
-}
-
-#[derive(Debug, Default, Clone, Copy)]
-pub struct RefreshOptions {
-  pub scan_new_only: bool,
-  // pub scan_options: track::CleanUpSidecarFilesOptions,
-}
-
-impl From<&Settings> for RefreshOptions {
-  fn from(value: &Settings) -> Self {
-    RefreshOptions {
-      scan_new_only: value.scan_new_files_only,
-    }
-  }
+pub(crate) struct NewLibrary {
+  pub(crate) path: String,
+  pub(crate) name: Option<String>,
+  pub(crate) added_at: NaiveDateTime,
+  pub(crate) updated_at: NaiveDateTime,
 }
 
 #[bon]
 impl Library {
-  pub fn add(path: &Utf8Path) -> Result<Library> {
+  pub(crate) fn add(path: &Utf8Path) -> Result<Library> {
     let mut conn = DB_POOL.get()?;
 
     // Check if path is a directory
@@ -141,22 +126,8 @@ impl Library {
     Ok(inserted_library)
   }
 
-  /// Get a library by its ID.
-  pub fn get(id: i32) -> Result<Library> {
-    let mut conn = DB_POOL.get()?;
-
-    let lib = libraries::table
-      .find(id)
-      .first::<Library>(&mut conn)
-      .inspect_err(|error| {
-        error!("Database error while trying to get Library with ID {id}: {error}");
-      })?;
-
-    Ok(lib)
-  }
-
   /// Get all libraries.
-  pub fn get_all() -> Result<Vec<Library>> {
+  pub(crate) fn get_all() -> Result<Vec<Library>> {
     let mut conn = DB_POOL.get()?;
 
     let libs = libraries::table
@@ -167,7 +138,7 @@ impl Library {
 
   #[builder]
   /// Read metadata for new and (optionally) existing files in `Library` path and update database.
-  pub fn refresh<F>(
+  pub(crate) fn refresh<F>(
     &self,
     on_progress: F,
     cancel_on_close: &mut oneshot::Receiver<()>,
@@ -374,65 +345,9 @@ impl Library {
     Ok(rows)
   }
 
-  #[builder]
-  /// Fetch lyrics for tracks in this library, if track lyrics are missing or do not meet the
-  /// requirements of `FetchLyricsOptions`.
-  pub async fn fetch_lyrics(&self, options: Option<FetchLyricsOptions>) -> Result<usize> {
-    let options = {
-      let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
-      options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
-    };
-    info!("{} fetch lyrics: Started with options: {:?}", &self, options);
-
-    let start = Instant::now();
-    let mut attempted_fetches = 0_usize;
-
-    let tracks = self.tracks().call()?;
-
-    // Fetch if `Track` lyrics state does not match target state in `FetchLyricsOptions`
-    for mut track in tracks {
-      if (options.update_lyrics_tag && track.lyrics.is_none()
-        || ((!track.lyrics_synchronised && options.prefer_lyrics_type == LyricsType::Sync)
-          || (track.lyrics_synchronised && options.prefer_lyrics_type == LyricsType::Plain))
-        || options.save_sidecar_file
-          && ((track.lyrics_sidecar_lrc_file.is_none()
-            && options.prefer_lyrics_type == LyricsType::Sync)
-            || (track.lyrics_sidecar_txt_file.is_none()
-              && options.prefer_lyrics_type == LyricsType::Plain)))
-        && track.fetch_lyrics().options(options).call().await.is_ok()
-      {
-        attempted_fetches += 1;
-      }
-    }
-
-    info!(
-      "{} fetch lyrics: Completed in {:.1}s: Tried to fetch lyrics for {} tracks",
-      &self,
-      start.elapsed().as_secs_f32(),
-      attempted_fetches
-    );
-
-    Ok(1)
-  }
-
-  /// Get a `Track` by its ID.
-  #[builder]
-  pub fn track(&self, id: i32, conn: Option<&mut SqliteConnection>) -> Result<Track> {
-    let query = tracks::table
-      .filter(tracks::library_id.eq(&self.id))
-      .find(id);
-
-    if let Some(conn) = conn {
-      Ok(query.first::<Track>(conn)?)
-    } else {
-      let mut conn = DB_POOL.get()?;
-      Ok(query.first::<Track>(&mut conn)?)
-    }
-  }
-
   /// Get all `Track`s.
   #[builder]
-  pub fn tracks(
+  pub(crate) fn tracks(
     &self,
     conn: Option<&mut PooledConnection<ConnectionManager<SqliteConnection>>>,
   ) -> Result<Vec<Track>> {
@@ -447,7 +362,7 @@ impl Library {
   }
 
   /// Remove a library path and all `Track`s belonging to it.
-  pub fn remove(&self) -> Result<()> {
+  pub(crate) fn remove(&self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     // Delete the library
@@ -460,24 +375,24 @@ impl Library {
 
   /// Get the `Library`'s name. Returns the `default_name` if none is set.
   #[must_use]
-  pub fn name(&self) -> String {
+  pub(crate) fn name(&self) -> String {
     self.name.clone().unwrap_or_else(|| self.default_name())
   }
 
   /// The `Library`'s directory name.
   #[must_use]
-  pub fn default_name(&self) -> String {
+  pub(crate) fn default_name(&self) -> String {
     self.path().file_name().unwrap_or("(invalid)").into()
   }
 
   /// Get the `Library`'s path.
   #[must_use]
-  pub fn path(&self) -> Utf8PathBuf {
+  pub(crate) fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
 
   /// Set the `Library`'s path.
-  pub fn set_path(&mut self, new_path: &Utf8Path) -> Result<()> {
+  pub(crate) fn set_path(&mut self, new_path: &Utf8Path) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     let existing_libraries = libraries::table.load::<Library>(&mut conn)?;
@@ -521,7 +436,7 @@ impl Library {
   }
 
   /// All audio file paths within this `Library`'s path.
-  pub fn file_paths(&self) -> HashSet<Utf8PathBuf> {
+  pub(crate) fn file_paths(&self) -> HashSet<Utf8PathBuf> {
     WalkDir::new(&self.path)
       .into_iter()
       .filter_map(core::result::Result::ok)
@@ -537,22 +452,9 @@ impl Library {
       .collect::<HashSet<_>>()
   }
 
-  /// The number of `Track`s in this library.
-  pub fn size(&self) -> Result<usize> {
-    let mut conn = DB_POOL.get()?;
-
-    let size = tracks::table
-      .filter(tracks::library_id.eq(&self.id))
-      .count()
-      .first::<i64>(&mut conn)?;
-
-    #[expect(clippy::cast_possible_truncation)]
-    Ok(size as usize)
-  }
-
   /// Insert or update library in database.
   #[builder]
-  pub fn write_to_db(&mut self) -> Result<()> {
+  pub(crate) fn write_to_db(&mut self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     self.updated_at = now();

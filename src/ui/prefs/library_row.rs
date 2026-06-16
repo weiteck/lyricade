@@ -6,16 +6,16 @@ use tracing::{debug, trace};
 use crate::library::Library;
 
 pub(super) struct LibraryRow {
-  pub index: DynamicIndex,
-  pub library: Library,
+  pub(crate) index: DynamicIndex,
+  pub(crate) library: Library,
 
-  pub name_initial: Option<String>,
-  pub path_initial: String,
+  pub(crate) name_initial: Option<String>,
+  pub(crate) path_initial: String,
 
-  pub is_modified: bool,
-  pub name_too_long: bool,
+  pub(crate) is_modified: bool,
+  pub(crate) name_too_long: bool,
 
-  pub sender: FactorySender<LibraryRow>,
+  pub(crate) sender: FactorySender<LibraryRow>,
 }
 
 #[derive(Debug)]
@@ -147,11 +147,7 @@ impl FactoryComponent for LibraryRow {
     _parent: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
     sender: FactorySender<Self>,
   ) -> Self::Widgets {
-    trace!(
-      "Building LibraryRow for {} at index {}",
-      &self.library,
-      &index.current_index()
-    );
+    trace!("Building LibraryRow for {} at index {}", &self.library, &index.current_index());
 
     let widgets = view_output!();
     widgets
@@ -165,10 +161,7 @@ impl FactoryComponent for LibraryRow {
   ) {
     match message {
       LibraryRowMsg::UpdateName(name) => {
-        debug!(
-          "Called UpdateName to \"{}\" on LibraryRow for {}",
-          &name, self.library
-        );
+        debug!("Called UpdateName to \"{}\" on LibraryRow for {}", &name, self.library);
 
         // Limit length of name
         if name.len() > 60 {
@@ -206,10 +199,7 @@ impl FactoryComponent for LibraryRow {
       }
 
       LibraryRowMsg::ValidateNameEntry => {
-        debug!(
-          "Called NameEntryValidate on LibraryRow for {}",
-          self.library
-        );
+        debug!("Called NameEntryValidate on LibraryRow for {}", self.library);
 
         // Use default library name if set to empty
         if widgets.name_entry_row.text().is_empty() {
@@ -220,10 +210,7 @@ impl FactoryComponent for LibraryRow {
       }
 
       LibraryRowMsg::FileDialogRequest => {
-        debug!(
-          "Called FileDialogRequest on LibraryRow for {}",
-          self.library
-        );
+        debug!("Called FileDialogRequest on LibraryRow for {}", self.library);
 
         sender
           .output(LibraryRowOutput::FileDialogRequest(self.index.clone()))
@@ -231,10 +218,7 @@ impl FactoryComponent for LibraryRow {
       }
 
       LibraryRowMsg::UpdatePath(path) => {
-        debug!(
-          "Called UpdatePath to \"{}\" on LibraryRow for {}",
-          &path, self.library
-        );
+        debug!("Called UpdatePath to \"{}\" on LibraryRow for {}", &path, self.library);
 
         if let Err(error) = self.library.set_path(&path) {
           sender

@@ -369,7 +369,7 @@ impl GetLyricsMenuState {
   Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub enum Type {
+pub(crate) enum Type {
   NoLyrics,
   #[default]
   NotSync,
@@ -379,7 +379,7 @@ pub enum Type {
   Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub enum Checked {
+pub(crate) enum Checked {
   Never,
   Months(u32),
   Year,

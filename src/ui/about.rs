@@ -6,10 +6,10 @@ use tracing::trace;
 
 use crate::settings::{APP_NAME, APP_NAME_PRETTY};
 
-pub struct AboutModel;
+pub(crate) struct AboutModel;
 
 #[derive(Debug)]
-pub enum AboutOutput {
+pub(crate) enum AboutOutput {
   Close,
 }
 

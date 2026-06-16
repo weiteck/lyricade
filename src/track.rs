@@ -46,28 +46,29 @@ static TAG_WRITE_OPTIONS: LazyLock<WriteOptions> = LazyLock::new(|| {
 #[diesel(table_name = crate::schema::tracks)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct Track {
+pub(crate) struct Track {
   #[diesel(skip_update)]
-  pub id: i32,
+  pub(crate) id: i32,
   #[diesel(skip_update)]
-  pub library_id: i32,
+  pub(crate) library_id: i32,
   #[diesel(skip_update)]
-  pub path: String,
-  pub track_name: String,
-  pub artist_name: String,
-  pub album_name: String,
-  pub duration: f32,
-  pub instrumental: Option<bool>,
-  pub lyrics: Option<String>,
-  pub lyrics_synchronised: bool,
-  pub lyrics_sidecar_lrc_file: Option<String>,
-  pub lyrics_sidecar_txt_file: Option<String>,
+  pub(crate) path: String,
+  #[allow(clippy::struct_field_names)]
+  pub(crate) track_name: String,
+  pub(crate) artist_name: String,
+  pub(crate) album_name: String,
+  pub(crate) duration: f32,
+  pub(crate) instrumental: Option<bool>,
+  pub(crate) lyrics: Option<String>,
+  pub(crate) lyrics_synchronised: bool,
+  pub(crate) lyrics_sidecar_lrc_file: Option<String>,
+  pub(crate) lyrics_sidecar_txt_file: Option<String>,
   #[diesel(skip_update)]
-  pub added_at: NaiveDateTime,
-  pub updated_at: NaiveDateTime,
-  pub refreshed_at: NaiveDateTime,
-  pub last_api_check_at: Option<NaiveDateTime>,
-  pub file_modified_at: NaiveDateTime,
+  pub(crate) added_at: NaiveDateTime,
+  pub(crate) updated_at: NaiveDateTime,
+  pub(crate) refreshed_at: NaiveDateTime,
+  pub(crate) last_api_check_at: Option<NaiveDateTime>,
+  pub(crate) file_modified_at: NaiveDateTime,
 }
 
 impl Hash for Track {
@@ -93,34 +94,34 @@ impl Display for Track {
 #[derive(Debug, Default, Clone, Insertable)]
 #[diesel(table_name = crate::schema::tracks)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub struct NewTrack {
-  pub library_id: i32,
-  pub path: String,
-  pub track_name: String,
-  pub artist_name: String,
-  pub album_name: String,
-  pub duration: f32,
-  pub instrumental: Option<bool>,
-  pub lyrics: Option<String>,
-  pub lyrics_synchronised: bool,
-  pub lyrics_sidecar_lrc_file: Option<String>,
-  pub lyrics_sidecar_txt_file: Option<String>,
-  pub added_at: NaiveDateTime,
-  pub updated_at: NaiveDateTime,
-  pub refreshed_at: NaiveDateTime,
-  pub last_api_check_at: Option<NaiveDateTime>,
-  pub file_modified_at: NaiveDateTime,
+pub(crate) struct NewTrack {
+  pub(crate) library_id: i32,
+  pub(crate) path: String,
+  pub(crate) track_name: String,
+  pub(crate) artist_name: String,
+  pub(crate) album_name: String,
+  pub(crate) duration: f32,
+  pub(crate) instrumental: Option<bool>,
+  pub(crate) lyrics: Option<String>,
+  pub(crate) lyrics_synchronised: bool,
+  pub(crate) lyrics_sidecar_lrc_file: Option<String>,
+  pub(crate) lyrics_sidecar_txt_file: Option<String>,
+  pub(crate) added_at: NaiveDateTime,
+  pub(crate) updated_at: NaiveDateTime,
+  pub(crate) refreshed_at: NaiveDateTime,
+  pub(crate) last_api_check_at: Option<NaiveDateTime>,
+  pub(crate) file_modified_at: NaiveDateTime,
 }
 
 #[bon]
 impl Track {
   #[must_use]
-  pub fn path(&self) -> Utf8PathBuf {
+  pub(crate) fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
 
   #[must_use]
-  pub fn lrc_file_path(&self) -> Option<Utf8PathBuf> {
+  pub(crate) fn lrc_file_path(&self) -> Option<Utf8PathBuf> {
     if self.lyrics_sidecar_lrc_file.is_some() {
       let mut path = self.path();
       path.set_extension("lrc");
@@ -131,7 +132,7 @@ impl Track {
   }
 
   #[must_use]
-  pub fn txt_file_path(&self) -> Option<Utf8PathBuf> {
+  pub(crate) fn txt_file_path(&self) -> Option<Utf8PathBuf> {
     if self.lyrics_sidecar_txt_file.is_some() {
       let mut path = self.path();
       path.set_extension("txt");
@@ -142,7 +143,7 @@ impl Track {
   }
 
   #[builder]
-  pub fn scan_and_update(
+  pub(crate) fn scan_and_update(
     &mut self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -311,9 +312,12 @@ impl Track {
   }
 
   /// Does nothing but sleeps for 500ms.
-  #[allow(unused_variables)]
   #[builder]
-  pub async fn fetch_lyrics_test(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
+  #[allow(unused)]
+  pub(crate) async fn fetch_lyrics_test(
+    &mut self,
+    options: Option<FetchLyricsOptions>,
+  ) -> Result<bool> {
     self.last_api_check_at = Some(now());
     debug!("Running fetch_lyrics_test -- sleeping 500ms");
     relm4::tokio::time::sleep(Duration::from_millis(500)).await;
@@ -323,7 +327,7 @@ impl Track {
   /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
   /// Returns `true` if tag was written or sidecar file was saved.
   #[builder]
-  pub async fn fetch_lyrics(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
+  pub(crate) async fn fetch_lyrics(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
     let options = {
       let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
       options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
@@ -414,7 +418,7 @@ impl Track {
     Ok(modified)
   }
 
-  pub fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {
+  pub(crate) fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {
     let file_type = LyricsFileType::from(lyrics.lyrics_type);
     let path = self.path().with_extension(file_type.file_extension());
     let sidecar_file = LyricsFile {
@@ -429,7 +433,7 @@ impl Track {
 
   /// Insert or update track in database.
   #[builder]
-  pub fn write_to_db(
+  pub(crate) fn write_to_db(
     &mut self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -462,7 +466,7 @@ impl Track {
 
   /// Write lyrics tag to file.
   #[builder]
-  pub fn write_to_file_and_db(
+  pub(crate) fn write_to_file_and_db(
     &mut self,
     plain_lyrics_in_id3v2_uslt_frame: bool,
     /// Database connection. Intended for use as part of a transaction.
@@ -568,7 +572,7 @@ impl Track {
 
   /// Delete track row in database.
   #[builder]
-  pub fn delete_from_db(
+  pub(crate) fn delete_from_db(
     &self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -595,12 +599,12 @@ impl Track {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
-pub struct FetchLyricsOptions {
-  pub prefer_lyrics_type: lyrics::LyricsType,
-  pub ignore_plain_lyrics: bool,
-  pub save_sidecar_file: bool,
-  pub update_lyrics_tag: bool,
-  pub plain_lyrics_in_id3v2_uslt_frame: bool,
+pub(crate) struct FetchLyricsOptions {
+  pub(crate) prefer_lyrics_type: lyrics::LyricsType,
+  pub(crate) ignore_plain_lyrics: bool,
+  pub(crate) save_sidecar_file: bool,
+  pub(crate) update_lyrics_tag: bool,
+  pub(crate) plain_lyrics_in_id3v2_uslt_frame: bool,
 }
 
 impl Default for FetchLyricsOptions {

@@ -7,8 +7,8 @@ const MIN_SPACING: i32 = 24;
 const MAX_SPACING: i32 = 96;
 
 pub(super) struct ViewLyricsLine {
-  pub inner: LyricsLine,
-  pub index: usize,
+  pub(crate) inner: LyricsLine,
+  pub(crate) index: usize,
 }
 
 #[relm4::factory(pub)]

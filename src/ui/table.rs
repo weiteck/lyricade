@@ -14,7 +14,7 @@ use crate::settings::Settings;
 use crate::track::Track;
 use crate::util::{self};
 
-pub struct TracksTableModel {
+pub(crate) struct TracksTableModel {
   table: TypedColumnView<Track, gtk::MultiSelection>,
   preset_filters_len: usize,
   total_rows: u32,
@@ -29,7 +29,7 @@ static COLUMN_TITLE_MODIFIED: &str = "Modified";
 static PREFER_SYNC_LYRICS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug)]
-pub enum TracksTableMsg {
+pub(crate) enum TracksTableMsg {
   ClearAndAppend(Vec<Track>),
   Update(Box<Track>),
   Filter(Option<String>),
@@ -42,14 +42,14 @@ pub enum TracksTableMsg {
 }
 
 #[derive(Debug)]
-pub enum TracksTableOutput {
+pub(crate) enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
   TrackIdsVisible(HashSet<i32>),
   RowActivated,
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub enum TracksTableFilter {
+pub(crate) enum TracksTableFilter {
   NeverChecked = 0,
   NoLyrics = 1,
   NoLyricsTag = 2,

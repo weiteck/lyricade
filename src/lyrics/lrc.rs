@@ -4,22 +4,22 @@ use anyhow::anyhow;
 use regex::Regex;
 
 /// Regex to match "\[00:00.000]\" or "\[0:00.0]\", indicating synchronised lyrics.
-pub static LRC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static LRC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]").expect("should be valid regex")
 });
 
 /// Regex to match "\[00:00.000]\" or "\[0:00.0]\" followed by 0 or more whitespace chars ("[ \t]*").
-pub static LRC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static LRC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*").expect("should be valid regex")
 });
 
 /// Regex to match "\[xx:xxx...xxx]\".
-pub static LRC_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub(crate) static LRC_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[([a-zA-Z]+):(.+)\][ \t]*$").expect("should be valid regex")
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub enum LrcTag {
+pub(crate) enum LrcTag {
   /// `[ar:Artist Name]` - Song artist
   ArtistName(String),
   /// `[ti:Song Title]` - Song title
@@ -75,9 +75,7 @@ impl TryFrom<&str> for LrcTag {
         }
         "re" | "tool" => Ok(Self::Editor(suffix.to_string())),
         "ve" => Ok(Self::Version(suffix.to_string())),
-        _ => Err(anyhow!(
-          "Parse LRC tag: Not a known LRC tag prefix: \"{prefix}\""
-        )),
+        _ => Err(anyhow!("Parse LRC tag: Not a known LRC tag prefix: \"{prefix}\"")),
       };
     }
 
@@ -93,7 +91,7 @@ impl Display for LrcTag {
 
 impl LrcTag {
   #[must_use]
-  pub fn tag(&self) -> String {
+  pub(crate) fn tag(&self) -> String {
     match self {
       LrcTag::ArtistName(_) => "Artist",
       LrcTag::SongTitle(_) => "Track",
@@ -110,7 +108,7 @@ impl LrcTag {
   }
 
   #[must_use]
-  pub fn value(&self) -> String {
+  pub(crate) fn value(&self) -> String {
     match self {
       LrcTag::ArtistName(value)
       | LrcTag::SongTitle(value)

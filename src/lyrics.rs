@@ -23,23 +23,23 @@ use crate::{
   track::Track,
 };
 
-pub mod lrc;
-pub mod lyrics_line;
+pub(crate) mod lrc;
+pub(crate) mod lyrics_line;
 
 #[derive(Debug, Clone)]
 #[derive_where(PartialOrd, Ord, Eq, PartialEq)]
-pub struct Lyrics {
-  pub lyrics_type: LyricsType,
+pub(crate) struct Lyrics {
+  pub(crate) lyrics_type: LyricsType,
   // Ignore lyrics when sorting so `LyricsType` + `LyricsFileType` controls order
   #[derive_where(skip)]
-  pub contents: String,
+  pub(crate) contents: String,
 }
 
 impl Lyrics {
   /// If lyrics are synchronous, remove timestamps, tags, and comments.
   /// Noop for `LyricsType::Plain`.
   #[must_use]
-  pub fn into_plain(mut self) -> Self {
+  pub(crate) fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
       self.contents = convert_sync_lyrics_to_plain(&self.contents);
       self.lyrics_type = LyricsType::Plain;
@@ -65,7 +65,7 @@ impl Lyrics {
   FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub enum LyricsType {
+pub(crate) enum LyricsType {
   #[default]
   Sync = 1,
   Plain = 2,
@@ -112,7 +112,7 @@ impl From<LyricsFileType> for LyricsType {
 
 // Variants are given discriminants for sorting (lower values sorted first)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum LyricsFileType {
+pub(crate) enum LyricsFileType {
   // `Lrc` must be first for ordering when `Vec` is sorted
   Lrc = 1,
   Txt = 2,
@@ -144,19 +144,19 @@ impl TryFrom<&Utf8Path> for LyricsFileType {
 
 impl LyricsFileType {
   #[must_use]
-  pub fn file_extension(&self) -> String {
-    match &self {
-      LyricsFileType::Lrc => "lrc".into(),
-      LyricsFileType::Txt => "txt".into(),
+  pub(crate) fn file_extension(self) -> String {
+    match self {
+      LyricsFileType::Lrc => "lrc".to_string(),
+      LyricsFileType::Txt => "txt".to_string(),
     }
   }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
-pub struct LyricsFile {
-  pub lyrics: Lyrics,
-  pub file_type: LyricsFileType,
-  pub path: Utf8PathBuf,
+pub(crate) struct LyricsFile {
+  pub(crate) lyrics: Lyrics,
+  pub(crate) file_type: LyricsFileType,
+  pub(crate) path: Utf8PathBuf,
 }
 
 impl TryFrom<&Utf8Path> for LyricsFile {
@@ -177,7 +177,7 @@ impl TryFrom<Utf8PathBuf> for LyricsFile {
 
 impl LyricsFile {
   /// Try to parse a file as a sync or plain `LyricsFiles`.
-  pub fn try_from_path(path: &Utf8Path) -> Result<Self> {
+  pub(crate) fn try_from_path(path: &Utf8Path) -> Result<Self> {
     let mut file = std::fs::File::options().read(true).write(true).open(path)?;
 
     let mut contents = String::new();
@@ -206,7 +206,7 @@ impl LyricsFile {
   /// Find and return sidecar lyrics files that are alongside the `Track` file.
   /// Collection is sorted so best 'sync' candidate is yielded first and plain lyrics last.
   #[must_use]
-  pub fn from_track(track: &Track) -> Option<Vec<Self>> {
+  pub(crate) fn from_track(track: &Track) -> Option<Vec<Self>> {
     let track_path = Utf8PathBuf::from(&track.path());
 
     let mut vec = ["lrc", "txt"]
@@ -225,7 +225,7 @@ impl LyricsFile {
   }
 
   /// Write `lyrics.contents` to `path`. Any existing file will be overwritten.
-  pub fn save(&self) -> Result<()> {
+  pub(crate) fn save(&self) -> Result<()> {
     let mut file = std::fs::File::create(&self.path).inspect_err(|error| error!("{error}"))?;
     file
       .write_all(self.lyrics.contents.as_bytes())
@@ -235,12 +235,12 @@ impl LyricsFile {
 }
 
 /// Check if lyrics are synchronised using regex.
-pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
+pub(crate) fn lyrics_are_synchronised(lyrics: &str) -> bool {
   LRC_LYRICS_REGEX.find(lyrics).is_some()
 }
 
 /// Convert sync lyrics (LRC) to plain text.
-pub fn convert_sync_lyrics_to_plain(lyrics: &str) -> String {
+pub(crate) fn convert_sync_lyrics_to_plain(lyrics: &str) -> String {
   if lyrics_are_synchronised(lyrics) {
     lyrics
       .lines()
