@@ -766,9 +766,9 @@ impl AsyncComponent for AppModel {
       .transient_for(&root)
       .launch(AlertSettings {
         text: Some("Are you sure?".into()),
-        secondary_text: Some("Tags will be written to your files.".into()),
+        secondary_text: Some("Tags will be written to your files. This cannot be undone.".into()),
         is_modal: true,
-        destructive_accept: false,
+        destructive_accept: true,
         confirm_label: Some("Confirm".into()),
         cancel_label: Some("Cancel".into()),
         option_label: None,

@@ -17,7 +17,7 @@ use serde::Deserialize;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
-  Result,
+  Result, USER_AGENT,
   lyrics::{Lyrics, LyricsType},
   settings::CONNECTION_LIMIT,
   track::Track,
@@ -83,13 +83,11 @@ impl Default for LrcLibClient {
 impl LrcLibClient {
   #[must_use]
   pub(crate) fn new() -> Self {
-    let user_agent = concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION"));
-
     let http_client = match reqwest::Client::builder()
       .tls_backend_rustls()
       .timeout(Duration::from_secs(30))
       .read_timeout(Duration::from_secs(15))
-      .user_agent(user_agent)
+      .user_agent(&*USER_AGENT)
       .build()
     {
       Ok(c) => c,

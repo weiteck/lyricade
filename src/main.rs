@@ -49,6 +49,15 @@ const MAX_LOG_FILES: usize = 10;
 
 static LOG_WORKER_GUARD: LazyLock<WorkerGuard> = LazyLock::new(init_logging);
 
+pub static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
+  format!(
+    "{} v{} ({})",
+    env!("CARGO_PKG_NAME"),
+    env!("CARGO_PKG_VERSION"),
+    env!("CARGO_PKG_REPOSITORY")
+  )
+});
+
 pub(crate) static SETTINGS: LazyLock<RwLock<Settings>> =
   LazyLock::new(|| RwLock::new(Settings::load().expect("Failed to load settings from database")));
 
