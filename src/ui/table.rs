@@ -487,8 +487,9 @@ impl RelmColumn for TracksTableColumnArtist {
     (label, ())
   }
 
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    root.set_label(&item.artist_name);
+  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, label: &mut Self::Root) {
+    label.set_label(&item.artist_name);
+    label.set_tooltip(&item.path);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -522,8 +523,9 @@ impl RelmColumn for TracksTableColumnAlbum {
     (label, ())
   }
 
-  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    root.set_label(&item.album_name);
+  fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, label: &mut Self::Root) {
+    label.set_label(&item.album_name);
+    label.set_tooltip(&item.path);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -567,13 +569,9 @@ impl RelmColumn for TracksTableColumnTrack {
     (bx, (label, inst_tag))
   }
 
-  fn bind(
-    item: &mut Self::Item,
-    (track_label, inst_tag): &mut Self::Widgets,
-    _root: &mut Self::Root,
-  ) {
-    track_label.set_label(&item.track_name);
-    track_label.set_tooltip(&item.path);
+  fn bind(item: &mut Self::Item, (label, inst_tag): &mut Self::Widgets, _root: &mut Self::Root) {
+    label.set_label(&item.track_name);
+    label.set_tooltip(&item.path);
 
     if item.instrumental.unwrap_or(false) {
       inst_tag.set_label("INST");
