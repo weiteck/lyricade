@@ -2,8 +2,17 @@ use std::{env, fs, path::PathBuf, sync::LazyLock};
 
 use camino::Utf8PathBuf;
 use chrono::NaiveDateTime;
-use diesel::prelude::*;
+use diesel::{
+  backend::Backend,
+  deserialize::{FromSql, FromSqlRow},
+  expression::AsExpression,
+  prelude::*,
+  serialize::ToSql,
+  sql_types::Text,
+  sqlite::Sqlite,
+};
 use directories::ProjectDirs;
+use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -69,6 +78,11 @@ pub(crate) struct Settings {
   pub(crate) get_lyrics_menu_last_checked: get_lyrics_menu::Checked,
   pub(crate) get_lyrics_menu_target_visible: bool,
   pub(crate) get_lyrics_menu_target_selected: bool,
+
+  // Appearance
+  pub(crate) colour_scheme: ColourScheme,
+  pub(crate) tracks_table_col_separators: bool,
+  pub(crate) tracks_table_row_separators: bool,
 
   // GUI state
   pub(crate) window_width: i32,
@@ -161,6 +175,10 @@ impl Default for Settings {
       get_lyrics_menu_target_visible: false,
       get_lyrics_menu_target_selected: false,
 
+      colour_scheme: ColourScheme::System,
+      tracks_table_col_separators: true,
+      tracks_table_row_separators: false,
+
       window_width: 1000,
       window_height: 600,
       sidebar_pinned: false,
@@ -168,5 +186,36 @@ impl Default for Settings {
       added_at: now,
       updated_at: now,
     }
+  }
+}
+
+#[derive(
+  Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+)]
+#[diesel(sql_type = Text)]
+pub(crate) enum ColourScheme {
+  #[default]
+  System = 0,
+  Light = 1,
+  Dark = 2,
+}
+
+impl FromSql<Text, Sqlite> for ColourScheme {
+  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+    ron::from_str(&s).map_err(|error| {
+      error!("Error deserializing enum `AppColourScheme` from database value \"{s}\": {error}");
+      error.into()
+    })
+  }
+}
+
+impl ToSql<Text, Sqlite> for ColourScheme {
+  fn to_sql<'b>(
+    &'b self,
+    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+  ) -> diesel::serialize::Result {
+    out.set_value(ron::to_string(&self)?);
+    Ok(diesel::serialize::IsNull::No)
   }
 }

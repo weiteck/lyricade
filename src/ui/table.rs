@@ -78,7 +78,6 @@ impl SimpleComponent for TracksTableModel {
         #[local_ref]
         tracks_table_view -> gtk::ColumnView {
           set_expand: true,
-          set_show_column_separators: true,
           set_reorderable: false,
           connect_activate => move |_cv, _row| {
             sender.input(TracksTableMsg::HandleRowActivated);
@@ -101,20 +100,32 @@ impl SimpleComponent for TracksTableModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let (prefer_accurate_timestamps, prefer_lyrics_type) = SETTINGS
+    let (prefer_accurate_timestamps, prefer_lyrics_type, col_separators, row_separators) = SETTINGS
       .read()
       .inspect_err(|_| error!("Settings lock is poisoned while initialising TracksTable"))
       .map_or_else(
         |_| {
           let default = Settings::default();
-          (default.prefer_accurate_timestamps, default.prefer_lyrics_type)
+          (
+            default.prefer_accurate_timestamps,
+            default.prefer_lyrics_type,
+            default.tracks_table_col_separators,
+            default.tracks_table_row_separators,
+          )
         },
-        |g| (g.prefer_accurate_timestamps, g.prefer_lyrics_type),
+        |g| {
+          (
+            g.prefer_accurate_timestamps,
+            g.prefer_lyrics_type,
+            g.tracks_table_col_separators,
+            g.tracks_table_row_separators,
+          )
+        },
       );
 
     PREFER_SYNC_LYRICS.store(prefer_lyrics_type == LyricsType::Sync, Ordering::SeqCst);
 
-    let table = create_table(&sender, prefer_accurate_timestamps);
+    let table = create_table(&sender, prefer_accurate_timestamps, col_separators, row_separators);
 
     let model = TracksTableModel {
       preset_filters_len: table.filters_len(),
@@ -191,18 +202,35 @@ impl SimpleComponent for TracksTableModel {
         self.table.clear();
 
         // Replace datetime columns if format has changed
-        let (prefer_accurate_timestamps, prefer_lyrics_type) = SETTINGS
-          .read()
-          .inspect_err(|_| {
-            error!("Settings lock is poisoned while calling `ClearAndAppend` on TracksTable");
-          })
-          .map_or_else(
-            |_| {
-              let default = Settings::default();
-              (default.prefer_accurate_timestamps, default.prefer_lyrics_type)
-            },
-            |g| (g.prefer_accurate_timestamps, g.prefer_lyrics_type),
-          );
+        let (prefer_accurate_timestamps, prefer_lyrics_type, col_separators, row_separators) =
+          SETTINGS
+            .read()
+            .inspect_err(|_| {
+              error!("Settings lock is poisoned while calling `ClearAndAppend` on TracksTable");
+            })
+            .map_or_else(
+              |_| {
+                let default = Settings::default();
+                (
+                  default.prefer_accurate_timestamps,
+                  default.prefer_lyrics_type,
+                  default.tracks_table_col_separators,
+                  default.tracks_table_row_separators,
+                )
+              },
+              |g| {
+                (
+                  g.prefer_accurate_timestamps,
+                  g.prefer_lyrics_type,
+                  g.tracks_table_col_separators,
+                  g.tracks_table_row_separators,
+                )
+              },
+            );
+
+        // Apply row/column separator settings
+        self.table.view.set_show_column_separators(col_separators);
+        self.table.view.set_show_row_separators(row_separators);
 
         // Re-add 'Sidecar' column to use the appropriate sort function defined in the `RelmColumn` impl
         if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) != (prefer_lyrics_type == LyricsType::Sync) {
@@ -367,6 +395,8 @@ impl TracksTableModel {
 fn create_table(
   sender: &ComponentSender<TracksTableModel>,
   iso_datetime_format: bool,
+  col_separators: bool,
+  row_separators: bool,
 ) -> TypedColumnView<Track, gtk::MultiSelection> {
   let mut table = TypedColumnView::<Track, gtk::MultiSelection>::new();
 
@@ -385,13 +415,21 @@ fn create_table(
     table.append_column::<TracksTableColumnModifiedSimpleFormat>();
   }
 
-  // Set fixed column widths
+  // Set column widths
   for (&name, col) in table.get_columns() {
     match name {
       "Artist" | "Album" => col.set_fixed_width(180),
+      "Track" => col.set_expand(true),
+      // Other columns will use their natural width
       _ => {}
     }
   }
+
+  // Set preferred separators
+  table.view.set_show_column_separators(col_separators);
+  table.view.set_show_row_separators(row_separators);
+
+  // Add preset filters used with the toggle 'chips' below the search input
 
   // 0 = NeverChecked
   table.add_filter(|track| track.last_api_check_at.is_none());
@@ -544,7 +582,6 @@ impl RelmColumn for TracksTableColumnTrack {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Track";
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);

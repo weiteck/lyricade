@@ -46,10 +46,15 @@ CREATE TABLE IF NOT EXISTS settings (
   update_lyrics_tag_on_fetch BOOLEAN NOT NULL,
   save_sidecar_file_on_fetch BOOLEAN NOT NULL DEFAULT 1,
 
-  get_lyrics_menu_lyrics_type TEXT NOT NULL DEFAULT 'NotPreferred',
+  get_lyrics_menu_lyrics_type TEXT NOT NULL DEFAULT 'NotSync',
   get_lyrics_menu_last_checked TEXT NOT NULL DEFAULT 'Any',
   get_lyrics_menu_target_visible BOOLEAN NOT NULL,
   get_lyrics_menu_target_selected BOOLEAN NOT NULL,
+
+  -- Appearance
+  colour_scheme TEXT NOT NULL DEFAULT 'System',
+  tracks_table_col_separators BOOLEAN NOT NULL DEFAULT 1,
+  tracks_table_row_separators BOOLEAN NOT NULL,
 
   -- GUI
   window_width INTEGER NOT NULL DEFAULT 1000,

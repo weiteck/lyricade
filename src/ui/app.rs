@@ -12,7 +12,7 @@ use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, error, trace, warn};
 
 use crate::manage::ManageLyricsOptions;
-use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT};
+use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT, ColourScheme};
 use crate::track::FetchLyricsOptions;
 use crate::ui::about::{AboutModel, AboutOutput};
 use crate::ui::app::get_lyrics_menu::{
@@ -1825,6 +1825,16 @@ pub(crate) fn start() {
     &provider,
     gtk::STYLE_PROVIDER_PRIORITY_APPLICATION,
   );
+
+  // Restore colour scheme
+  let colour_scheme = SETTINGS
+    .read()
+    .map_or(ColourScheme::default(), |settings| settings.colour_scheme);
+  adw::StyleManager::default().set_color_scheme(match colour_scheme {
+    ColourScheme::System => adw::ColorScheme::Default,
+    ColourScheme::Light => adw::ColorScheme::ForceLight,
+    ColourScheme::Dark => adw::ColorScheme::ForceDark,
+  });
 
   app.run_async::<AppModel>(());
 }

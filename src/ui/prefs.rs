@@ -16,7 +16,7 @@ use crate::{
   SETTINGS,
   library::Library,
   lyrics::LyricsType,
-  settings::Settings,
+  settings::{ColourScheme, Settings},
   ui::prefs::library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
   util::{self, now},
 };
@@ -69,12 +69,17 @@ pub(crate) enum PrefsOutput {
 #[derive(Debug)]
 pub(crate) enum ExposedSetting {
   PreferLyricsType(LyricsType),
-  PreferIsoTimestamps(bool),
 
   ScanNewFilesOnly(bool),
 
   UpdateLyricsTagOnFetch(bool),
   SaveSidecarOnFetch(bool),
+
+  ColourScheme(ColourScheme),
+  ColumnSeparators(bool),
+  RowSeparators(bool),
+
+  PreferIsoTimestamps(bool),
 
   // Advanced settings
   PlainLyricsUsltFrame(bool),
@@ -192,6 +197,56 @@ impl SimpleComponent for PrefsModel {
             connect_active_notify[sender] => move |btn| {
               sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
             },
+          },
+        },
+
+        adw::PreferencesGroup {
+          set_title: "Appearance",
+          set_description: Some("Visual style options."),
+
+          adw::ComboRow {
+            set_title: "C_olor Scheme",
+            set_use_underline: true,
+            set_model: Some(&gtk::StringList::new(&[
+              "Follow System",
+              "Light",
+              "Dark",
+            ])),
+            #[watch]
+            set_selected: model.settings_current.colour_scheme as u32,
+            connect_selected_item_notify[sender] => move |row| {
+              match row.selected() {
+                0 => {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ColourScheme(ColourScheme::System)));
+                }
+                1 => {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ColourScheme(ColourScheme::Light)));
+                }
+                2.. => {
+                  sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ColourScheme(ColourScheme::Dark)));
+                }
+              }
+            },
+          },
+
+          adw::SwitchRow {
+            set_title: "_Column Separators",
+            set_use_underline: true,
+            #[watch]
+            set_active: model.settings_current.tracks_table_col_separators,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ColumnSeparators(btn.is_active())));
+            }
+          },
+
+          adw::SwitchRow {
+            set_title: "_Row Separators",
+            set_use_underline: true,
+            #[watch]
+            set_active: model.settings_current.tracks_table_row_separators,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::RowSeparators(btn.is_active())));
+            }
           },
         },
 
@@ -443,10 +498,6 @@ impl SimpleComponent for PrefsModel {
           debug!("UpdateSetting: PreferLyricsType: {lyrics_type}");
           self.settings_current.prefer_lyrics_type = lyrics_type;
         }
-        ExposedSetting::PreferIsoTimestamps(active) => {
-          debug!("UpdateSetting: PreferIsoTimestamps: {active}");
-          self.settings_current.prefer_accurate_timestamps = active;
-        }
         ExposedSetting::ScanNewFilesOnly(active) => {
           debug!("UpdateSetting: ScanNewFilesOnly: {active}");
           self.settings_current.scan_new_files_only = active;
@@ -464,6 +515,30 @@ impl SimpleComponent for PrefsModel {
           if !active {
             self.settings_current.update_lyrics_tag_on_fetch = true;
           }
+        }
+        ExposedSetting::ColourScheme(colour_scheme) => {
+          debug!("UpdateSetting: ColourScheme: {colour_scheme:?}");
+          self.settings_current.colour_scheme = colour_scheme;
+
+          adw::StyleManager::default().set_color_scheme(
+            match self.settings_current.colour_scheme {
+              ColourScheme::System => adw::ColorScheme::Default,
+              ColourScheme::Light => adw::ColorScheme::ForceLight,
+              ColourScheme::Dark => adw::ColorScheme::ForceDark,
+            },
+          );
+        }
+        ExposedSetting::ColumnSeparators(active) => {
+          debug!("UpdateSetting: ColumnSeparators: {active}");
+          self.settings_current.tracks_table_col_separators = active;
+        }
+        ExposedSetting::RowSeparators(active) => {
+          debug!("UpdateSetting: RowSeparators: {active}");
+          self.settings_current.tracks_table_row_separators = active;
+        }
+        ExposedSetting::PreferIsoTimestamps(active) => {
+          debug!("UpdateSetting: PreferIsoTimestamps: {active}");
+          self.settings_current.prefer_accurate_timestamps = active;
         }
         ExposedSetting::PlainLyricsUsltFrame(active) => {
           debug!("UpdateSetting: PlainLyricsUsltFrame: {active}");
