@@ -14,7 +14,7 @@ use anyhow::anyhow;
 use relm4::tokio;
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
-use tracing::{debug, error, trace, warn};
+use tracing::{debug, error, trace};
 
 use crate::{
   Result, USER_AGENT,
@@ -47,8 +47,10 @@ enum ApiResponse {
     plain_lyrics: Option<String>,
     synced_lyrics: Option<String>,
   },
+
+  #[serde(rename_all = "camelCase")]
   Error {
-    code: i64,
+    status_code: i64,
     name: String,
     message: String,
   },
@@ -91,7 +93,7 @@ impl LrcLibClient {
       .build()
     {
       Ok(c) => c,
-      Err(e) => panic!("Could not create LrcLib HTTP client: {e}"),
+      Err(e) => panic!("Failed to initialise LrcLib client: {e}"),
     };
 
     let limiter = Arc::new(
@@ -187,7 +189,6 @@ impl LrcLibClient {
           instrumental,
           plain_lyrics,
           synced_lyrics,
-          ..
         } => {
           return Ok(LrcLibLyricsResponse {
             instrumental,
@@ -202,25 +203,24 @@ impl LrcLibClient {
           });
         }
         ApiResponse::Error {
-          code,
+          status_code: 404, ..
+        } => {
+          return Err(anyhow!("LrcLibClient: No lyrics found for {track}"))
+            .inspect_err(|e| debug!("{e}"));
+        }
+        ApiResponse::Error {
+          status_code,
           name,
           message,
         } => {
-          let response = format_args!(
-            "lrclib.net API responded with error while getting lyrics for {}:\n\"{code}: {name}: {message}\"",
-            &track
-          );
-          return Err(anyhow!("{response}")).inspect_err(|e| warn!("{e}"));
+          return Err(anyhow!("LrcLibClient: {status_code} {name} for {track}: {message}"))
+            .inspect_err(|e| error!("{e}"));
         }
       };
     }
 
-    let error = format_args!(
-      "lrclib.net server responded with status code {} while getting lyrics for {}",
-      &response_status, &track
-    );
-    error!("{error}");
-    Err(anyhow!("{error}"))
+    Err(anyhow!("LrcLibClient: {response_status} server response while getting lyrics for {track}"))
+      .inspect_err(|e| error!("{e}"))
   }
 
   /// Spawn background worker to log HTTP request rate.
