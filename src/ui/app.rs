@@ -187,7 +187,6 @@ impl AsyncComponent for AppModel {
         set_icon_name: "open-menu-symbolic",
         set_primary: true,
         set_tooltip: "Main Menu",
-        // set_menu_model: Some(&main_menu),
       },
 
       pack_end = &gtk::ToggleButton {

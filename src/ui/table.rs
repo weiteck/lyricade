@@ -385,6 +385,14 @@ fn create_table(
     table.append_column::<TracksTableColumnModifiedSimpleFormat>();
   }
 
+  // Set fixed column widths
+  for (&name, col) in table.get_columns() {
+    match name {
+      "Artist" | "Album" => col.set_fixed_width(180),
+      _ => {}
+    }
+  }
+
   // 0 = NeverChecked
   table.add_filter(|track| track.last_api_check_at.is_none());
   table.set_filter_status(0, false);
@@ -465,16 +473,17 @@ impl RelmColumn for TracksTableColumnArtist {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = "Artist";
-  const ENABLE_EXPAND: bool = true;
   const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
-    label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
+    label.set_hexpand(true);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_single_line_mode(true);
     label.set_use_markup(false);
+    label.set_width_chars(0);
+    label.set_max_width_chars(0);
     (label, ())
   }
 
@@ -499,16 +508,17 @@ impl RelmColumn for TracksTableColumnAlbum {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = "Album";
-  const ENABLE_EXPAND: bool = true;
   const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
-    label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
+    label.set_hexpand(true);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_single_line_mode(true);
     label.set_use_markup(false);
+    label.set_width_chars(0);
+    label.set_max_width_chars(0);
     (label, ())
   }
 
@@ -533,26 +543,28 @@ impl RelmColumn for TracksTableColumnTrack {
 
   const COLUMN_NAME: &'static str = "Track";
   const ENABLE_EXPAND: bool = true;
-  const ENABLE_RESIZE: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
     bx.set_hexpand(false);
     bx.set_valign(gtk::Align::Center);
 
-    let track_label = gtk::Label::new(None);
-    track_label.set_align(gtk::Align::Start);
-    track_label.set_xalign(0.0);
-    track_label.set_ellipsize(gtk::pango::EllipsizeMode::End);
-    track_label.set_use_markup(false);
+    let label = gtk::Label::new(None);
+    label.set_hexpand(true);
+    label.set_xalign(0.0);
+    label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_single_line_mode(true);
+    label.set_use_markup(false);
+    label.set_width_chars(0);
+    label.set_max_width_chars(0);
 
     let inst_tag = gtk::Label::new(None);
     inst_tag.set_visible(false);
 
-    bx.append(&track_label);
+    bx.append(&label);
     bx.append(&inst_tag);
 
-    (bx, (track_label, inst_tag))
+    (bx, (label, inst_tag))
   }
 
   fn bind(
@@ -573,7 +585,7 @@ impl RelmColumn for TracksTableColumnTrack {
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
-    Some(Box::new(|a, b| a.path.cmp(&b.path)))
+    Some(Box::new(|a, b| a.track_name.cmp(&b.track_name).then(a.path.cmp(&b.path))))
   }
 }
 
@@ -584,14 +596,11 @@ impl RelmColumn for TracksTableColumnLyricsTag {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Tag";
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    bx.set_hexpand(false);
 
     let label = gtk::Label::new(None);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
@@ -647,14 +656,11 @@ impl RelmColumn for TracksTableColumnSidecar {
   type Item = Track;
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_SIDECAR;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    bx.set_hexpand(false);
 
     let label = gtk::Label::new(None);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
 
@@ -747,15 +753,14 @@ impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
     label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
+    label.set_single_line_mode(true);
     (label, ())
   }
 
@@ -784,15 +789,14 @@ impl RelmColumn for TracksTableColumnModifiedSimpleFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
     label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_width_chars(20);
+    label.set_single_line_mode(true);
     (label, ())
   }
 
@@ -815,14 +819,13 @@ impl RelmColumn for TracksTableColumnCheckedAccurateFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_CHECKED;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
     label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_single_line_mode(true);
     (label, ())
   }
 
@@ -853,14 +856,13 @@ impl RelmColumn for TracksTableColumnModifiedAccurateFormat {
   type Widgets = ();
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_MODIFIED;
-  const ENABLE_EXPAND: bool = true;
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let label = gtk::Label::new(None);
     label.set_hexpand(false);
-    label.set_align(gtk::Align::Start);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
+    label.set_single_line_mode(true);
     (label, ())
   }
 
