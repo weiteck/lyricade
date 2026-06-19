@@ -110,8 +110,7 @@ impl SimpleComponent for PrefsModel {
         set_icon_name: Some("preferences-system-symbolic"),
 
         adw::PreferencesGroup {
-          set_title: "Preferred Lyrics Format",
-          set_description: Some("Choose what lyrics format to prefer when fetching lyrics online or cleaning up multiple sidecar files."),
+          set_title: "Lyrics Format",
 
           gtk::ListBox {
             add_css_class: "boxed-list",
@@ -138,7 +137,7 @@ impl SimpleComponent for PrefsModel {
             adw::ActionRow {
               set_title: "_Plain",
               set_use_underline: true,
-              set_subtitle: "Prefer TXT format lyrics",
+              set_subtitle: "Prefer plain text lyrics",
               set_selectable: false,
 
               set_activatable_widget: Some(&group_lyrics_type_button_plain),
@@ -158,27 +157,10 @@ impl SimpleComponent for PrefsModel {
         },
 
         adw::PreferencesGroup {
-          set_title: "Scan Files",
-          set_description: Some("How audio files are scanned."),
+          set_title: "Saving Lyrics",
 
           adw::SwitchRow {
-            set_title: "Ignore _Unchanged",
-            set_use_underline: true,
-            set_subtitle: "Only scan new or modified files",
-            #[watch]
-            set_active: model.settings_current.scan_new_files_only,
-            connect_active_notify[sender] => move |btn| {
-              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ScanNewFilesOnly(btn.is_active())));
-            }
-          },
-        },
-
-        adw::PreferencesGroup {
-          set_title: "Fetch Lyrics",
-          set_description: Some("Choose what to do with the lyrics sourced from <i>lrclib.net</i>"),
-
-          adw::SwitchRow {
-            set_title: "Write to Lyrics _Tag",
+            set_title: "Update Lyrics _Tags",
             set_use_underline: true,
             set_subtitle: "Update audio file metadata",
             #[watch]
@@ -189,9 +171,9 @@ impl SimpleComponent for PrefsModel {
           },
 
           adw::SwitchRow {
-            set_title: "Write to Sidecar _File",
+            set_title: "Save Sidecar _Files",
             set_use_underline: true,
-            set_subtitle: "Save LRC/TXT lyrics files alongside audio files",
+            set_subtitle: "Save .lrc or .txt lyrics files alongside audio files",
             #[watch]
             set_active: model.settings_current.save_sidecar_file_on_fetch,
             connect_active_notify[sender] => move |btn| {
@@ -201,11 +183,25 @@ impl SimpleComponent for PrefsModel {
         },
 
         adw::PreferencesGroup {
+          set_title: "Library Scan",
+
+          adw::SwitchRow {
+            set_title: "Ignore _Unchanged",
+            set_use_underline: true,
+            set_subtitle: "Only scan added or modified files when refreshing tracks",
+            #[watch]
+            set_active: model.settings_current.scan_new_files_only,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::ScanNewFilesOnly(btn.is_active())));
+            }
+          },
+        },
+
+        adw::PreferencesGroup {
           set_title: "Appearance",
-          set_description: Some("Visual style options."),
 
           adw::ComboRow {
-            set_title: "C_olor Scheme",
+            set_title: "C_olour Scheme",
             set_use_underline: true,
             set_model: Some(&gtk::StringList::new(&[
               "Follow System",
@@ -252,7 +248,6 @@ impl SimpleComponent for PrefsModel {
 
         adw::PreferencesGroup {
           set_title: "Date and Time Format",
-          set_description: Some("Choose how dates and times and displayed in the track list view."),
 
           gtk::ListBox {
             add_css_class: "boxed-list",
@@ -303,7 +298,7 @@ impl SimpleComponent for PrefsModel {
             add_row = &adw::SwitchRow {
               set_title: "Plain Lyrics in ID3v2 USLT Frame (MP3)",
               set_use_underline: true,
-              set_subtitle: "Synchronous lyrics will be encoded in the SYLT synchronised text frame per the ID3v2 V3 spec, but a copy will also be inserted in the USLT unsynchronised text frame. Choose whether this copy is converted to plain text format or LRC sync format is retained. <b>It is recommended to disable this option for increased compatibility.</b>",
+              set_subtitle: "Synchronous lyrics will be encoded in the SYLT synchronised text frame per the ID3v2 V3 spec, but a copy will also be inserted in the USLT unsynchronised text frame. Choose whether this copy is converted to plain text format or LRC sync format is retained. <b>It is recommended to keep this option disabled to increase player compatibility.</b>",
               #[watch]
               set_active: model.settings_current.plain_lyrics_in_id3v2_uslt_frame,
               connect_active_notify[sender] => move |btn| {
