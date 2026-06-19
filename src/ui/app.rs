@@ -904,13 +904,6 @@ impl AsyncComponent for AppModel {
       AppMsg::FetchLyrics => {
         self.is_fetching_lyrics = true;
 
-        // Display progress
-        sender.input(AppMsg::ProgressStart("Getting lyrics…".into()));
-        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("0 / {} done", self.track_count)),
-          progress: 0.0,
-        }));
-
         let filtered_tracks = self
           .tracks
           .iter()
@@ -924,8 +917,16 @@ impl AsyncComponent for AppModel {
           .cloned()
           .collect::<Vec<_>>();
 
-        let total = self.tracks.len();
+        let total = filtered_tracks.len();
         let completed = Arc::new(AtomicUsize::new(0));
+
+        // Display progress
+        sender.input(AppMsg::ProgressStart("Getting lyrics…".into()));
+        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+          step: Some(format!("0 / {total} done")),
+          progress: 0.0,
+        }));
+
         let stream = futures::stream::iter(filtered_tracks);
         let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
         let opts = SETTINGS
