@@ -585,19 +585,21 @@ impl RelmColumn for TracksTableColumnTrack {
 
   fn setup(_list_item: &gtk::ListItem) -> (Self::Root, Self::Widgets) {
     let bx = gtk::Box::new(gtk::Orientation::Horizontal, 6);
-    bx.set_hexpand(false);
+    bx.set_hexpand(true);
     bx.set_valign(gtk::Align::Center);
 
     let label = gtk::Label::new(None);
-    label.set_hexpand(true);
+    label.set_hexpand(false);
     label.set_xalign(0.0);
     label.set_ellipsize(gtk::pango::EllipsizeMode::End);
     label.set_single_line_mode(true);
     label.set_use_markup(false);
-    label.set_width_chars(0);
-    label.set_max_width_chars(0);
 
     let inst_tag = gtk::Label::new(None);
+    inst_tag.add_css_class("caption");
+    inst_tag.inline_css("padding: 0 0.5em; background: @sidebar_bg_color; border-radius: 6px");
+    inst_tag.set_label("INST");
+    inst_tag.set_tooltip("Instrumental Track");
     inst_tag.set_visible(false);
 
     bx.append(&label);
@@ -611,10 +613,6 @@ impl RelmColumn for TracksTableColumnTrack {
     label.set_tooltip(&item.path);
 
     if item.instrumental.unwrap_or(false) {
-      inst_tag.set_label("INST");
-      inst_tag.set_tooltip("Instrumental Track");
-      inst_tag.add_css_class("caption");
-      inst_tag.inline_css("padding: 0 0.5em; background: @card_bg_color; border-radius: 6px");
       inst_tag.set_visible(true);
     }
   }
