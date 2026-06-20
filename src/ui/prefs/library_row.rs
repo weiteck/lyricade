@@ -50,8 +50,10 @@ impl FactoryComponent for LibraryRow {
       set_valign: gtk::Align::Center,
       set_focusable: false,
       set_selectable: false,
+      set_use_markup: false,
       set_title: &self.library.name(),
       set_subtitle: &self.library.path,
+
       connect_expanded_notify[sender] => move |er| {
         if !er.is_expanded() {
           sender.input(LibraryRowMsg::Cancel);
@@ -61,6 +63,7 @@ impl FactoryComponent for LibraryRow {
       #[name = "name_entry_row"]
       add_row = &adw::EntryRow {
         set_editable: true,
+        set_use_markup: false,
         set_title: "Name",
         set_text: &self.library.name(),
 
@@ -79,6 +82,7 @@ impl FactoryComponent for LibraryRow {
       add_row = &adw::ActionRow {
         set_valign: gtk::Align::Center,
         add_css_class: "property", // reverse title/subtitle styling
+        set_use_markup: false,
         set_title: "Library Path",
         set_subtitle: &self.library.path,
 
