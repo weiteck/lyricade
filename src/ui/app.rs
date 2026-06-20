@@ -1088,7 +1088,7 @@ impl AsyncComponent for AppModel {
         self.prefs_widget = None;
 
         let current_libs = Library::get_all().expect("failed to get Libraries");
-        let new_libs = current_libs
+        let added_or_updated_path_libs = current_libs
           .iter()
           .filter(|&lib| !self.libraries.contains(lib))
           .cloned()
@@ -1098,7 +1098,7 @@ impl AsyncComponent for AppModel {
         self.libraries = current_libs;
 
         // Scan newly-added libraries
-        if !new_libs.is_empty() {
+        if !added_or_updated_path_libs.is_empty() {
           debug!("Libraries have been added; refreshing");
 
           let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
@@ -1106,7 +1106,7 @@ impl AsyncComponent for AppModel {
 
           let sender_handle = sender.clone();
           relm4::spawn_blocking(move || {
-            for lib in new_libs {
+            for lib in added_or_updated_path_libs {
               if cancel_rx
                 .try_recv()
                 .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)

@@ -9,11 +9,7 @@ use anyhow::anyhow;
 use bon::bon;
 use camino::{Utf8Path, Utf8PathBuf};
 use chrono::NaiveDateTime;
-use diesel::{
-  dsl::insert_into,
-  prelude::*,
-  r2d2::{ConnectionManager, PooledConnection},
-};
+use diesel::{dsl::insert_into, prelude::*};
 
 use relm4::tokio::sync::oneshot;
 use tracing::{debug, error, info, warn};
@@ -162,6 +158,7 @@ impl Library {
     let now = now();
 
     on_progress("Discovering paths…\n".into());
+
     let paths = self
       .file_paths()
       .iter()
@@ -175,15 +172,47 @@ impl Library {
 
     let rows = conn.immediate_transaction::<usize, _, _>(|conn| {
       // Get existing and missing tracks
-      let (mut existing_tracks, missing_tracks): (Vec<Track>, Vec<Track>) = tracks::table
-        .filter(tracks::library_id.eq(&self.id))
-        .load::<Track>(conn)?
+      let (existing_tracks, missing_tracks): (Vec<Track>, Vec<Track>) = self
+        .tracks()
+        .conn(conn)
+        .call()?
         .into_iter()
         .partition(|t| paths.contains(&t.path));
       existing_count = existing_tracks.len();
 
-      // Discard unchanged files
-      existing_tracks = if scan_new_only {
+      // Build new tracks from paths not in the database
+      let existing_track_paths = existing_tracks
+        .iter()
+        .map(|t| t.path.clone())
+        .collect::<HashSet<_>>();
+      let new_track_paths = paths
+        .iter()
+        .filter(|&p| !existing_track_paths.contains(p))
+        .collect::<HashSet<_>>();
+      let new_tracks = new_track_paths
+        .iter()
+        .map(|&path| NewTrack {
+          library_id: self.id,
+          path: path.clone(),
+          added_at: now,
+          updated_at: now,
+          ..Default::default()
+        })
+        .collect::<Vec<_>>();
+
+      // Insert new tracks (without metadata)
+      diesel::insert_into(tracks::table)
+        .values(new_tracks)
+        .execute(conn)?;
+
+      // Get the tracks we just inserted so we have their IDs
+      // We do this because RETURNING is not currently working with SQLite batch queries
+      let new_tracks = tracks::table
+        .filter(tracks::added_at.eq(now))
+        .load::<Track>(conn)?;
+
+      // Optionally discard unchanged files
+      let existing_tracks_to_scan = if scan_new_only {
         on_progress("Checking for modified files…\n".into());
 
         let mut reporter = IntervalReporter::builder()
@@ -226,40 +255,9 @@ impl Library {
         existing_tracks
       };
 
-      // Build new tracks from paths not in the database
-      let existing_track_paths = existing_tracks
-        .iter()
-        .map(|t| t.path.clone())
-        .collect::<HashSet<_>>();
-      let new_paths = paths
-        .iter()
-        .filter(|&p| !existing_track_paths.contains(p))
-        .collect::<HashSet<_>>();
-      let new_tracks = new_paths
-        .iter()
-        .map(|&path| NewTrack {
-          library_id: self.id,
-          path: path.clone(),
-          added_at: now,
-          updated_at: now,
-          ..Default::default()
-        })
-        .collect::<Vec<_>>();
-
-      // Insert new tracks (without metadata)
-      diesel::insert_into(tracks::table)
-        .values(new_tracks)
-        .execute(conn)?;
-
-      // Get the tracks we just inserted so we have their IDs
-      // We do this because RETURNING is not currently working with SQLite batch queries
-      let inserted_new_tracks = tracks::table
-        .filter(tracks::added_at.eq(now))
-        .load::<Track>(conn)?;
-
       let mut reporter = IntervalReporter::builder()
         .id("RefreshTracks")
-        .target(inserted_new_tracks.len() + existing_tracks.len())
+        .target(new_tracks.len() + existing_tracks_to_scan.len())
         .report_interval(Duration::from_secs(1))
         .report_threshold(5)
         .callback(|stats| {
@@ -274,7 +272,7 @@ impl Library {
 
       // Get metadata from new files and write to database;
       // delete DB row where metadata read fails
-      for mut track in inserted_new_tracks {
+      for mut track in new_tracks {
         // Task cancelled?
         if cancel_on_close
           .try_recv()
@@ -297,7 +295,7 @@ impl Library {
       }
 
       // Refresh existing tracks
-      for mut track in existing_tracks {
+      for mut track in existing_tracks_to_scan {
         // Task cancelled?
         if cancel_on_close
           .try_recv()
@@ -347,10 +345,7 @@ impl Library {
 
   /// Get all `Track`s.
   #[builder]
-  pub(crate) fn tracks(
-    &self,
-    conn: Option<&mut PooledConnection<ConnectionManager<SqliteConnection>>>,
-  ) -> Result<Vec<Track>> {
+  pub(crate) fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
     let query = tracks::table.filter(tracks::library_id.eq(&self.id));
 
     if let Some(conn) = conn {
@@ -431,6 +426,8 @@ impl Library {
     }
 
     self.path = new_path.to_string();
+
+    self.write_to_db().call()?;
 
     Ok(())
   }

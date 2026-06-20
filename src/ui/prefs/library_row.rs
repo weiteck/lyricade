@@ -226,7 +226,6 @@ impl FactoryComponent for LibraryRow {
             .expect("LibraryRowOutput receiver dropped");
         } else {
           widgets.path_entry_row.set_subtitle(path.as_str());
-          self.library.path = path.to_string();
 
           self.update_modified();
 
