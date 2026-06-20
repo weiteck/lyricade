@@ -365,6 +365,8 @@ impl SimpleComponent for TracksTableModel {
 
         // Are any rows visible after filtering?
         self.update_is_row_visible();
+
+        sender.input(TracksTableMsg::RefreshTrackIdsVisible);
       }
 
       TracksTableMsg::ClearFilters => {
