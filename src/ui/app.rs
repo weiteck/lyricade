@@ -190,8 +190,10 @@ impl AsyncComponent for AppModel {
       },
 
       pack_end = &gtk::ToggleButton {
-        set_tooltip_text: Some("Pin Track Details"),
-        set_icon_name: "sidebar-show-right-symbolic",
+        #[watch]
+        set_tooltip_text: if model.is_sidebar_pinned { Some("Unpin Track Details") } else { Some("Pin Track Details") },
+        // set_icon_name: "sidebar-show-right-symbolic",
+        set_icon_name: "info-outline-symbolic",
         #[watch]
         set_sensitive: !model.no_tracks,
         #[watch]
