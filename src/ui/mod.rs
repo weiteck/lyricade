@@ -1,6 +1,3 @@
-// Unreliable with `relm4` macros
-#![expect(clippy::used_underscore_binding)]
-
 pub(crate) mod about;
 pub(crate) mod app;
 pub(crate) mod manage;
