@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bstr::ByteSlice;
-use relm4::gtk::prelude::{BoxExt, SelectionModelExt, WidgetExt};
+use relm4::gtk::prelude::*;
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
 use relm4::prelude::*;
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
