@@ -20,12 +20,13 @@ impl SimpleComponent for AboutModel {
   type Init = ();
 
   view! {
-    adw::AboutWindow {
+    adw::AboutDialog {
       set_application_name: APP_NAME_PRETTY,
       set_application_icon: "lyricade",
       set_copyright: "Copyright © 2026 Chris Price",
       set_developer_name: "Chris Price",
       set_developers: &["Chris Price <fair.lake5766@fastmail.com>"],
+      set_designers: &["Chris Price <fair.lake5766@fastmail.com>"],
       set_license_type: gtk::License::Apache20,
       set_license: include_str!("../../LICENSE"),
       set_website: &format!("https://github.com/weiteck/{APP_NAME}"),

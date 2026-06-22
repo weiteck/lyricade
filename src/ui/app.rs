@@ -1046,9 +1046,7 @@ impl AsyncComponent for AppModel {
       AppMsg::ShowAboutWindow => {
         debug!("Showing About window");
         let window = self.about_widget.widget();
-        window.set_transient_for(Some(root));
-        window.set_hide_on_close(true);
-        window.present();
+        window.present(Some(root));
       }
 
       AppMsg::CloseAboutWindow => {
@@ -1070,9 +1068,7 @@ impl AsyncComponent for AppModel {
             });
 
           let window = prefs_widget.widget();
-          window.set_transient_for(Some(root));
-          window.set_hide_on_close(true);
-          window.present();
+          window.present(Some(root));
 
           self.prefs_widget = Some(prefs_widget);
         } else {
@@ -1083,10 +1079,9 @@ impl AsyncComponent for AppModel {
       AppMsg::ClosePrefsWindow => {
         debug!("Closing Preferences window");
 
-        self
-          .prefs_widget
-          .as_ref()
-          .inspect(|ctrl| ctrl.widget().close());
+        self.prefs_widget.as_ref().inspect(|&ctrl| {
+          ctrl.widget().close();
+        });
         self.prefs_widget = None;
 
         let current_libs = Library::get_all().expect("failed to get Libraries");

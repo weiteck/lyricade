@@ -3,7 +3,7 @@ use std::{collections::HashSet, path::PathBuf};
 use adw::prelude::*;
 use camino::Utf8PathBuf;
 use relm4::{
-  adw::PreferencesWindow,
+  adw::PreferencesDialog,
   gtk::{EventControllerKey, gdk, glib},
   prelude::*,
 };
@@ -24,7 +24,7 @@ use crate::{
 mod library_row;
 
 pub(crate) struct PrefsModel {
-  root: PreferencesWindow,
+  root: PreferencesDialog,
 
   libraries: HashSet<Library>,
   library_rows: FactoryVecDeque<LibraryRow>,
@@ -92,16 +92,12 @@ impl SimpleComponent for PrefsModel {
   type Init = (Settings, Vec<Library>);
 
   view! {
-    prefs_window = adw::PreferencesWindow {
-      set_title: Some("Preferences"),
-      set_search_enabled: false,
-      set_size_request: (500, 300),
-      set_default_size: (600, 600),
+    prefs_window = adw::PreferencesDialog {
+      set_title: "Preferences",
 
       // Update and save settings on close
-      connect_close_request[sender] => move |_| {
+      connect_closed[sender] => move |_| {
         sender.input(PrefsMsg::SaveSettings);
-        glib::Propagation::Proceed
       },
 
       add = &adw::PreferencesPage {
