@@ -30,7 +30,9 @@ static PREFER_SYNC_LYRICS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug)]
 pub(crate) enum TracksTableMsg {
-  ClearAndAppend(Vec<Track>),
+  Reset,
+  Append(Vec<Track>),
+  RefreshState,
   Update(Box<Track>),
   Filter(Option<String>),
   SetFilter((TracksTableFilter, bool)),
@@ -198,7 +200,7 @@ impl SimpleComponent for TracksTableModel {
         self.table.selection_model.unselect_all();
       }
 
-      TracksTableMsg::ClearAndAppend(tracks) => {
+      TracksTableMsg::Reset => {
         self.table.clear();
 
         // Replace datetime columns if format has changed
@@ -296,9 +298,15 @@ impl SimpleComponent for TracksTableModel {
 
         // Restore table in case it was hidden for column changes
         self.table.view.set_visible(true);
+      }
+
+      TracksTableMsg::Append(tracks) => {
+        trace!("Appending {} tracks to table", tracks.len());
 
         self.table.extend_from_iter(tracks);
+      }
 
+      TracksTableMsg::RefreshState => {
         self.reset_rows_state();
 
         sender.input(TracksTableMsg::RefreshTrackIdsVisible);

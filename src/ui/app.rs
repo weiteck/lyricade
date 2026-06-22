@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
+use std::time::Duration;
 
 use futures::stream::StreamExt;
 use relm4::abstractions::Toaster;
@@ -21,7 +22,7 @@ use crate::ui::app::get_lyrics_menu::{
 use crate::ui::app::main_menu::MainMenuButtonModel;
 use crate::ui::app::track_stats::TrackStats;
 use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
-use crate::ui::prefs::{PrefsModel, PrefsOutput};
+use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::{Result, library::Library, track::Track};
@@ -113,7 +114,7 @@ enum AppMsg {
   ShowLyricsWindow(ViewLyricsSource),
   CloseLyricsWindow,
   ShowPrefsWindow,
-  ClosePrefsWindow,
+  ClosePrefsWindow(RebuildTracksTableRequired),
   ShowManageLyricsWindow,
   CloseManageLyricsWindow,
 
@@ -435,6 +436,9 @@ impl AsyncComponent for AppModel {
                   set_halign: gtk::Align::Center,
                   set_valign: gtk::Align::Start,
                   set_label: "Cancel",
+                  #[watch]
+                  set_visible: model.refresh_library_cancel_token.is_some() || model.manage_lyrics_cancel_token.is_some(),
+
                   connect_clicked => AppMsg::CancelOperation,
                 },
               },
@@ -1064,7 +1068,7 @@ impl AsyncComponent for AppModel {
           let prefs_widget = PrefsModel::builder()
             .launch((settings, self.libraries.clone()))
             .forward(sender.input_sender(), |msg| match msg {
-              PrefsOutput::Close => AppMsg::ClosePrefsWindow,
+              PrefsOutput::Close(rebuild_required) => AppMsg::ClosePrefsWindow(rebuild_required),
             });
 
           let window = prefs_widget.widget();
@@ -1076,7 +1080,7 @@ impl AsyncComponent for AppModel {
         }
       }
 
-      AppMsg::ClosePrefsWindow => {
+      AppMsg::ClosePrefsWindow(RebuildTracksTableRequired(rebuild_required)) => {
         debug!("Closing Preferences window");
 
         self.prefs_widget.as_ref().inspect(|&ctrl| {
@@ -1127,14 +1131,14 @@ impl AsyncComponent for AppModel {
             }
 
             sender_handle.input(AppMsg::LoadLibraries);
-            sender_handle.input(AppMsg::HideSpinner);
           });
         } else if libs_have_been_removed {
-          debug!("Libraries have been deleted; refreshing");
+          debug!("Libraries have been deleted; reloading tracks");
 
-          sender.input(AppMsg::LoadLibraries);
-        } else {
-          // Refresh table if no changes to libraries in case datetime format changed
+          self.load_tracks();
+          sender.input(AppMsg::BuildTracksTable);
+        } else if rebuild_required {
+          // Refresh table as datetime format has changed
           sender.input(AppMsg::BuildTracksTable);
         }
 
@@ -1197,8 +1201,8 @@ impl AsyncComponent for AppModel {
 
       // TODO: Use alert dialog to show errors
       AppMsg::LoadLibraries => {
-        // Can clear the channel as refresh is done at this point
-        self.refresh_library_cancel_token = None;
+        // Refresh has completed; hide spinner
+        sender.input(AppMsg::HideSpinner);
 
         if self
           .load_libraries()
@@ -1237,10 +1241,62 @@ impl AsyncComponent for AppModel {
         }
       }
 
-      AppMsg::BuildTracksTable => self
-        .tracks_table_widget
-        .sender()
-        .emit(TracksTableMsg::ClearAndAppend(self.tracks.clone())),
+      AppMsg::BuildTracksTable => {
+        const CHUNK_SIZE: usize = 1_000;
+
+        self
+          .tracks_table_widget
+          .sender()
+          .emit(TracksTableMsg::Reset);
+
+        let tracks = self.tracks.clone();
+
+        // Only show spinner if there is a large number of tracks
+        if self.track_count < 5_000 {
+          self
+            .tracks_table_widget
+            .sender()
+            .emit(TracksTableMsg::Append(tracks));
+
+          self
+            .tracks_table_widget
+            .sender()
+            .emit(TracksTableMsg::RefreshState);
+        } else {
+          sender.input(AppMsg::ShowSpinner((
+            "Building tracks table…".to_string(),
+            "0 % completed".to_string(),
+          )));
+
+          let table_sender = self.tracks_table_widget.sender().clone();
+          let app_sender = sender.clone();
+
+          relm4::spawn_local(async move {
+            // Give UI thread time to finish window transition animations
+            // and show the spinner before blocking
+            gtk::glib::timeout_future(Duration::from_millis(200)).await;
+
+            for (idx, chunk) in tracks.chunks(CHUNK_SIZE).enumerate() {
+              table_sender.emit(TracksTableMsg::Append(chunk.to_vec()));
+
+              sender.input(AppMsg::ShowSpinner((
+                "Building tracks table…".to_string(),
+                format!(
+                  "{:.0} % completed",
+                  (((idx + 1) * CHUNK_SIZE) as f64 / tracks.len() as f64) * 100.0
+                ),
+              )));
+
+              // Pause to give UI thread time to animate spinner
+              gtk::glib::timeout_future(Duration::from_millis(50)).await;
+            }
+
+            table_sender.emit(TracksTableMsg::RefreshState);
+
+            app_sender.input(AppMsg::HideSpinner);
+          });
+        }
+      }
 
       AppMsg::RefreshLibraries => {
         let libs = self.libraries.clone();
@@ -1276,6 +1332,8 @@ impl AsyncComponent for AppModel {
           sender_handle.input(AppMsg::LoadLibraries);
           sender_handle.input(AppMsg::HideSpinner);
         });
+
+        self.refresh_library_cancel_token = None;
       }
 
       AppMsg::SearchQueryChanged(query) => {
@@ -1440,7 +1498,7 @@ impl AsyncComponent for AppModel {
 
       AppMsg::ProgressUpdate(pu) => {
         debug!(
-          "Progress task update: {:02} % of task \"{}\" at step \"{:?}\"",
+          "Progress task update: {:02} % of task \"{}\" at step \"{:?}\"",
           &pu.progress * 100.0,
           &self.progress_task.as_deref().unwrap_or_default(),
           &pu.step

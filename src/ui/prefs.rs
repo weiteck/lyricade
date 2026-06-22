@@ -43,7 +43,7 @@ pub(crate) struct PrefsModel {
 pub(crate) enum PrefsMsg {
   DefaultSettings,
   RevertSettings,
-  SaveSettings,
+  SaveAndClose,
   UpdateSetting(ExposedSetting),
 
   AddLibraryFileDialogRequest,
@@ -56,15 +56,16 @@ pub(crate) enum PrefsMsg {
 
   ShowToast(String, bool),
 
-  CloseRequested,
-
   NoOp,
 }
 
 #[derive(Debug)]
 pub(crate) enum PrefsOutput {
-  Close, // request parent window to close Prefs window
+  Close(RebuildTracksTableRequired), // request parent window to close Prefs window
 }
+
+#[derive(Debug)]
+pub(crate) struct RebuildTracksTableRequired(pub(crate) bool);
 
 #[derive(Debug)]
 pub(crate) enum ExposedSetting {
@@ -97,7 +98,7 @@ impl SimpleComponent for PrefsModel {
 
       // Update and save settings on close
       connect_closed[sender] => move |_| {
-        sender.input(PrefsMsg::SaveSettings);
+        sender.input(PrefsMsg::SaveAndClose);
       },
 
       add = &adw::PreferencesPage {
@@ -443,7 +444,7 @@ impl SimpleComponent for PrefsModel {
       if key == gdk::Key::Escape
         || (key.to_upper() == gdk::Key::W && modifier.contains(gdk::ModifierType::CONTROL_MASK))
       {
-        sender_handle.input(PrefsMsg::CloseRequested);
+        sender_handle.input(PrefsMsg::SaveAndClose);
       }
       glib::Propagation::Proceed
     });
@@ -469,7 +470,7 @@ impl SimpleComponent for PrefsModel {
         self.settings_current = self.settings_initial.clone();
       }
 
-      PrefsMsg::SaveSettings => {
+      PrefsMsg::SaveAndClose => {
         if self.settings_current != self.settings_initial {
           if let Ok(mut guard) = SETTINGS.write() {
             *guard = self.settings_current.clone();
@@ -479,8 +480,11 @@ impl SimpleComponent for PrefsModel {
           }
         }
 
+        let rebuild_required = self.settings_initial.prefer_accurate_timestamps
+          != self.settings_current.prefer_accurate_timestamps;
+
         sender
-          .output(PrefsOutput::Close)
+          .output(PrefsOutput::Close(RebuildTracksTableRequired(rebuild_required)))
           .expect("PrefsOutput receiver dropped");
       }
 
@@ -611,12 +615,6 @@ impl SimpleComponent for PrefsModel {
 
         let toast = adw::Toast::builder().title(msg).timeout(timeout).build();
         self.root.add_toast(toast);
-      }
-
-      PrefsMsg::CloseRequested => {
-        sender
-          .output(PrefsOutput::Close)
-          .expect("PrefsOutput receiver dropped");
       }
 
       PrefsMsg::NoOp => {}

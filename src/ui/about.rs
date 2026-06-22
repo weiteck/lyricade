@@ -28,7 +28,6 @@ impl SimpleComponent for AboutModel {
       set_developers: &["Chris Price <fair.lake5766@fastmail.com>"],
       set_designers: &["Chris Price <fair.lake5766@fastmail.com>"],
       set_license_type: gtk::License::Apache20,
-      set_license: include_str!("../../LICENSE"),
       set_website: &format!("https://github.com/weiteck/{APP_NAME}"),
       set_comments: r"Thanks go to <b>tranxuanthang</b> and the <b>lrclib.net</b> contributors for creating the service that this app relies upon.
 
