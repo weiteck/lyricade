@@ -385,6 +385,19 @@ impl AsyncComponent for AppModel {
         gtk::glib::Propagation::Proceed
       },
 
+      // Log window size on resize in debug builds
+      connect_default_width_notify => |window| {
+        if cfg!(debug_assertions) {
+          trace!("New window size: {} x {}", window.default_width(), window.default_height());
+        }
+      },
+      connect_default_height_notify => |window| {
+        if cfg!(debug_assertions) {
+          trace!("New window size: {} x {}", window.default_width(), window.default_height());
+        }
+      },
+
+
       #[local_ref]
       toast_overlay -> adw::ToastOverlay {
         adw::ToolbarView {
@@ -840,12 +853,7 @@ impl AsyncComponent for AppModel {
     let widgets = view_output!();
 
     // Set window title
-    let app_title = if cfg!(debug_assertions) {
-      format!("{APP_NAME_PRETTY} (DEBUG)")
-    } else {
-      APP_NAME_PRETTY.to_string()
-    };
-    widgets.main_window.set_title(Some(&app_title));
+    widgets.main_window.set_title(Some(APP_NAME_PRETTY));
 
     // Restore previous window configuration
     let (width, height, is_sidebar_pinned) = if let Ok(guard) = SETTINGS.read() {
