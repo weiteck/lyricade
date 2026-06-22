@@ -1,16 +1,11 @@
 use std::{collections::HashSet, path::PathBuf};
 
-use adw::prelude::*;
 use camino::Utf8PathBuf;
-use relm4::{
-  adw::PreferencesDialog,
-  gtk::{EventControllerKey, gdk, glib},
-  prelude::*,
-};
+use relm4::{adw::PreferencesDialog, adw::prelude::*, prelude::*};
 use relm4_components::open_dialog::{
   OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
-use tracing::{debug, error, trace};
+use tracing::{debug, error};
 
 use crate::{
   SETTINGS,
@@ -435,20 +430,6 @@ impl SimpleComponent for PrefsModel {
 
     let libraries_list_box = model.library_rows.widget();
     let widgets = view_output!();
-
-    // Esc, Ctrl-W key presses close the window
-    let sender_handle = sender.clone();
-    let controller = EventControllerKey::new();
-    controller.connect_key_pressed(move |_con, key, _idx, modifier| {
-      trace!("Prefs key event: key {key} + {:?}", modifier);
-      if key == gdk::Key::Escape
-        || (key.to_upper() == gdk::Key::W && modifier.contains(gdk::ModifierType::CONTROL_MASK))
-      {
-        sender_handle.input(PrefsMsg::SaveAndClose);
-      }
-      glib::Propagation::Proceed
-    });
-    root.add_controller(controller);
 
     // Start at Music Libraries page if empty
     if model.libraries.is_empty() {

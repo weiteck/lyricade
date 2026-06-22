@@ -15,7 +15,7 @@ use tracing::{debug, error, trace, warn};
 use crate::manage::ManageLyricsOptions;
 use crate::settings::{APP_ID, APP_NAME_PRETTY, CONNECTION_LIMIT, ColourScheme};
 use crate::track::FetchLyricsOptions;
-use crate::ui::about::{AboutModel, AboutOutput};
+use crate::ui::about::AboutModel;
 use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
 };
@@ -25,7 +25,7 @@ use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::{NUM_LOCALE, SETTINGS, init_app, util};
+use crate::{NUM_LOCALE, SETTINGS, util};
 use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
@@ -112,7 +112,6 @@ enum AppMsg {
   Quit,
 
   ShowAboutWindow,
-  CloseAboutWindow,
   ShowLyricsWindow(ViewLyricsSource),
   CloseLyricsWindow,
   ShowPrefsWindow,
@@ -774,11 +773,7 @@ impl AsyncComponent for AppModel {
           ManageLyricsOutput::Confirm(opts) => AppMsg::ApplyManageLyricsChanges(opts),
         });
 
-    let about_widget = AboutModel::builder()
-      .launch(())
-      .forward(sender.input_sender(), |msg| match msg {
-        AboutOutput::Close => AppMsg::CloseAboutWindow,
-      });
+    let about_widget = AboutModel::builder().launch(()).detach();
 
     let confirm_get_lyrics_dialog = Alert::builder()
       .transient_for(&root)
@@ -1062,11 +1057,6 @@ impl AsyncComponent for AppModel {
         debug!("Showing About window");
         let window = self.about_widget.widget();
         window.present(Some(root));
-      }
-
-      AppMsg::CloseAboutWindow => {
-        debug!("Closing About window");
-        self.about_widget.widget().close();
       }
 
       AppMsg::ShowPrefsWindow => {

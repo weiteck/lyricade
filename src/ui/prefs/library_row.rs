@@ -147,7 +147,7 @@ impl FactoryComponent for LibraryRow {
   fn init_widgets(
     &mut self,
     index: &Self::Index,
-    _root: Self::Root,
+    root: Self::Root,
     _parent: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
     sender: FactorySender<Self>,
   ) -> Self::Widgets {
