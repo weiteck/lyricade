@@ -480,8 +480,15 @@ impl SimpleComponent for PrefsModel {
           }
         }
 
-        let rebuild_required = self.settings_initial.prefer_accurate_timestamps
-          != self.settings_current.prefer_accurate_timestamps;
+        let rebuild_required = (
+          self.settings_initial.prefer_accurate_timestamps,
+          self.settings_initial.tracks_table_col_separators,
+          self.settings_initial.tracks_table_row_separators,
+        ) != (
+          self.settings_current.prefer_accurate_timestamps,
+          self.settings_current.tracks_table_col_separators,
+          self.settings_current.tracks_table_row_separators,
+        );
 
         sender
           .output(PrefsOutput::Close(RebuildTracksTableRequired(rebuild_required)))
