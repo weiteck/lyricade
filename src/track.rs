@@ -474,7 +474,7 @@ impl Track {
     conn: Option<&mut SqliteConnection>,
   ) -> Result<()> {
     // Update lyrics tag (the only tag we ever change)
-    let file = std::fs::File::options()
+    let mut file = std::fs::File::options()
       .read(true)
       .write(true)
       .open(&self.path)
@@ -518,16 +518,21 @@ impl Track {
           // Tag frames will be removed if lyrics is empty
           insert_lyrics_into_id3v2(lyrics, plain_lyrics_in_id3v2_uslt_frame, tag);
 
-          if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
-            debug!("{self} write updated tag: Lyrics tag updated in file");
+          drop(reader);
+          match tag.save_to(&mut file, *TAG_WRITE_OPTIONS) {
+            Ok(()) => {
+              debug!("{self} write updated tag: Lyrics tag updated in file");
 
-            // Update track modified timestamp in DB
-            self.file_modified_at = util::file_modified_at()
-              .path(&self.path())
-              .file(&file)
-              .call();
-          } else {
-            debug!("{self} write updated tag: Skipping (lyrics tag has not changed)");
+              // Update track modified timestamp in DB
+              self.file_modified_at = util::file_modified_at()
+                .path(&self.path())
+                .file(&file)
+                .call();
+            }
+            Err(e) => {
+              return Err(anyhow!("{self} write updated tag: Failed: {e}"))
+                .inspect_err(|e| error!("{e}"));
+            }
           }
         }
       }
@@ -552,14 +557,20 @@ impl Track {
         tag.insert_text(tag::ItemKey::Lyrics, self.lyrics.clone().unwrap_or_default());
       }
 
-      if tag.save_to_path(self.path(), *TAG_WRITE_OPTIONS).is_ok() {
-        debug!("{self} write updated tag: Lyrics tag updated in file");
+      match tag.save_to(&mut file, *TAG_WRITE_OPTIONS) {
+        Ok(()) => {
+          debug!("{self} write updated tag: Lyrics tag updated in file");
 
-        // Update track modified timestamp in DB
-        self.file_modified_at = util::file_modified_at()
-          .path(&self.path())
-          .file(&file)
-          .call();
+          // Update track modified timestamp in DB
+          self.file_modified_at = util::file_modified_at()
+            .path(&self.path())
+            .file(&file)
+            .call();
+        }
+        Err(e) => {
+          return Err(anyhow!("{self} write updated tag: Failed: {e}"))
+            .inspect_err(|e| error!("{e}"));
+        }
       }
     }
 
