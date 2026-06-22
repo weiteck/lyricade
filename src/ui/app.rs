@@ -4,6 +4,7 @@ use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
 
 use futures::stream::StreamExt;
+use num_format::ToFormattedString;
 use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
 use relm4::tokio::sync::oneshot;
@@ -25,8 +26,8 @@ use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
+use crate::{NUM_LOCALE, SETTINGS, init_app, util};
 use crate::{Result, library::Library, track::Track};
-use crate::{SETTINGS, init_app, util};
 
 pub(crate) mod get_lyrics_menu;
 mod main_menu;
@@ -580,8 +581,8 @@ impl AsyncComponent for AppModel {
                           #[watch]
                           set_label: &format!(
                             "{}{} _Tracks",
-                            model.filtered_track_count.map(|n| format!("{n}/")).unwrap_or_default(),
-                            model.track_count
+                            model.filtered_track_count.map(|n| format!("{}/",n.to_formatted_string(&*NUM_LOCALE))).unwrap_or_default(),
+                            model.track_count.to_formatted_string(&*NUM_LOCALE)
                           ),
                           connect_activate => AppMsg::RefreshTrackStats,
 
@@ -652,8 +653,8 @@ impl AsyncComponent for AppModel {
                                   #[watch]
                                   set_label: &format!(
                                     "{}/{} ({} %)",
-                                    model.track_stats.not_instrumental,
-                                    model.track_stats.count,
+                                    model.track_stats.not_instrumental.to_formatted_string(&*NUM_LOCALE),
+                                    model.track_stats.count.to_formatted_string(&*NUM_LOCALE),
                                     model.track_stats.not_instrumental_percent().round()
                                   ),
                                 },
@@ -665,8 +666,8 @@ impl AsyncComponent for AppModel {
                                   #[watch]
                                   set_label: &format!(
                                     "{}/{} ({} %)",
-                                    model.track_stats.tagged_lyrics,
-                                    model.track_stats.not_instrumental,
+                                    model.track_stats.tagged_lyrics.to_formatted_string(&*NUM_LOCALE),
+                                    model.track_stats.not_instrumental.to_formatted_string(&*NUM_LOCALE),
                                     model.track_stats.tagged_lyrics_percent().round()
                                   ),
                                 },
@@ -678,8 +679,8 @@ impl AsyncComponent for AppModel {
                                   #[watch]
                                   set_label: &format!(
                                     "{}/{} ({} %)",
-                                    model.track_stats.sidecar_file,
-                                    model.track_stats.not_instrumental,
+                                    model.track_stats.sidecar_file.to_formatted_string(&*NUM_LOCALE),
+                                    model.track_stats.not_instrumental.to_formatted_string(&*NUM_LOCALE),
                                     model.track_stats.sidecar_file_percent().round()
                                   ),
                                 },
@@ -691,8 +692,8 @@ impl AsyncComponent for AppModel {
                                   #[watch]
                                   set_label: &format!(
                                     "{}/{} ({} %)",
-                                    model.track_stats.sync_lyrics,
-                                    model.track_stats.not_instrumental,
+                                    model.track_stats.sync_lyrics.to_formatted_string(&*NUM_LOCALE),
+                                    model.track_stats.not_instrumental.to_formatted_string(&*NUM_LOCALE),
                                     model.track_stats.sync_lyrics_percent().round()
                                   ),
                                 },
@@ -704,8 +705,8 @@ impl AsyncComponent for AppModel {
                                   #[watch]
                                   set_label: &format!(
                                     "{}/{} ({} %)",
-                                    model.track_stats.plain_lyrics,
-                                    model.track_stats.not_instrumental,
+                                    model.track_stats.plain_lyrics.to_formatted_string(&*NUM_LOCALE),
+                                    model.track_stats.not_instrumental.to_formatted_string(&*NUM_LOCALE),
                                     model.track_stats.plain_lyrics_percent().round()
                                   ),
                                 },
@@ -1230,7 +1231,7 @@ impl AsyncComponent for AppModel {
               } else {
                 "libraries"
               },
-              self.tracks.len(),
+              self.tracks.len().to_formatted_string(&*NUM_LOCALE),
               if self.tracks.len() == 1 {
                 "track"
               } else {
@@ -1815,7 +1816,8 @@ impl AppModel {
       let selected = self.selected_track_ids.len();
 
       let status_page = adw::StatusPage::new();
-      status_page.set_title(&format!("{selected} tracks selected"));
+      status_page
+        .set_title(&format!("{} tracks selected", selected.to_formatted_string(&*NUM_LOCALE)));
       status_page.set_description(Some("Select one track to view details"));
       status_page.set_icon_name(Some("music-queue-symbolic"));
       status_page.add_css_class("compact");

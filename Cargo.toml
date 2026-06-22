@@ -33,6 +33,7 @@ leaky-bucket = { version = "1.1", features = ["tracing"] }
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 lofty = "0.24"
 mimalloc = "0.1"
+num-format = { version = "0.4.4", features = ["with-system-locale"] }
 rand = "0.10"
 regex = "1.12"
 relm4 = { version = "0.11", features = ["gnome_49", "libadwaita"] }

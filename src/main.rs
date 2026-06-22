@@ -58,6 +58,12 @@ pub static USER_AGENT: LazyLock<String> = LazyLock::new(|| {
   )
 });
 
+pub static NUM_LOCALE: LazyLock<num_format::SystemLocale> = LazyLock::new(|| {
+  num_format::SystemLocale::default().unwrap_or_else(|_| {
+    num_format::SystemLocale::from_name("en_US").expect("should be a valid locale name")
+  })
+});
+
 pub(crate) static SETTINGS: LazyLock<RwLock<Settings>> =
   LazyLock::new(|| RwLock::new(Settings::load().expect("Failed to load settings from database")));
 
