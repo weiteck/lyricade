@@ -96,8 +96,6 @@ pub(crate) struct Settings {
 
 impl Settings {
   pub(crate) fn load() -> Result<Self> {
-    Self::create_app_dirs_if_not_exist()?;
-
     let mut conn = DB_POOL.get()?;
 
     let res = settings::table
@@ -150,6 +148,7 @@ impl Settings {
   /// Create data directory.
   pub(crate) fn create_app_dirs_if_not_exist() -> Result<()> {
     if !&APP_DATA_DIR.exists() {
+      debug!("Data directory does not exist. Creating directory \"{}\"", &*APP_DATA_DIR);
       fs::create_dir(&*APP_DATA_DIR)?;
     }
     Ok(())

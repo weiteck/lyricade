@@ -93,7 +93,7 @@ pub(crate) static AUDIO_FILE_EXTENSIONS: &[&str] = &[
     "wv",
 ];
 
-pub(crate) async fn init_app() -> Result<()> {
+pub(crate) fn init_app() -> Result<()> {
   // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
   // is stored in a static so it is not dropped for the duration of the program
   let _guard = &*LOG_WORKER_GUARD;
@@ -101,6 +101,9 @@ pub(crate) async fn init_app() -> Result<()> {
   if cfg!(debug_assertions) {
     warn!("Started in DEBUG mode");
   }
+
+  // Create data dir before initialise database
+  Settings::create_app_dirs_if_not_exist()?;
 
   init_db_pool()?;
 
@@ -226,6 +229,12 @@ fn init_db_pool() -> Result<()> {
   Ok(())
 }
 
-fn main() {
+fn main() -> Result<()> {
+  // Prepare logging, database and settings
+  init_app()?;
+
+  // Show the GUI
   ui::app::start();
+
+  Ok(())
 }

@@ -3,7 +3,7 @@
   <id>io.github.weiteck.Lyricade</id>
 
   <name>Lyricade</name>
-  <summary>Download and manage lyrics</summary>
+  <summary>Download and manage lyrics for your music library</summary>
 
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>

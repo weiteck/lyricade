@@ -745,9 +745,6 @@ impl AsyncComponent for AppModel {
     root: Self::Root,
     sender: relm4::AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
-    // Prepare logging, database and settings
-    init_app().await.expect("Failed to initialise app");
-
     let main_menu_button = MainMenuButtonModel::builder()
       .launch(root.clone())
       .forward(sender.input_sender(), |msg| msg);
