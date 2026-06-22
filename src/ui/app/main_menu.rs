@@ -117,7 +117,7 @@ impl SimpleComponent for MainMenuButtonModel {
     let sender_handle = sender.clone();
     let action_quit: RelmAction<ActionQuit> = RelmAction::new_stateless(move |_| {
       sender_handle
-        .output(AppMsg::Quit)
+        .output(AppMsg::GracefulQuit)
         .expect("MainMenuButtonModel output receiver dropped");
     });
     window_actions_group.add_action(action_quit);

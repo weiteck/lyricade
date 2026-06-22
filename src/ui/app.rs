@@ -8,8 +8,7 @@ use num_format::ToFormattedString;
 use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
 use relm4::tokio::sync::oneshot;
-use relm4::tokio::task::AbortHandle;
-use relm4::{RelmContainerExt, prelude::*};
+use relm4::{JoinHandle, RelmContainerExt, prelude::*};
 use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, error, trace, warn};
 
@@ -76,10 +75,11 @@ struct AppModel {
   active_search_filters: HashSet<TracksTableFilter>,
 
   is_fetching_lyrics: bool,
-  fetch_lyrics_abort_handle: Option<AbortHandle>,
+  fetch_lyrics_task: Option<JoinHandle<()>>,
 
   is_applying_manage_lyrics: bool,
   manage_lyrics_cancel_token: Option<oneshot::Sender<()>>,
+  manage_lyrics_task: Option<JoinHandle<()>>,
 
   refresh_library_cancel_token: Option<oneshot::Sender<()>>,
 
@@ -108,6 +108,7 @@ enum AppMsg {
   RefreshLibraries,
   /// Update the table with the tracks in `AppModel`.
   BuildTracksTable,
+  GracefulQuit,
   Quit,
 
   ShowAboutWindow,
@@ -380,7 +381,7 @@ impl AsyncComponent for AppModel {
     main_window = adw::ApplicationWindow {
       // Ensure settings are saved on close
       connect_close_request[sender] => move |_| {
-        sender.input(AppMsg::Quit);
+        sender.input(AppMsg::GracefulQuit);
         gtk::glib::Propagation::Proceed
       },
 
@@ -815,9 +816,10 @@ impl AsyncComponent for AppModel {
       is_sidebar_pinned: false,
       is_sidebar_revealed: false,
       is_fetching_lyrics: false,
-      fetch_lyrics_abort_handle: None,
+      fetch_lyrics_task: None,
       is_applying_manage_lyrics: false,
       manage_lyrics_cancel_token: None,
+      manage_lyrics_task: None,
       refresh_library_cancel_token: None,
       progress_task: None,
       progress_step: None,
@@ -968,12 +970,12 @@ impl AsyncComponent for AppModel {
           sender.input(AppMsg::FetchLyricsComplete);
         });
 
-        self.fetch_lyrics_abort_handle = Some(jh.abort_handle());
+        self.fetch_lyrics_task = Some(jh);
       }
 
       AppMsg::FetchLyricsComplete => {
         debug!("FetchLyrics completed");
-        self.fetch_lyrics_abort_handle = None;
+        self.fetch_lyrics_task = None;
         self.is_fetching_lyrics = false;
         self.update_track_stats();
         sender.input(AppMsg::ProgressComplete);
@@ -995,7 +997,7 @@ impl AsyncComponent for AppModel {
         let sender_handle = sender.clone();
 
         // Process tracks in background thread and update progress
-        relm4::spawn_blocking(move || {
+        let jh = relm4::spawn_blocking(move || {
           let progress_sender = sender_handle.clone();
           let progress_callback = move |msg| {
             progress_sender
@@ -1009,12 +1011,15 @@ impl AsyncComponent for AppModel {
           // End display progress
           sender_handle.input(AppMsg::ApplyManageLyricsChangesComplete);
         });
+
+        self.manage_lyrics_task = Some(jh);
       }
 
       AppMsg::ApplyManageLyricsChangesComplete => {
         debug!("ApplyManageLyricsChanges completed");
 
         self.manage_lyrics_cancel_token = None;
+        self.manage_lyrics_task = None;
         self.is_applying_manage_lyrics = false;
         sender.input(AppMsg::LoadLibraries);
         sender.input(AppMsg::HideSpinner);
@@ -1023,7 +1028,7 @@ impl AsyncComponent for AppModel {
       // Cancel either fetching lyrics, apply manage lyrics changes, or refresh libraries operations
       AppMsg::CancelOperation => {
         // Abort the async fetch lyrics task
-        if let Some(handle) = self.fetch_lyrics_abort_handle.take() {
+        if let Some(handle) = self.fetch_lyrics_task.take() {
           handle.abort();
           debug!("FetchLyrics cancelled by user");
           sender.input(AppMsg::ProgressComplete);
@@ -1520,6 +1525,37 @@ impl AsyncComponent for AppModel {
       AppMsg::HideSpinner => {
         debug!("Hiding spinner");
         self.spinner_task = None;
+      }
+
+      AppMsg::GracefulQuit => {
+        // Make sure tasks that might write to files have finished aborting before quitting
+        if let Some(handle) = self.fetch_lyrics_task.take() {
+          debug!("Cancelling FetchLyrics for graceful quit...");
+          handle.abort();
+
+          // Wait for task to end before quitting
+          let sender = sender.clone();
+          relm4::spawn(async move {
+            let _ = handle.await;
+
+            sender.input(AppMsg::Quit);
+          });
+        } else if self.manage_lyrics_cancel_token.take().is_some()
+          && let Some(handle) = self.manage_lyrics_task.take()
+        {
+          debug!("Cancelling ApplyManageLyrics for graceful quit...");
+          handle.abort();
+
+          // Wait for task to end before quitting
+          let sender = sender.clone();
+          relm4::spawn(async move {
+            let _ = handle.await;
+
+            sender.input(AppMsg::Quit);
+          });
+        } else {
+          sender.input(AppMsg::Quit);
+        }
       }
 
       AppMsg::Quit => {
