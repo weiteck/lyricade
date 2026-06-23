@@ -155,15 +155,25 @@ fn init_logging() -> WorkerGuard {
   let file_appender = tracing_appender::rolling::daily(log_dir, log_name);
   let (non_blocking, guard) = tracing_appender::non_blocking(file_appender);
 
-  tracing_subscriber::registry()
-    .with(filter)
-    .with(
+  let span_events_enabled = std::env::var("SPAN_EVENTS")
+    .is_ok_and(|v| v.as_str() == "1" || v.to_lowercase().as_str() == "true");
+
+  // File logging
+  let layers =
+    tracing_subscriber::registry().with(fmt::layer().with_ansi(false).with_writer(non_blocking));
+
+  // Console logging
+  let layers = if span_events_enabled {
+    layers.with(
       fmt::layer()
         .with_span_events(FmtSpan::CLOSE)
         .with_ansi(true),
-    ) // console logs
-    .with(fmt::layer().with_ansi(false).with_writer(non_blocking)) // file logs
-    .init();
+    )
+  } else {
+    layers.with(fmt::layer().with_ansi(true))
+  };
+
+  layers.with(filter).init();
 
   clean_up_log_files(log_dir).expect("failed to clean up log files");
 
