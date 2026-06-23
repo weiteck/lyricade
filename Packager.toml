@@ -6,15 +6,13 @@ description = "Download and manage lyrics for your music library"
 authors = ["Chris Price <fair.lake5766_AT_fastmail.com>"]
 copyright = "Copyright © 2026 Chris Price"
 homepage = "https://github.com/weiteck/lyricade"
-categories = ["AudioVideo", "Music"]
+category = "Music"
 
 formats = ["appimage"]
 
 before-packaging-command = "cargo build --release"
 
-icons = [
-    "data/icons/io.github.weiteck.Lyricade.svg"
-]
+icons = ["data/icons/512x512.png"]
 
 [[binaries]]
 path = "target/release/lyricade"
