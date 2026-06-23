@@ -17,8 +17,3 @@ icons = ["data/icons/512x512.png"]
 [[binaries]]
 path = "target/release/lyricade"
 main = true
-
-[appimage]
-# This plugin instructs linuxdeploy to bundle the required GSettings schemas,
-# pixbuf loaders, and core GTK assets so it can run on systems without GTK4 installed.
-linuxdeploy-plugins = { gtk = "https://raw.githubusercontent.com/linuxdeploy/linuxdeploy-plugin-gtk/master/linuxdeploy-plugin-gtk.sh" }
