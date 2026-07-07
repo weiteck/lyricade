@@ -1,0 +1,40 @@
+id: io.github.weiteck.Lyricade
+runtime: org.gnome.Platform
+runtime-version: "50"
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: lyricade
+
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --device=dri
+  - --share=ipc
+  - --filesystem=host
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/lrc-lyrics/cargo
+    CARGO_NET_OFFLINE: "true"
+
+modules:
+  - name: lyricade
+    buildsystem: simple
+    build-commands:
+      # Prepare the offline config
+      - mkdir -p .cargo
+      - cp cargo/config .cargo/config.toml
+
+      - cargo build --bin lyricade --offline --frozen --release
+
+      - install -Dm0755 target/release/lyricade ${FLATPAK_DEST}/bin/lyricade
+      - install -Dm0644 data/icons/${FLATPAK_ID}.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
+      - install -Dm0644 data/icons/symbolic/${FLATPAK_ID}-symbolic.svg ${FLATPAK_DEST}/share/icons/hicolor/symbolic/apps/${FLATPAK_ID}-symbolic.svg
+      - install -Dm0644 data/${FLATPAK_ID}.desktop ${FLATPAK_DEST}/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm0644 data/${FLATPAK_ID}.metainfo.xml ${FLATPAK_DEST}/share/metainfo/${FLATPAK_ID}.metainfo.xml
+    sources:
+      - type: dir
+        path: .
+      - cargo-sources.json
