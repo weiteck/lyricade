@@ -2,9 +2,8 @@ name: Build & Package AppImage
 
 on:
   push:
-    branches: ["main"]
-  pull_request:
-    branches: ["main"]
+    tags:
+      - "v*"
 
 jobs:
   build-appimage:
@@ -40,8 +39,16 @@ jobs:
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: cargo packager --release --formats appimage -c Packager.toml
 
-      - name: Upload AppImage Artifact
-        uses: actions/upload-artifact@v4
+      - name: Rename AppImage to include Git Tag
+        run: |
+          TAG_NAME=${GITHUB_REF#refs/tags/}
+
+          for file in *.AppImage; do
+            mv "$file" "lyricade-${TAG_NAME}-x86_64.AppImage"
+          done
+
+      - name: Upload AppImage to GitHub Release
+        uses: softprops/action-gh-release@v2
+        if: startsWith(github.ref, 'refs/tags/')
         with:
-          name: lyricade-appimage
-          path: ./*.AppImage
+          files: lyricade-*.AppImage
