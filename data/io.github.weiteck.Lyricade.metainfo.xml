@@ -14,9 +14,9 @@
 
   <description>
     <p>
-      Lyricade scans your music libraries and downloads missing lyrics in either synchronous LRC
-      format (if available) or plain text format, at your preference. It also assists in managing
-      your existing embedded and external lyrics files.
+      Scan your music library and download missing lyrics, in either synchronised LRC
+      or plain text format, at your preference. It also assists in managing your
+      existing embedded and external lyrics.
     </p>
 
     <p>
@@ -26,10 +26,10 @@
       <li>Scan your music and find missing lyrics</li>
       <li>Download either synchronous LRC or plain lyrics</li>
       <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
-      <li>Optionally embed <em>existing</em> sidecar <code>.lrc</code> or <code
-        >.txt</code> files into lyrics tags</li>
-      <li>Optionally remove existing lyrics files if a file is already tagged</li>
-      <li>Supports multiple library paths</li>
+      <li>Embed <em>existing</em> sidecar <code>.lrc</code> or <code>.txt</code>
+      files into lyrics tags</li>
+      <li>Remove existing lyrics files if a file is already tagged</li>
+      <li>Supports multiple music libraries</li>
     </ul>
   </description>
 
@@ -40,6 +40,9 @@
 
   <keywords>
     <keyword>lyrics</keyword>
+    <keyword>tag</keyword>
+    <keyword>metadata</keyword>
+    <keyword>sync</keyword>
     <keyword translate="no">LRC</keyword>
     <keyword translate="no">lrclib</keyword>
   </keywords>
@@ -50,6 +53,11 @@
     <control>keyboard</control>
     <display_length compare="ge">800</display_length>
   </recommends>
+
+  <branding>
+    <color type="primary" scheme_preference="light">#f18b90</color>
+    <color type="primary" scheme_preference="dark">#464b8d</color>
+  </branding>
 
   <screenshots>
     <screenshot type="default">
