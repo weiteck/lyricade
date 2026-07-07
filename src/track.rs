@@ -11,7 +11,14 @@ use lofty::{
   probe::Probe,
   tag::{self, Accessor, TagExt},
 };
-use std::{fmt::Display, fs, hash::Hash, io, sync::LazyLock, time::Duration};
+use std::{
+  fmt::Display,
+  fs,
+  hash::Hash,
+  io::{self, Seek},
+  sync::LazyLock,
+  time::Duration,
+};
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -519,6 +526,12 @@ impl Track {
           insert_lyrics_into_id3v2(lyrics, plain_lyrics_in_id3v2_uslt_frame, tag);
 
           drop(reader);
+
+          // Rewind the file cursor to the beginning before probing/saving
+          if let Err(e) = file.rewind() {
+            return Err(anyhow!("{self} write updated tag: Failed to rewind file: {e}"));
+          }
+
           match tag.save_to(&mut file, *TAG_WRITE_OPTIONS) {
             Ok(()) => {
               debug!("{self} write updated tag: Lyrics tag updated in file");
@@ -530,7 +543,7 @@ impl Track {
                 .call();
             }
             Err(e) => {
-              return Err(anyhow!("{self} write updated tag: Failed: {e}"))
+              return Err(anyhow!("{self} write updated tag (MP3): Failed: {e}"))
                 .inspect_err(|e| error!("{e}"));
             }
           }
@@ -555,6 +568,11 @@ impl Track {
 
       if self.lyrics.is_some() {
         tag.insert_text(tag::ItemKey::Lyrics, self.lyrics.clone().unwrap_or_default());
+      }
+
+      // Rewind the file cursor to the beginning before probing/saving
+      if let Err(e) = file.rewind() {
+        return Err(anyhow!("{self} write updated tag: Failed to rewind file: {e}"));
       }
 
       match tag.save_to(&mut file, *TAG_WRITE_OPTIONS) {

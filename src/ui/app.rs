@@ -484,6 +484,7 @@ impl AsyncComponent for AppModel {
                         set_label: "_Add Music Library…",
                         set_use_underline: true,
                         set_css_classes: &["pill", "suggested-action"],
+
                         connect_clicked => AppMsg::ShowPrefsWindow,
                       },
                     },
