@@ -25,45 +25,67 @@
     <ul>
       <li>Scan your music and find missing lyrics</li>
       <li>Download either synchronous LRC or plain lyrics</li>
-      <li>Embed lyrics to the metadata tag <em>or</em> save as a sidecar file</li>
-      <li>Embed <em>existing</em> sidecar <code>.lrc</code> or <code
+      <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
+      <li>Optionally embed <em>existing</em> sidecar <code>.lrc</code> or <code
         >.txt</code> files into lyrics tags</li>
-      <li>Clean up sidecar lyrics files if a file is already tagged</li>
+      <li>Optionally remove existing lyrics files if a file is already tagged</li>
+      <li>Supports multiple library paths</li>
     </ul>
   </description>
 
   <categories>
-    <category>AudioVideo</category>
     <category>Music</category>
+    <category>AudioVideo</category>
   </categories>
+
+  <keywords>
+    <keyword>lyrics</keyword>
+    <keyword translate="no">LRC</keyword>
+    <keyword translate="no">lrclib</keyword>
+  </keywords>
 
   <recommends>
     <internet>always</internet>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <display_length compare="ge">800</display_length>
   </recommends>
 
-  <!-- TODO -->
   <screenshots>
     <screenshot type="default">
       <caption>The main window</caption>
-      <image>https://tbc1</image>
+      <image>
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/1.png
+      </image>
     </screenshot>
     <screenshot>
-      <caption>The preferences window</caption>
-      <image>https://tbc2</image>
+      <caption>The main window (dark) with track details</caption>
+      <image>
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/2.png
+      </image>
     </screenshot>
     <screenshot>
-      <caption>Light mode main window</caption>
-      <image>https://tbc3</image>
+      <caption>Preferences window</caption>
+      <image>
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/3.png
+      </image>
+    </screenshot>
+    <screenshot>
+      <caption>Lyrics viewer</caption>
+      <image>
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/4.png
+      </image>
     </screenshot>
   </screenshots>
 
   <url type="homepage">https://github.com/weiteck/lyricade</url>
   <url type="vcs-browser">https://github.com/weiteck/lyricade</url>
-  <url type="bug-tracker">https://github.com/weiteck/lyricade/issues</url>
+  <url type="bugtracker">https://github.com/weiteck/lyricade/issues</url>
 
   <developer id="io.github.weiteck">
     <name translate="no">Chris Price</name>
   </developer>
 
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
+
 </component>
