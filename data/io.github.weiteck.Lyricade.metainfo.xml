@@ -3,7 +3,7 @@
   <id>io.github.weiteck.Lyricade</id>
 
   <name>Lyricade</name>
-  <summary>Download and manage lyrics for your music library</summary>
+  <summary>Download and manage lyrics</summary>
 
   <metadata_license>FSFAP</metadata_license>
   <project_license>Apache-2.0</project_license>
@@ -26,8 +26,7 @@
       <li>Scan your music and find missing lyrics</li>
       <li>Download either synchronous LRC or plain lyrics</li>
       <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
-      <li>Embed <em>existing</em> sidecar <code>.lrc</code> or <code>.txt</code>
-      files into lyrics tags</li>
+      <li>Embed <em>existing</em> sidecar LRC and TXT files into lyrics tags</li>
       <li>Remove existing lyrics files if a file is already tagged</li>
       <li>Supports multiple music libraries</li>
     </ul>
@@ -95,7 +94,7 @@
   </developer>
 
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
-  
+
   <releases>
     <release version="0.1.0" date="2026-07-13">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.1.0</url>
