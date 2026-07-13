@@ -50,7 +50,13 @@ Lyricade is primarily developed and packaged as a `flatpak`. The `flatpak` can b
 - flatpak-builder
 - GNOME Platform and SDK matching the manifest
 
-Install the required runtimes:
+#### 1. Clone the repository
+
+```bash
+git clone https://github.com/weiteck/lyricade.git && cd lyricade
+```
+
+#### 2. Install the required runtimes
 
 ```bash
 flatpak install flathub \
@@ -61,7 +67,7 @@ flatpak install flathub \
 
 (Build with the runtime version specified by the project's Flatpak manifest file `io.github.weiteck.Lyricade.yml`)
 
-### Build
+#### 3. Build
 
 ```bash
 flatpak-builder \
@@ -72,7 +78,7 @@ flatpak-builder \
     io.github.weiteck.Lyricade.yml
 ```
 
-### Run
+#### 4. Run
 
 ```bash
 flatpak run io.github.weiteck.Lyricade
