@@ -35,9 +35,13 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 **Lyricade** uses [`lofty-rs`](https://github.com/Serial-ATA/lofty-rs) for reading and writing audio file metadata tags. Please refer to their repo for supported formats.
 
+## Releases
+
+View the [latest](https://github.com/weiteck/lyricade/releases/latest) release to download an `AppImage` package, or see the next section to build and install as a `flatpak`.
+
 ## Building
 
-Lyricade is primarily developed and packaged as a Flatpak.
+Lyricade is primarily developed and packaged as a `flatpak`. The `flatpak` can be built and installed locally by following the below steps.
 
 ### Requirements
 
