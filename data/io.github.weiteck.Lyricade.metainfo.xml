@@ -95,5 +95,23 @@
   </developer>
 
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
+  
+  <releases>
+    <release version="0.1.0" date="2026-07-13">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.1.0</url>
+      <description>
+        <p>This is the first public release of Lyricade.</p>
+        <ul>
+          <li>Scan your music and find missing lyrics from lrclib.net</li>
+          <li>Download either synchronous LRC or plain lyrics</li>
+          <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
+          <li>Supports multiple local music libraries</li>
+          <li>Embed existing sidecar .lrc or .txt files into lyrics tags</li>
+          <li>Remove existing lyrics files if a file is already tagged</li>
+          <li>Convert LRC lyrics to plain lyrics</li>
+        </ul>
+      </description>
+    </release>
+  </releases>
 
 </component>
