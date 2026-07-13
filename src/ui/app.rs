@@ -475,7 +475,7 @@ impl AsyncComponent for AppModel {
                     set_align: gtk::Align::Center,
 
                     adw::StatusPage {
-                      set_title: &format!("Welcome to {}", &APP_NAME_PRETTY),
+                      set_title: &format!("Welcome to {}", APP_NAME_PRETTY),
                       set_description: Some("Add a Music Library to get started"),
                       set_icon_name: Some("lyricade-symbolic"),
                       set_width_request: 300,

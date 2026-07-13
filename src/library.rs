@@ -471,6 +471,6 @@ impl Library {
 
 impl Display for Library {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Library({})[\"{}\"]", &self.id, &self.path())
+    write!(f, "Library({})[\"{}\"]", self.id, self.path())
   }
 }

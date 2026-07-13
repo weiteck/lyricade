@@ -93,7 +93,7 @@ impl PartialEq for Track {
 
 impl Display for Track {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-    write!(f, "Track({})[\"{}\"]", &self.id, &self.path)
+    write!(f, "Track({})[\"{}\"]", self.id, self.path)
   }
 }
 

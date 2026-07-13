@@ -181,7 +181,7 @@ fn init_logging() -> WorkerGuard {
 }
 
 fn clean_up_log_files(log_dir: impl AsRef<Path>) -> Result<()> {
-  let prefix = format!("{}.log", &APP_NAME);
+  let prefix = format!("{}.log", APP_NAME);
   let mut files = fs::read_dir(log_dir)?
     .filter_map(core::result::Result::ok)
     .filter(|de| de.path().is_file() && de.file_name().to_string_lossy().starts_with(&prefix))
