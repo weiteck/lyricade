@@ -12,7 +12,7 @@ finish-args:
   - --device=dri
   - --share=ipc
   - --share=network
-  - --filesystem=host
+  - --filesystem=xdg-music
 
 build-options:
   append-path: /usr/lib/sdk/rust-stable/bin
