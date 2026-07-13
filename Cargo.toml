@@ -35,7 +35,7 @@ lofty = "0.24"
 mimalloc = "0.1"
 num-format = { version = "0.4.4", features = ["with-system-locale"] }
 rand = "0.10"
-regex = "1.12"
+regex = "1.13"
 relm4 = { version = "0.11", features = ["gnome_49", "libadwaita"] }
 relm4-components = { version = "0.11", features = ["libadwaita"] }
 reqwest = { version = "0.13", features = ["json", "rustls"] }
