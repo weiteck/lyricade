@@ -29,9 +29,11 @@ pub(crate) enum ManageLyricsOutput {
 #[derive(Debug)]
 pub(crate) enum ExposedSetting {
   TagsDelete(ManageLyricsTarget),
+  TagsDeleteCondition(Option<ManageLyricsTarget>),
   TagsCopy(ManageLyricsTarget),
   TagsConvertToPlain(bool),
   SidecarsDelete(ManageLyricsTarget),
+  SidecarsDeleteCondition(Option<ManageLyricsTarget>),
   SidecarsCopy(ManageLyricsTarget),
   SidecarsConvertToPlain(bool),
 }
@@ -72,9 +74,37 @@ impl SimpleComponent for ManageLyricsModel {
                 ])),
                 #[watch]
                 set_selected: model.state.tags.delete as u32,
+
                 connect_selected_item_notify[sender] => move |row| {
                   let target = ManageLyricsTarget::from(row.selected());
                   sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::TagsDelete(target)));
+                },
+              },
+
+              adw::ComboRow {
+                set_title: "C_onditional Delete",
+                set_use_underline: true,
+                set_subtitle: "Only delete tags if sidecar file exists",
+                set_model: Some(&gtk::StringList::new(&[
+                  "Unconditional",
+                  "No Sidecar",
+                  "Plain Sidecar",
+                  "Sync Sidecar",
+                  "Any Sidecar",
+                ])),
+                #[watch]
+                set_sensitive: model.state.tags.delete != ManageLyricsTarget::None,
+                #[watch]
+                set_selected: if model.state.tags.delete == ManageLyricsTarget::None { 0 }
+                  else if let Some(target) = model.state.tags.delete_on_sidecar_condition { target as u32 + 1}
+                  else { 0 },
+
+                  connect_selected_item_notify[sender] => move |row| {
+                  let target = match row.selected() {
+                    0 => None,
+                    idx => Some(ManageLyricsTarget::from(idx - 1))
+                  };
+                  sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::TagsDeleteCondition(target)));
                 },
               },
 
@@ -92,6 +122,7 @@ impl SimpleComponent for ManageLyricsModel {
                 set_sensitive: model.state.tags.delete == ManageLyricsTarget::None,
                 #[watch]
                 set_selected: if model.state.tags.delete == ManageLyricsTarget::None { model.state.tags.copy as u32 } else { 0 },
+
                 connect_selected_item_notify[sender] => move |row| {
                   let target = ManageLyricsTarget::from(row.selected());
                   sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::TagsCopy(target)));
@@ -132,9 +163,37 @@ impl SimpleComponent for ManageLyricsModel {
                 ])),
                 #[watch]
                 set_selected: model.state.sidecars.delete as u32,
+
                 connect_selected_item_notify[sender] => move |row| {
                   let target = ManageLyricsTarget::from(row.selected());
                   sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::SidecarsDelete(target)));
+                },
+              },
+
+              adw::ComboRow {
+                set_title: "Co_nditional Delete",
+                set_use_underline: true,
+                set_subtitle: "Only delete sidecar files if tag exists",
+                set_model: Some(&gtk::StringList::new(&[
+                  "Unconditional",
+                  "No Tag",
+                  "Plain Tag",
+                  "Sync Tag",
+                  "Any Tag",
+                ])),
+                #[watch]
+                set_sensitive: model.state.sidecars.delete != ManageLyricsTarget::None,
+                #[watch]
+                set_selected: if model.state.sidecars.delete == ManageLyricsTarget::None { 0 }
+                  else if let Some(target) = model.state.sidecars.delete_on_tag_condition { target as u32 + 1}
+                  else { 0 },
+
+                  connect_selected_item_notify[sender] => move |row| {
+                  let target = match row.selected() {
+                    0 => None,
+                    idx => Some(ManageLyricsTarget::from(idx - 1))
+                  };
+                  sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::SidecarsDeleteCondition(target)));
                 },
               },
 
@@ -152,6 +211,7 @@ impl SimpleComponent for ManageLyricsModel {
                 set_sensitive: model.state.sidecars.delete == ManageLyricsTarget::None,
                 #[watch]
                 set_selected: if model.state.sidecars.delete == ManageLyricsTarget::None { model.state.sidecars.copy as u32 } else { 0 },
+
                 connect_selected_item_notify[sender] => move |row| {
                   let target = ManageLyricsTarget::from(row.selected());
                   sender.input(ManageLyricsMsg::UpdateState(ExposedSetting::SidecarsCopy(target)));
@@ -269,9 +329,15 @@ impl SimpleComponent for ManageLyricsModel {
 
         match setting {
           ExposedSetting::TagsDelete(target) => self.state.tags.delete = target,
+          ExposedSetting::TagsDeleteCondition(target) => {
+            self.state.tags.delete_on_sidecar_condition = target;
+          }
           ExposedSetting::TagsCopy(target) => self.state.tags.copy = target,
           ExposedSetting::TagsConvertToPlain(enabled) => self.state.tags.convert_to_plain = enabled,
           ExposedSetting::SidecarsDelete(target) => self.state.sidecars.delete = target,
+          ExposedSetting::SidecarsDeleteCondition(target) => {
+            self.state.sidecars.delete_on_tag_condition = target;
+          }
           ExposedSetting::SidecarsCopy(target) => self.state.sidecars.copy = target,
           ExposedSetting::SidecarsConvertToPlain(enabled) => {
             self.state.sidecars.convert_to_plain = enabled;

@@ -20,6 +20,8 @@ pub(crate) struct ManageLyricsOptions {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct TagOptions {
   pub(crate) delete: ManageLyricsTarget,
+  /// If `Some`, only delete tags if sidecar file matches `ManageLyricsTarget` variant.
+  pub(crate) delete_on_sidecar_condition: Option<ManageLyricsTarget>,
   pub(crate) copy: ManageLyricsTarget,
   pub(crate) convert_to_plain: bool,
 }
@@ -27,6 +29,8 @@ pub(crate) struct TagOptions {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub(crate) struct SidecarOptions {
   pub(crate) delete: ManageLyricsTarget,
+  /// If `Some`, only delete sidecar files if lyrics tag matches `ManageLyricsTarget` variant.
+  pub(crate) delete_on_tag_condition: Option<ManageLyricsTarget>,
   pub(crate) copy: ManageLyricsTarget,
   pub(crate) convert_to_plain: bool,
 }
@@ -140,75 +144,76 @@ impl ManageLyricsOptions {
 
   /// Delete the 'lyrics' tag.
   fn delete_lyrics_tag(self, track: &mut Track) -> ManageLyricsResult {
-    match self.tags.delete {
-      ManageLyricsTarget::Plain if track.lyrics.is_some() && !track.lyrics_synchronised => {
-        track.lyrics = None;
-        ManageLyricsResult::WriteToFileAndDb
-      }
+    let sidecar_condition_guard = self.tags.delete != ManageLyricsTarget::None
+      && self
+        .tags
+        .delete_on_sidecar_condition
+        .is_none_or(|sidecar| match sidecar {
+          ManageLyricsTarget::None => {
+            track.lyrics_sidecar_txt_file.is_none() && track.lyrics_sidecar_lrc_file.is_none()
+          }
+          ManageLyricsTarget::Plain => {
+            track.lyrics_sidecar_lrc_file.is_none() && track.lyrics_sidecar_txt_file.is_some()
+          }
+          ManageLyricsTarget::Sync => {
+            track.lyrics_sidecar_lrc_file.is_some() && track.lyrics_sidecar_txt_file.is_none()
+          }
+          ManageLyricsTarget::All => {
+            track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some()
+          }
+        });
 
-      ManageLyricsTarget::Sync if track.lyrics.is_some() && track.lyrics_synchronised => {
-        track.lyrics = None;
-        track.lyrics_synchronised = false;
-        ManageLyricsResult::WriteToFileAndDb
-      }
+    if sidecar_condition_guard {
+      match self.tags.delete {
+        ManageLyricsTarget::Plain if track.lyrics.is_some() && !track.lyrics_synchronised => {
+          track.lyrics = None;
+          ManageLyricsResult::WriteToFileAndDb
+        }
 
-      ManageLyricsTarget::All if track.lyrics.is_some() => {
-        track.lyrics = None;
-        track.lyrics_synchronised = false;
-        ManageLyricsResult::WriteToFileAndDb
-      }
+        ManageLyricsTarget::Sync if track.lyrics.is_some() && track.lyrics_synchronised => {
+          track.lyrics = None;
+          track.lyrics_synchronised = false;
+          ManageLyricsResult::WriteToFileAndDb
+        }
 
-      _ => ManageLyricsResult::NoAction,
+        ManageLyricsTarget::All if track.lyrics.is_some() => {
+          track.lyrics = None;
+          track.lyrics_synchronised = false;
+          ManageLyricsResult::WriteToFileAndDb
+        }
+
+        _ => ManageLyricsResult::NoAction,
+      }
+    } else {
+      ManageLyricsResult::NoAction
     }
   }
 
   /// Delete sidecar lyrics files.
   /// Deletes all sidecar files is no `target` provided.
   fn delete_sidecar_files(self, track: &mut Track) -> ManageLyricsResult {
-    match self.sidecars.delete {
-      ManageLyricsTarget::Plain if let Some(path) = track.txt_file_path() => {
-        debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
-
-        if fs::remove_file(&path)
-          .inspect_err(|error| error!("{error}"))
-          .is_ok()
-        {
-          track.lyrics_sidecar_txt_file = None;
-        }
-
-        ManageLyricsResult::WriteToDb
-      }
-
-      ManageLyricsTarget::Sync if let Some(path) = track.lrc_file_path() => {
-        debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
-
-        if fs::remove_file(&path)
-          .inspect_err(|error| error!("{error}"))
-          .is_ok()
-        {
-          track.lyrics_sidecar_lrc_file = None;
-        }
-
-        ManageLyricsResult::WriteToDb
-      }
-
-      ManageLyricsTarget::All => {
-        let result = if let Some(path) = track.lrc_file_path() {
-          debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
-
-          if fs::remove_file(&path)
-            .inspect_err(|error| error!("{error}"))
-            .is_ok()
-          {
-            track.lyrics_sidecar_lrc_file = None;
+    let tag_condition_guard = self.sidecars.delete != ManageLyricsTarget::None
+      && self
+        .sidecars
+        .delete_on_tag_condition
+        .is_none_or(|tag| match tag {
+          ManageLyricsTarget::None => {
+            track.lyrics_sidecar_txt_file.is_none() && track.lyrics_sidecar_lrc_file.is_none()
           }
+          ManageLyricsTarget::Plain => {
+            track.lyrics_sidecar_lrc_file.is_none() && track.lyrics_sidecar_txt_file.is_some()
+          }
+          ManageLyricsTarget::Sync => {
+            track.lyrics_sidecar_lrc_file.is_some() && track.lyrics_sidecar_txt_file.is_none()
+          }
+          ManageLyricsTarget::All => {
+            track.lyrics_sidecar_lrc_file.is_some() || track.lyrics_sidecar_txt_file.is_some()
+          }
+        });
 
-          ManageLyricsResult::WriteToDb
-        } else {
-          ManageLyricsResult::NoAction
-        };
-
-        if let Some(path) = track.txt_file_path() {
+    if tag_condition_guard {
+      match self.sidecars.delete {
+        ManageLyricsTarget::Plain if let Some(path) = track.txt_file_path() => {
           debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
 
           if fs::remove_file(&path)
@@ -219,13 +224,58 @@ impl ManageLyricsOptions {
           }
 
           ManageLyricsResult::WriteToDb
-        } else {
-          ManageLyricsResult::NoAction
         }
-        .max(result) // return most actionable result
-      }
 
-      _ => ManageLyricsResult::NoAction,
+        ManageLyricsTarget::Sync if let Some(path) = track.lrc_file_path() => {
+          debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
+
+          if fs::remove_file(&path)
+            .inspect_err(|error| error!("{error}"))
+            .is_ok()
+          {
+            track.lyrics_sidecar_lrc_file = None;
+          }
+
+          ManageLyricsResult::WriteToDb
+        }
+
+        ManageLyricsTarget::All => {
+          let result = if let Some(path) = track.lrc_file_path() {
+            debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
+
+            if fs::remove_file(&path)
+              .inspect_err(|error| error!("{error}"))
+              .is_ok()
+            {
+              track.lyrics_sidecar_lrc_file = None;
+            }
+
+            ManageLyricsResult::WriteToDb
+          } else {
+            ManageLyricsResult::NoAction
+          };
+
+          if let Some(path) = track.txt_file_path() {
+            debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
+
+            if fs::remove_file(&path)
+              .inspect_err(|error| error!("{error}"))
+              .is_ok()
+            {
+              track.lyrics_sidecar_txt_file = None;
+            }
+
+            ManageLyricsResult::WriteToDb
+          } else {
+            ManageLyricsResult::NoAction
+          }
+          .max(result) // return most actionable result
+        }
+
+        _ => ManageLyricsResult::NoAction,
+      }
+    } else {
+      ManageLyricsResult::NoAction
     }
   }
 
