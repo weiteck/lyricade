@@ -37,7 +37,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 ## Releases
 
-View the [latest](https://github.com/weiteck/lyricade/releases/latest) release to download an `AppImage` package, or see the next section to build and install as a `flatpak`.
+The latest release is available as a `flatpak` package via [Flathub](https://flathub.org/en/apps/io.github.weiteck.Lyricade), or can be downloaded as an `AppImage` package from the [Releases](https://github.com/weiteck/lyricade/releases) section.
 
 ## Building
 
