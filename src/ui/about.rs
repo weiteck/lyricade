@@ -26,7 +26,11 @@ impl SimpleComponent for AboutModel {
     <i>github.com/tranxuanthang/lrclib</i>",
       set_version: env!("CARGO_PKG_VERSION"),
       set_release_notes_version: env!("CARGO_PKG_VERSION"),
-      set_release_notes: "<p>Initial release</p>",
+      set_release_notes: r"<p>This release adds to the lyrics management features.</p>
+    <ul>
+      <li>Add conditional guards for deleting sidecar files if a tag exists</li>
+      <li>Add conditional guards for deleting lyrics tags if a sidecar file exists</li>
+    </ul>",
     }
   }
 

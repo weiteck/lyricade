@@ -1,7 +1,7 @@
 [package]
 edition = "2024"
 name = "lyricade"
-version = "0.1.0"
+version = "0.2.0"
 description = "Manage and download lyrics for your music library"
 repository = "https://github.com/weiteck/lyricade"
 license = "Apache-2.0"

@@ -96,6 +96,16 @@
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
 
   <releases>
+    <release version="0.2.0" date="2026-07-14">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.2.0</url>
+      <description>
+          <p>This release adds to the lyrics management features.</p>
+        <ul>
+          <li>Add conditional guards for deleting sidecar files if a tag exists</li>
+          <li>Add conditional guards for deleting lyrics tags if a sidecar file exists</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.1.0" date="2026-07-13">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.1.0</url>
       <description>
