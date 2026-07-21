@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::atomic::AtomicUsize;
 use std::time::Duration;
@@ -1177,7 +1178,7 @@ impl AsyncComponent for AppModel {
           debug!("Showing ViewLyrics window with lyrics type \"{source:?}\" for {track}");
 
           let controller = ViewLyricsModel::builder()
-            .launch((Box::new(track.clone()), source))
+            .launch((Rc::new(track.clone()), source))
             .forward(sender.input_sender(), |msg| match msg {
               ViewLyricsOutput::Close => AppMsg::CloseLyricsWindow,
             });

@@ -8,6 +8,7 @@ use lofty::{
   file::{AudioFile, TaggedFileExt},
   id3::v2::Id3v2Tag,
   mpeg,
+  picture::PictureType,
   probe::Probe,
   tag::{self, Accessor, TagExt},
 };
@@ -436,6 +437,41 @@ impl Track {
     sidecar_file.save()?;
 
     Ok(())
+  }
+
+  pub(crate) fn get_cover_art_bytes_for_file(mut file: fs::File) -> Result<Vec<u8>> {
+    file.rewind()?;
+
+    let mut reader = io::BufReader::new(file);
+    let tagged_file = Probe::new(&mut reader)
+      .options(ParseOptions::default())
+      .guess_file_type()
+      .inspect_err(|error| warn!("Failed to guess file type: {error}"))?
+      .read()?;
+
+    let primary_tag = tagged_file.primary_tag();
+    let all_tags = tagged_file.tags();
+
+    // Try the primary tag first, then the rest (if any)
+    for tag in all_tags.iter().chain(primary_tag).rev() {
+      if let Some(pic) = tag.get_picture_type(PictureType::CoverFront) {
+        debug!("Found cover art in file");
+
+        return Ok(pic.data().to_vec());
+      }
+    }
+
+    // Fallback to any picture
+    for tag in all_tags.iter().chain(primary_tag).rev() {
+      if let Some(pic) = tag.pictures().first() {
+        debug!("Found other art type \"{:?}\" in file", pic.pic_type());
+
+        return Ok(pic.data().to_vec());
+      }
+    }
+
+    debug!("No pictures found in file");
+    Err(anyhow!("No pictures found in file"))
   }
 
   /// Insert or update track in database.
