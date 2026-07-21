@@ -1,6 +1,7 @@
 use std::{fmt::Debug, rc::Rc, sync::Arc, time::Duration};
 
 use relm4::adw::prelude::*;
+use relm4::gtk::GestureClick;
 use relm4::prelude::*;
 use rodio::Source;
 use tokio::sync::oneshot;
@@ -32,6 +33,7 @@ pub(super) struct PlayerModel {
 pub(super) enum PlayerMsg {
   TogglePlay,
   UpdatePosition(f64),
+  /// Seek to a point in the track, where `0.0` is 0% and `1.0` is 100%.
   Seek(f64),
   HandlePaused,
   CloseRequested,
@@ -79,6 +81,7 @@ impl SimpleAsyncComponent for PlayerModel {
         gtk::Button {
           inline_css: "border-radius: 1000px;",
           set_icon_name: "media-skip-backward-symbolic",
+          set_tooltip: "Skip to Start",
 
           connect_clicked[sender] => move |_btn| {
             sender.input(PlayerMsg::Seek(0.0));
@@ -91,6 +94,10 @@ impl SimpleAsyncComponent for PlayerModel {
           set_icon_name: if let PlayerState::Paused = model.state
             { "media-playback-start-symbolic" }
             else { "media-playback-pause-symbolic"},
+          #[watch]
+          set_tooltip: if let PlayerState::Paused = model.state
+            { "Play" }
+            else { "Pause"},
 
           connect_clicked[sender] => move |_btn| {
             sender.input(PlayerMsg::TogglePlay);
@@ -105,10 +112,11 @@ impl SimpleAsyncComponent for PlayerModel {
         set_margin_start: 12,
         set_margin_vertical: 12,
 
-        gtk::ProgressBar {
+        #[local_ref]
+        progress_bar -> gtk::ProgressBar {
           set_hexpand: true,
           set_show_text: true,
-          set_tooltip: &model.timestamp_pos,
+          add_css_class: "seekbar",
 
           #[watch]
           set_text: Some(&model.timestamp_pos),
@@ -126,8 +134,10 @@ impl SimpleAsyncComponent for PlayerModel {
     root: Self::Root,
     sender: AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
+    let path = track.path();
+
     // Open audio file, create the decoder and open the default sound output device
-    let model = if let Ok(file) = std::fs::File::open(track.path()).inspect_err(|e| warn!("{e}"))
+    let model = if let Ok(file) = std::fs::File::open(path.clone()).inspect_err(|e| warn!("{e}"))
       && let Ok(mut source) = rodio::Decoder::try_from(file).inspect_err(|e| warn!("{e}"))
       && let Ok(mut output) =
         rodio::DeviceSinkBuilder::open_default_sink().inspect_err(|e| warn!("{e}"))
@@ -165,6 +175,17 @@ impl SimpleAsyncComponent for PlayerModel {
             _ = tick.tick() => {
               if player_handle.is_paused() {
                 sender_handle.input(PlayerMsg::HandlePaused);
+              } else if player_handle.empty() {
+                // Re-append the source so playback can be restarted
+                if let Ok(file) = std::fs::File::open(path.clone()).inspect_err(|e| warn!("{e}"))
+                  && let Ok(source) = rodio::Decoder::try_from(file).inspect_err(|e| warn!("{e}")) {
+                    player_handle.append(source);
+                    player_handle.pause();
+
+                    sender_handle.input(PlayerMsg::UpdatePosition(0.0));
+                  } else {
+                    break;
+                  }
               } else {
                 sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
               }
@@ -210,6 +231,20 @@ impl SimpleAsyncComponent for PlayerModel {
       }
     };
 
+    let gesture_click = GestureClick::new();
+    let sender_handle = sender.clone();
+    gesture_click.connect_pressed(move |gesture, _btn, x, _y| {
+      if let Some(width) = gesture.widget().map(|widget| f64::from(widget.width()))
+        && width > 0.0
+      {
+        let pos = x / width;
+        sender_handle.input(PlayerMsg::Seek(pos));
+      }
+    });
+
+    let progress_bar = &gtk::ProgressBar::new();
+    progress_bar.add_controller(gesture_click);
+
     let widgets = view_output!();
 
     AsyncComponentParts { model, widgets }
@@ -238,13 +273,16 @@ impl SimpleAsyncComponent for PlayerModel {
       }
 
       PlayerMsg::Seek(pos) => {
-        debug!("Seeking to position {pos:.2}s");
+        let pos = pos.clamp(0.0, 1.0);
+        let secs = pos * self.length;
+
+        debug!("Seeking to position {secs:.2}s");
 
         self.player.as_ref().inspect(|p| {
           let _ = p
             .0
-            .try_seek(std::time::Duration::from_secs_f64(pos))
-            .inspect_err(|e| warn!("Failed to seek to position {pos:.2}s: {e}"));
+            .try_seek(std::time::Duration::from_secs_f64(secs))
+            .inspect_err(|e| warn!("Failed to seek to position {secs:.2}s: {e}"));
         });
 
         self.update_position_and_timestamp(pos);

@@ -76,3 +76,12 @@ label.view-lyrics.text {
   font-weight: bold;
   opacity: 1;
 }
+
+progressbar.seekbar trough {
+    min-height: 10px;
+    margin-top: 4px;
+}
+
+progressbar.seekbar progress {
+    min-height: 10px;
+}
