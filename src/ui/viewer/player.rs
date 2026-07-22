@@ -1,11 +1,16 @@
-use std::{fmt::Debug, rc::Rc, sync::Arc, time::Duration};
+use std::{
+  fmt::Debug,
+  rc::Rc,
+  sync::Arc,
+  time::{Duration, Instant},
+};
 
 use relm4::adw::prelude::*;
 use relm4::gtk::GestureClick;
 use relm4::prelude::*;
 use rodio::Source;
 use tokio::sync::oneshot;
-use tracing::{debug, trace, warn};
+use tracing::{debug, error, trace, warn};
 
 use crate::{track::Track, util};
 
@@ -35,7 +40,7 @@ pub(super) enum PlayerMsg {
   UpdatePosition(f64),
   /// Seek to a point in the track, where `0.0` is 0% and `1.0` is 100%.
   Seek(f64),
-  HandlePaused,
+  PlaybackEnded,
   CloseRequested,
 }
 
@@ -158,11 +163,15 @@ impl SimpleAsyncComponent for PlayerModel {
 
       let (cancel_tx, mut cancel_rx) = oneshot::channel();
 
+      // The background player task
       let task = tokio::spawn(async move {
         // Keep device sink handle alive
         let _output = output;
 
-        let mut tick = tokio::time::interval(Duration::from_millis(100));
+        let mut tick = tokio::time::interval(Duration::from_millis(33));
+
+        let mut previous_second = 0;
+        let mut last_pos_update = Instant::now();
 
         loop {
           tokio::select! {
@@ -173,21 +182,39 @@ impl SimpleAsyncComponent for PlayerModel {
             }
 
             _ = tick.tick() => {
-              if player_handle.is_paused() {
-                sender_handle.input(PlayerMsg::HandlePaused);
-              } else if player_handle.empty() {
+              if player_handle.empty() {
+                debug!("Playback ended");
+
                 // Re-append the source so playback can be restarted
                 if let Ok(file) = std::fs::File::open(path.clone()).inspect_err(|e| warn!("{e}"))
                   && let Ok(source) = rodio::Decoder::try_from(file).inspect_err(|e| warn!("{e}")) {
                     player_handle.append(source);
                     player_handle.pause();
 
-                    sender_handle.input(PlayerMsg::UpdatePosition(0.0));
+                    sender_handle.input(PlayerMsg::PlaybackEnded);
                   } else {
+                    // Abort task on failure to re-append source
+                    error!("Unable to re-append file to playback queue");
+
+                    sender_handle.input(PlayerMsg::PlaybackEnded);
                     break;
                   }
-              } else {
-                sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
+              } else if !player_handle.is_paused() {
+                // Update progress for every new whole second elapsed
+                let current_second = player_handle.get_pos().as_secs();
+                if current_second != previous_second {
+                  sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
+
+                  previous_second = current_second;
+                  last_pos_update = Instant::now();
+                }
+
+                // Update progress more frequently between seconds for smoother feedback on seekbar
+                if last_pos_update.elapsed().as_millis() >= 250 {
+                  sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
+
+                  last_pos_update = Instant::now();
+                }
               }
             }
           }
@@ -250,7 +277,7 @@ impl SimpleAsyncComponent for PlayerModel {
     AsyncComponentParts { model, widgets }
   }
 
-  async fn update(&mut self, message: Self::Input, _sender: AsyncComponentSender<Self>) {
+  async fn update(&mut self, message: Self::Input, sender: AsyncComponentSender<Self>) {
     match message {
       PlayerMsg::TogglePlay => {
         if let Some(player) = self.player.as_ref() {
@@ -288,12 +315,10 @@ impl SimpleAsyncComponent for PlayerModel {
         self.update_position_and_timestamp(pos);
       }
 
-      PlayerMsg::HandlePaused => {
-        if let PlayerState::Playing = self.state {
-          debug!("Playback ended");
+      PlayerMsg::PlaybackEnded => {
+        self.state = PlayerState::Paused;
 
-          self.state = PlayerState::Paused;
-        }
+        sender.input(PlayerMsg::Seek(0.0));
       }
 
       PlayerMsg::CloseRequested => {
