@@ -5,14 +5,16 @@ use std::{
   time::{Duration, Instant},
 };
 
-use relm4::adw::prelude::*;
-use relm4::gtk::GestureClick;
+use relm4::gtk::{GestureClick, gio, glib};
 use relm4::prelude::*;
+use relm4::{adw::prelude::*, gtk::gdk};
 use rodio::Source;
 use tokio::sync::oneshot;
 use tracing::{debug, error, trace, warn};
 
 use crate::{track::Track, util};
+
+const COVER_ART_SIZE: i32 = 90;
 
 struct RodioPlayer(Arc<rodio::Player>);
 
@@ -31,7 +33,7 @@ pub(super) struct PlayerModel {
   position: f64,
   length: f64,
   timestamp_pos: String,
-  cover: Option<gtk::gdk::Texture>,
+  cover: Option<gdk::Texture>,
 }
 
 #[derive(Debug)]
@@ -71,7 +73,7 @@ impl SimpleAsyncComponent for PlayerModel {
           inline_css: "background: lightgrey;",
           set_paintable: model.cover.as_ref(),
           set_overflow: gtk::Overflow::Hidden,
-          set_pixel_size: 90,
+          set_pixel_size: COVER_ART_SIZE,
         },
       },
 
@@ -225,8 +227,9 @@ impl SimpleAsyncComponent for PlayerModel {
       let cover = || {
         let file = std::fs::File::open(track.path()).ok()?;
         let bytes = Track::get_cover_art_bytes_for_file(file).ok()?;
-        let bytes = gtk::glib::Bytes::from(bytes.as_slice());
-        let texture = gtk::gdk::Texture::from_bytes(&bytes).ok()?;
+        let texture = scale_cover_art_to_texture(&bytes, COVER_ART_SIZE)?;
+        // let bytes = glib::Bytes::from(bytes.as_slice());
+        // let texture = gdk::Texture::from_bytes(&bytes).ok()?;
         Some(texture)
       };
 
@@ -361,4 +364,21 @@ impl Drop for PlayerModel {
       task.abort();
     }
   }
+}
+
+fn scale_cover_art_to_texture(bytes: &[u8], max_size: i32) -> Option<gdk::Texture> {
+  let bytes = glib::Bytes::from(bytes);
+  let stream = gio::MemoryInputStream::from_bytes(&bytes);
+
+  let pixbuf = gtk::gdk_pixbuf::Pixbuf::from_stream_at_scale(
+    &stream,
+    max_size,
+    max_size,
+    true,
+    gio::Cancellable::NONE,
+  )
+  .ok()?;
+
+  #[allow(deprecated)]
+  Some(gdk::Texture::for_pixbuf(&pixbuf))
 }
