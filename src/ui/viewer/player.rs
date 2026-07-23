@@ -30,9 +30,9 @@ pub(super) struct PlayerModel {
   player_task_handle: Option<tokio::task::JoinHandle<()>>,
   player_task_cancel: Option<oneshot::Sender<()>>,
   state: PlayerState,
-  position: f64,
-  length: f64,
-  timestamp_pos: String,
+  position_secs: f64,
+  length_secs: f64,
+  timestamp: String,
   cover: Option<gdk::Texture>,
 }
 
@@ -46,17 +46,24 @@ pub(super) enum PlayerMsg {
   CloseRequested,
 }
 
+#[derive(Debug)]
+pub(super) enum PlayerOutput {
+  StateChanged(PlayerState),
+  CurrentLyricsLine(Option<usize>),
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum PlayerState {
+pub(crate) enum PlayerState {
   Paused,
   Playing,
+  Stopped,
 }
 
 #[relm4::component(pub, async)]
 impl SimpleAsyncComponent for PlayerModel {
   type Input = PlayerMsg;
-  type Output = ();
-  type Init = Rc<Track>;
+  type Output = PlayerOutput;
+  type Init = (Rc<Track>, Vec<f64>);
 
   view! {
     gtk::Box {
@@ -98,13 +105,13 @@ impl SimpleAsyncComponent for PlayerModel {
         gtk::Button {
           inline_css: "border-radius: 1000px;",
           #[watch]
-          set_icon_name: if let PlayerState::Paused = model.state
-            { "media-playback-start-symbolic" }
-            else { "media-playback-pause-symbolic"},
+          set_icon_name: if let PlayerState::Playing = model.state
+            { "media-playback-pause-symbolic" }
+            else { "media-playback-start-symbolic"},
           #[watch]
-          set_tooltip: if let PlayerState::Paused = model.state
-            { "Play" }
-            else { "Pause"},
+          set_tooltip: if let PlayerState::Playing = model.state
+            { "Pause" }
+            else { "Play"},
 
           connect_clicked[sender] => move |_btn| {
             sender.input(PlayerMsg::TogglePlay);
@@ -126,18 +133,18 @@ impl SimpleAsyncComponent for PlayerModel {
           add_css_class: "seekbar",
 
           #[watch]
-          set_text: Some(&model.timestamp_pos),
+          set_text: Some(&model.timestamp),
 
           #[watch]
-          set_fraction: if model.length == 0.0 { 0.0 }
-            else { model.position / model.length },
+          set_fraction: if model.length_secs == 0.0 { 0.0 }
+            else { model.position_secs / model.length_secs },
         },
       },
     },
   }
 
   async fn init(
-    track: Self::Init,
+    (track, lyric_lines_timestamps): Self::Init,
     root: Self::Root,
     sender: AsyncComponentSender<Self>,
   ) -> AsyncComponentParts<Self> {
@@ -151,7 +158,7 @@ impl SimpleAsyncComponent for PlayerModel {
     {
       output.log_on_drop(false);
 
-      let length = source
+      let length_secs = source
         .by_ref()
         .total_duration()
         .map_or(0.0, |dur| dur.as_secs_f64());
@@ -165,15 +172,32 @@ impl SimpleAsyncComponent for PlayerModel {
 
       let (cancel_tx, mut cancel_rx) = oneshot::channel();
 
+      let mut lyric_line_windows = Vec::with_capacity(lyric_lines_timestamps.len());
+      let mut iter = lyric_lines_timestamps.into_iter().peekable();
+      while let Some(ts) = iter.next() {
+        let next_ts = iter.peek().unwrap_or(&f64::INFINITY);
+        lyric_line_windows.push(ts..*next_ts);
+      }
+
       // The background player task
       let task = tokio::spawn(async move {
+        let find_lyric_window = |ts: f64| {
+          lyric_line_windows
+            .iter()
+            .enumerate()
+            .find(|(_, range)| range.contains(&ts))
+        };
+
         // Keep device sink handle alive
         let _output = output;
 
         let mut tick = tokio::time::interval(Duration::from_millis(33));
 
-        let mut previous_second = 0;
+        let mut prev_sec = 0;
         let mut last_pos_update = Instant::now();
+
+        let mut cur_lyric_window = lyric_line_windows.first().map(|window| 0.0..window.start);
+        let start_lyric_window = cur_lyric_window.clone();
 
         loop {
           tokio::select! {
@@ -202,20 +226,41 @@ impl SimpleAsyncComponent for PlayerModel {
                     break;
                   }
               } else if !player_handle.is_paused() {
-                // Update progress for every new whole second elapsed
-                let current_second = player_handle.get_pos().as_secs();
-                if current_second != previous_second {
-                  sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
+                let cur_ms = player_handle.get_pos().as_secs_f64();
 
-                  previous_second = current_second;
+                // Update progress for every new whole second elapsed
+                let cur_sec = player_handle.get_pos().as_secs();
+                if cur_sec != prev_sec {
+                  sender_handle.input(PlayerMsg::UpdatePosition(cur_ms));
+
+                  prev_sec = cur_sec;
                   last_pos_update = Instant::now();
                 }
 
                 // Update progress more frequently between seconds for smoother feedback on seekbar
                 if last_pos_update.elapsed().as_millis() >= 250 {
-                  sender_handle.input(PlayerMsg::UpdatePosition(player_handle.get_pos().as_secs_f64()));
+                  sender_handle.input(PlayerMsg::UpdatePosition(cur_ms));
 
                   last_pos_update = Instant::now();
+                }
+
+                // Check if we are within a different lyric line's window
+                if let Some(window) = &cur_lyric_window && !window.contains(&cur_ms) {
+                  if let Some((new_lyric_line_idx, new_lyric_window)) = find_lyric_window(cur_ms) {
+                    trace!("Current lyric line is {new_lyric_line_idx}");
+
+                    cur_lyric_window = Some(new_lyric_window.clone());
+
+                    sender_handle.output(PlayerOutput::CurrentLyricsLine(Some(new_lyric_line_idx)))
+                      .expect("PlayerOutput receiver dropped");
+                  } else {
+                    trace!("No current lyric line");
+
+                    cur_lyric_window = start_lyric_window.clone();
+
+                    sender_handle.output(PlayerOutput::CurrentLyricsLine(None))
+                      .expect("PlayerOutput receiver dropped");
+                  }
                 }
               }
             }
@@ -228,8 +273,6 @@ impl SimpleAsyncComponent for PlayerModel {
         let file = std::fs::File::open(track.path()).ok()?;
         let bytes = Track::get_cover_art_bytes_for_file(file).ok()?;
         let texture = scale_cover_art_to_texture(&bytes, COVER_ART_SIZE)?;
-        // let bytes = glib::Bytes::from(bytes.as_slice());
-        // let texture = gdk::Texture::from_bytes(&bytes).ok()?;
         Some(texture)
       };
 
@@ -238,9 +281,9 @@ impl SimpleAsyncComponent for PlayerModel {
         player_task_cancel: Some(cancel_tx),
         player_task_handle: Some(task),
         state: PlayerState::Paused,
-        position: 0.0,
-        length,
-        timestamp_pos: util::secs_f64_to_hms(0.0),
+        position_secs: 0.0,
+        length_secs,
+        timestamp: util::secs_f64_to_hms(0.0),
         cover: cover(),
       }
     } else {
@@ -254,9 +297,9 @@ impl SimpleAsyncComponent for PlayerModel {
         player_task_cancel: None,
         player_task_handle: None,
         state: PlayerState::Paused,
-        position: 0.0,
-        length: 0.0,
-        timestamp_pos: String::new(),
+        position_secs: 0.0,
+        length_secs: 0.0,
+        timestamp: String::new(),
         cover: None,
       }
     };
@@ -289,11 +332,17 @@ impl SimpleAsyncComponent for PlayerModel {
 
             player.0.play();
             self.state = PlayerState::Playing;
+            sender
+              .output(PlayerOutput::StateChanged(self.state))
+              .expect("PlayerOutput receiver dropped");
           } else {
             debug!("Stopping playback");
 
             player.0.pause();
             self.state = PlayerState::Paused;
+            sender
+              .output(PlayerOutput::StateChanged(self.state))
+              .expect("PlayerOutput receiver dropped");
           }
         }
       }
@@ -304,24 +353,28 @@ impl SimpleAsyncComponent for PlayerModel {
 
       PlayerMsg::Seek(pos) => {
         let pos = pos.clamp(0.0, 1.0);
-        let secs = pos * self.length;
+        let secs = pos * self.length_secs;
+        let dur = Duration::from_secs_f64(secs);
 
         debug!("Seeking to position {secs:.2}s");
 
         self.player.as_ref().inspect(|p| {
           let _ = p
             .0
-            .try_seek(std::time::Duration::from_secs_f64(secs))
+            .try_seek(dur)
             .inspect_err(|e| warn!("Failed to seek to position {secs:.2}s: {e}"));
         });
 
-        self.update_position_and_timestamp(pos);
+        self.update_position_and_timestamp(secs);
       }
 
       PlayerMsg::PlaybackEnded => {
-        self.state = PlayerState::Paused;
-
         sender.input(PlayerMsg::Seek(0.0));
+
+        self.state = PlayerState::Stopped;
+        sender
+          .output(PlayerOutput::StateChanged(self.state))
+          .expect("PlayerOutput receiver dropped");
       }
 
       PlayerMsg::CloseRequested => {
@@ -345,13 +398,13 @@ impl SimpleAsyncComponent for PlayerModel {
 }
 
 impl PlayerModel {
-  fn update_position_and_timestamp(&mut self, pos: f64) {
-    self.position = pos;
+  fn update_position_and_timestamp(&mut self, secs: f64) {
+    self.position_secs = secs;
 
-    let timestamp = util::secs_f64_to_hms(pos);
+    let timestamp = util::secs_f64_to_hms(secs);
 
-    if self.timestamp_pos != timestamp {
-      self.timestamp_pos = timestamp;
+    if self.timestamp != timestamp {
+      self.timestamp = timestamp;
     }
   }
 }

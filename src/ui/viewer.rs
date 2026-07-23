@@ -5,11 +5,11 @@ use relm4::{gtk::EventControllerKey, prelude::*};
 use tracing::{debug, trace};
 
 use crate::{
-  lyrics::lyrics_line::LyricsLine,
+  lyrics::{lyrics_are_synchronised, lyrics_line::LyricsLine},
   track::Track,
   ui::viewer::{
-    line::ViewLyricsLine,
-    player::{PlayerModel, PlayerMsg},
+    line::{LyricsLineMsg, ViewLyricsLine},
+    player::{PlayerModel, PlayerMsg, PlayerOutput, PlayerState},
     tag::ViewLyricsLrcTag,
   },
 };
@@ -28,16 +28,20 @@ pub(crate) enum ViewLyricsSource {
 pub(crate) struct ViewLyricsModel {
   track: Rc<Track>,
   lyrics: String,
+  lyrics_sync: bool,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
   lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
   is_viewing_raw: bool,
 
   player: AsyncController<PlayerModel>,
+  current_lyric_line: Option<usize>,
 }
 
 #[derive(Debug)]
 pub(crate) enum ViewLyricsMsg {
   SetViewingRaw(bool),
+  PlayerStateChanged(PlayerState),
+  CurrentLyricsLine(Option<usize>),
   CloseRequested,
 }
 
@@ -215,15 +219,34 @@ impl SimpleComponent for ViewLyricsModel {
         .unwrap_or_else(|| "No TXT sidecar file found".into()),
     };
 
+    // Build the factory components
     let (lyrics_lines, lrc_tags) = build_factories(&lyrics);
 
+    // Build index of `LyricsLine` seconds timestamps
+    // The player will send back the current lyric line index when current
+    let lyrics_lines_timestamps = lyrics_lines
+      .iter()
+      .filter_map(|ll| ll.inner.seconds)
+      .collect::<Vec<_>>();
+
+    let player = PlayerModel::builder()
+      .launch((Rc::clone(&track), lyrics_lines_timestamps))
+      .forward(sender.input_sender(), |msg| match msg {
+        PlayerOutput::CurrentLyricsLine(idx) => ViewLyricsMsg::CurrentLyricsLine(idx),
+        PlayerOutput::StateChanged(state) => ViewLyricsMsg::PlayerStateChanged(state),
+      });
+
+    let lyrics_sync = lyrics_are_synchronised(&lyrics);
+
     let model = ViewLyricsModel {
-      player: PlayerModel::builder().launch(Rc::clone(&track)).detach(),
+      player,
       track,
       lyrics,
+      lyrics_sync,
       lyrics_lines,
       lrc_tags,
       is_viewing_raw: false,
+      current_lyric_line: None,
     };
 
     let lyrics_lines_box = model.lyrics_lines.widget();
@@ -252,6 +275,56 @@ impl SimpleComponent for ViewLyricsModel {
       ViewLyricsMsg::SetViewingRaw(enabled) => {
         debug!("ViewLyrics: Viewing raw text page: {}", enabled);
         self.is_viewing_raw = enabled;
+      }
+
+      ViewLyricsMsg::PlayerStateChanged(state) => {
+        debug!("ViewLyrics: PlayerState changed to \"{:?}\"", state);
+
+        if self.lyrics_sync {
+          match state {
+            PlayerState::Playing => {
+              for idx in 0..self.lyrics_lines.len() {
+                if self.current_lyric_line.is_some_and(|cur| idx == cur) {
+                  continue;
+                }
+
+                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
+              }
+            }
+            PlayerState::Stopped => {
+              for idx in 0..self.lyrics_lines.len() {
+                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+              }
+
+              self.current_lyric_line = None;
+            }
+            PlayerState::Paused => (),
+          }
+        }
+      }
+
+      ViewLyricsMsg::CurrentLyricsLine(maybe_idx) => {
+        trace!("ViewLyrics: Current lyrics line is {maybe_idx:?}");
+
+        if let Some(idx) = maybe_idx {
+          // Un-dim current line
+          self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+
+          // Re-dim the previous line
+          if let Some(prev_idx) = self.current_lyric_line {
+            self
+              .lyrics_lines
+              .send(prev_idx, LyricsLineMsg::SetDimmed(true));
+          }
+
+          self.current_lyric_line = Some(idx);
+        } else {
+          for idx in 0..self.lyrics_lines.len() {
+            self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
+          }
+
+          self.current_lyric_line = None;
+        }
       }
 
       ViewLyricsMsg::CloseRequested => {

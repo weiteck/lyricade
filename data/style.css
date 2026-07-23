@@ -67,6 +67,10 @@ label.view-lyrics.text {
   font-size: 1.5rem;
 }
 
+label.view-lyrics.text.dimmed {
+  opacity: 0.5;
+}
+
 .table-cell.lyrics {
   font-weight: normal;
   opacity: 0.67;
