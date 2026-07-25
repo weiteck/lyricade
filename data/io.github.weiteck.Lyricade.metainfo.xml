@@ -28,6 +28,7 @@
       <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
       <li>Embed <em>existing</em> sidecar LRC and TXT files into lyrics tags</li>
       <li>Remove existing lyrics files if a file is already tagged</li>
+      <li>Lyrics viewer with audio playback and LRC lyric highlighting</li>
       <li>Supports multiple music libraries</li>
     </ul>
   </description>
