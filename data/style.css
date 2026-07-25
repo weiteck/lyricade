@@ -76,3 +76,7 @@ label.view-lyrics.text {
   font-weight: bold;
   opacity: 1;
 }
+
+progressbar.seekbar progress {
+    min-height: 10px;
+}

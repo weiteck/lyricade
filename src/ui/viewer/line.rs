@@ -1,5 +1,6 @@
 use adw::prelude::*;
 use relm4::prelude::*;
+use tracing::trace;
 
 use crate::{lyrics::lyrics_line::LyricsLine, util};
 
@@ -7,14 +8,20 @@ const MIN_SPACING: i32 = 24;
 const MAX_SPACING: i32 = 96;
 
 pub(super) struct ViewLyricsLine {
-  pub(crate) inner: LyricsLine,
-  pub(crate) index: usize,
+  pub(super) inner: LyricsLine,
+  pub(super) index: usize,
+  pub(super) dimmed: bool,
+}
+
+#[derive(Debug)]
+pub(super) enum LyricsLineMsg {
+  SetDimmed(bool),
 }
 
 #[relm4::factory(pub)]
 impl FactoryComponent for ViewLyricsLine {
   type Init = LyricsLine;
-  type Input = ();
+  type Input = LyricsLineMsg;
   type Output = ();
   type CommandOutput = ();
   type ParentWidget = gtk::Box;
@@ -50,6 +57,8 @@ impl FactoryComponent for ViewLyricsLine {
       },
 
       gtk::Label {
+        #[watch]
+        set_class_active: ("dimmed", self.dimmed),
         set_css_classes: &["view-lyrics", "text", "document"],
         set_hexpand: true,
         set_vexpand: false,
@@ -71,6 +80,17 @@ impl FactoryComponent for ViewLyricsLine {
     Self {
       inner: lyrics_line,
       index: index.current_index(),
+      dimmed: false,
+    }
+  }
+
+  fn update(&mut self, message: Self::Input, _sender: FactorySender<Self>) {
+    match message {
+      LyricsLineMsg::SetDimmed(dimmed) => {
+        trace!("ViewLyricsLine: {} set as dimmed: {dimmed}", self.index);
+
+        self.dimmed = dimmed;
+      }
     }
   }
 }

@@ -11,12 +11,13 @@ const GAP_TO_PREV_GRANULARITY: f64 = 4.0;
 /// Represents a single line of lyrics. For sync lyrics, it contains the timestamp
 /// and the normalised relative gap to the previous line of lyrics. A `gap_to_prev
 /// == 0.5` would mean this gap is about 50% that of the longest gap in all the lyrics.
+#[allow(unused)]
 #[derive(Debug, Clone)]
 pub(crate) struct LyricsLine {
-  #[allow(unused)]
   pub(crate) lyrics_type: LyricsType,
   pub(crate) contents: String,
   pub(crate) timestamp: Option<String>,
+  pub(crate) seconds: Option<f64>,
   pub(crate) gap_to_prev: Option<f64>,
 }
 
@@ -91,6 +92,7 @@ impl LyricsLine {
           lyrics_type: LyricsType::Plain,
           contents: line.to_string(),
           timestamp: None,
+          seconds: None,
           gap_to_prev: None,
         })
         .collect();
@@ -98,6 +100,18 @@ impl LyricsLine {
       (lyrics_lines, None)
     } else {
       // Return sync lyrics
+      let tags = if tags.is_empty() { None } else { Some(tags) };
+
+      let offset = if let Some(tags) = &tags
+        && let Some(LrcTag::Offset(offset)) =
+          tags.iter().find(|&tag| matches!(tag, &LrcTag::Offset(_)))
+      {
+        trace!("Applying time offset of {offset:.3}s");
+        *offset
+      } else {
+        0
+      };
+
       let mut prev_ts_secs = 0.0;
 
       let lyrics_lines = timestamp_and_contents
@@ -116,12 +130,12 @@ impl LyricsLine {
             lyrics_type: LyricsType::Sync,
             contents: contents.to_string(),
             timestamp: Some(format!("{}:{:02}", (ts_secs as usize / 60), ts_secs as usize % 60)),
+            seconds: Some(ts_secs + f64::from(offset)),
             gap_to_prev: Some(gap_to_prev),
           }
         })
         .collect();
 
-      let tags = if tags.is_empty() { None } else { Some(tags) };
       (lyrics_lines, tags)
     }
   }

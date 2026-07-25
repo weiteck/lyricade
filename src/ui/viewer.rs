@@ -1,14 +1,24 @@
+use std::rc::Rc;
+
 use adw::prelude::*;
-use relm4::{gtk::EventControllerKey, prelude::*};
+use relm4::{
+  gtk::{EventControllerKey, gdk, glib},
+  prelude::*,
+};
 use tracing::{debug, trace};
 
 use crate::{
-  lyrics::lyrics_line::LyricsLine,
+  lyrics::{lyrics_are_synchronised, lyrics_line::LyricsLine},
   track::Track,
-  ui::viewer::{line::ViewLyricsLine, tag::ViewLyricsLrcTag},
+  ui::viewer::{
+    line::{LyricsLineMsg, ViewLyricsLine},
+    player::{PlayerModel, PlayerMsg, PlayerOutput, PlayerState},
+    tag::ViewLyricsLrcTag,
+  },
 };
 
 pub(crate) mod line;
+pub(crate) mod player;
 pub(crate) mod tag;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,16 +29,25 @@ pub(crate) enum ViewLyricsSource {
 }
 
 pub(crate) struct ViewLyricsModel {
-  track: Track,
+  track: Rc<Track>,
   lyrics: String,
+  lyrics_sync: bool,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
   lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
   is_viewing_raw: bool,
+
+  player: AsyncController<PlayerModel>,
+  current_lyric_line: Option<usize>,
 }
 
 #[derive(Debug)]
 pub(crate) enum ViewLyricsMsg {
   SetViewingRaw(bool),
+  PlayerStateChanged(PlayerState),
+  CurrentLyricsLine(Option<usize>),
+  PlayerTogglePlay,
+  PlayerSkipTime(f64),
+  CloseRequested,
 }
 
 #[derive(Debug)]
@@ -40,11 +59,16 @@ pub(crate) enum ViewLyricsOutput {
 impl SimpleComponent for ViewLyricsModel {
   type Input = ViewLyricsMsg;
   type Output = ViewLyricsOutput;
-  type Init = (Box<Track>, ViewLyricsSource);
+  type Init = (Rc<Track>, ViewLyricsSource);
 
   view! {
     #[root]
     adw::Window {
+      connect_close_request[sender] => move |_| {
+        sender.input(ViewLyricsMsg::CloseRequested);
+        glib::Propagation::Proceed
+      },
+
       set_title: Some("Lyrics"),
       set_default_size: (600, 700),
 
@@ -64,105 +88,119 @@ impl SimpleComponent for ViewLyricsModel {
           },
         },
 
-        set_content: Some(&view_stack),
+        set_content: Some(&layout),
       },
 
     },
 
-    #[name = "view_stack"]
-    // Stylised lyrics page
-    adw::ViewStack {
-      add = &gtk::ScrolledWindow {
-        gtk::Box {
-          set_orientation: gtk::Orientation::Vertical,
-          set_spacing: 12,
+    #[name = "layout"]
+    gtk::Box {
+      set_orientation: gtk::Orientation::Vertical,
+      set_expand: true,
 
-          gtk::Box {
-            set_orientation: gtk::Orientation::Vertical,
-            set_margin_horizontal: 24,
-            set_margin_top: 24,
-            set_css_classes: &["view-lyrics", "track-info"],
+      // Upper box - lyrics
+      gtk::Box {
+        set_expand: true,
 
-            gtk::Label {
-              set_halign: gtk::Align::Start,
-              set_label: &model.track.artist_name,
-              set_css_classes: &["view-lyrics", "artist-name"],
-              set_hexpand: true,
-              set_vexpand: false,
+        // Stylised lyrics page
+        adw::ViewStack {
+          add = &gtk::ScrolledWindow {
+            gtk::Box {
+              set_orientation: gtk::Orientation::Vertical,
+              set_spacing: 12,
+
+              gtk::Box {
+                set_orientation: gtk::Orientation::Vertical,
+                set_margin_horizontal: 24,
+                set_margin_top: 24,
+                set_css_classes: &["view-lyrics", "track-info"],
+
+                gtk::Label {
+                  set_halign: gtk::Align::Start,
+                  set_label: &model.track.artist_name,
+                  set_css_classes: &["view-lyrics", "artist-name"],
+                  set_hexpand: true,
+                  set_vexpand: false,
+                  set_halign: gtk::Align::Fill,
+                  set_xalign: 0.0,
+                  set_wrap: true,
+                  set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                  set_margin_bottom: 6,
+                },
+
+                gtk::Label {
+                  set_label: &model.track.track_name,
+                  set_css_classes: &["view-lyrics", "track-name"],
+                  set_hexpand: true,
+                  set_vexpand: false,
+                  set_halign: gtk::Align::Fill,
+                  set_xalign: 0.0,
+                  set_wrap: true,
+                  set_wrap_mode: gtk::pango::WrapMode::WordChar,
+                },
+              },
+
+              // LRC tags (if any)
+              gtk::ScrolledWindow {
+                set_visible: !model.lrc_tags.is_empty(),
+                set_hscrollbar_policy: gtk::PolicyType::External,
+                set_vscrollbar_policy: gtk::PolicyType::Never,
+                set_hexpand: true,
+                set_margin_top: 12,
+
+                #[local_ref]
+                lrc_tags_box -> gtk::Box {
+                  set_orientation: gtk::Orientation::Horizontal,
+                  set_halign: gtk::Align::Center,
+                  set_margin_horizontal: 24,
+                  set_spacing: 6,
+                },
+              },
+
+              // Lyrics
+              #[local_ref]
+              lyrics_lines_box -> gtk::Box {
+                set_css_classes: &["view-lyrics", "container"],
+                set_halign: gtk::Align::Fill,
+                set_valign: gtk::Align::Start,
+                set_expand: true,
+                set_margin_all: 24,
+              },
+            },
+          } -> {
+            // returned `ViewStackPage`
+            set_title: Some("Stylised"),
+            set_name: Some("stylised"),
+            set_icon_name: Some("magic-wand-symbolic"),
+          },
+
+          // Raw lyrics page
+          add = &gtk::ScrolledWindow {
+            gtk::Box {
               set_halign: gtk::Align::Fill,
-              set_xalign: 0.0,
-              set_wrap: true,
-              set_wrap_mode: gtk::pango::WrapMode::WordChar,
-              set_margin_bottom: 6,
-            },
+              set_valign: gtk::Align::Start,
+              set_expand: true,
+              set_margin_all: 24,
 
-            gtk::Label {
-              set_label: &model.track.track_name,
-              set_css_classes: &["view-lyrics", "track-name"],
-              set_hexpand: true,
-              set_vexpand: false,
-              set_halign: gtk::Align::Fill,
-              set_xalign: 0.0,
-              set_wrap: true,
-              set_wrap_mode: gtk::pango::WrapMode::WordChar,
-            },
+              gtk::Label {
+                set_label: &model.lyrics,
+              },
+            }
+          } -> {
+            // returned `ViewStackPage`
+            set_title: Some("Raw"),
+            set_name: Some("raw"),
+            set_icon_name: Some("format-text-rich-symbolic"),
           },
 
-          // LRC tags (if any)
-          gtk::ScrolledWindow {
-            set_visible: !model.lrc_tags.is_empty(),
-            set_hscrollbar_policy: gtk::PolicyType::External,
-            set_vscrollbar_policy: gtk::PolicyType::Never,
-            set_hexpand: true,
-            set_margin_top: 12,
-
-            #[local_ref]
-            lrc_tags_box -> gtk::Box {
-              set_orientation: gtk::Orientation::Horizontal,
-              set_halign: gtk::Align::Center,
-              set_margin_horizontal: 24,
-              set_spacing: 6,
-            },
-          },
-
-          // Lyrics
-          #[local_ref]
-          lyrics_lines_box -> gtk::Box {
-            set_css_classes: &["view-lyrics", "container"],
-            set_halign: gtk::Align::Fill,
-            set_valign: gtk::Align::Start,
-            set_expand: true,
-            set_margin_all: 24,
-          },
+          #[watch]
+          set_visible_child_name: if model.is_viewing_raw { "raw" } else { "stylised" },
         },
-      } -> {
-        // returned `ViewStackPage`
-        set_title: Some("Stylised"),
-        set_name: Some("stylised"),
-        set_icon_name: Some("magic-wand-symbolic"),
       },
 
-      // Raw lyrics page
-      add = &gtk::ScrolledWindow {
-        gtk::Box {
-          set_halign: gtk::Align::Fill,
-          set_valign: gtk::Align::Start,
-          set_expand: true,
-          set_margin_all: 24,
-
-          gtk::Label {
-            set_label: &model.lyrics,
-          },
-        }
-      } -> {
-        // returned `ViewStackPage`
-        set_title: Some("Raw"),
-        set_name: Some("raw"),
-        set_icon_name: Some("format-text-rich-symbolic"),
-      },
-
-      #[watch]
-      set_visible_child_name: if model.is_viewing_raw { "raw" } else { "stylised" },
+      // Lower box - player
+      #[local_ref]
+      player -> gtk::Box,
     },
   }
 
@@ -186,18 +224,39 @@ impl SimpleComponent for ViewLyricsModel {
         .unwrap_or_else(|| "No TXT sidecar file found".into()),
     };
 
+    // Build the factory components
     let (lyrics_lines, lrc_tags) = build_factories(&lyrics);
 
+    // Build index of `LyricsLine` seconds timestamps
+    // The player will send back the current lyric line index when current
+    let lyrics_lines_timestamps = lyrics_lines
+      .iter()
+      .filter_map(|ll| ll.inner.seconds)
+      .collect::<Vec<_>>();
+
+    let player = PlayerModel::builder()
+      .launch((Rc::clone(&track), lyrics_lines_timestamps))
+      .forward(sender.input_sender(), |msg| match msg {
+        PlayerOutput::CurrentLyricsLine(idx) => ViewLyricsMsg::CurrentLyricsLine(idx),
+        PlayerOutput::StateChanged(state) => ViewLyricsMsg::PlayerStateChanged(state),
+      });
+
+    let lyrics_sync = lyrics_are_synchronised(&lyrics);
+
     let model = ViewLyricsModel {
-      track: *track,
+      player,
+      track,
       lyrics,
+      lyrics_sync,
       lyrics_lines,
       lrc_tags,
       is_viewing_raw: false,
+      current_lyric_line: None,
     };
 
     let lyrics_lines_box = model.lyrics_lines.widget();
     let lrc_tags_box = model.lrc_tags.widget();
+    let player = model.player.widget();
 
     let widgets = view_output!();
 
@@ -206,23 +265,104 @@ impl SimpleComponent for ViewLyricsModel {
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("ViewLyrics key event: key {key} + {:?}", modifier);
-      if key == gtk::gdk::Key::Escape {
-        sender_handle
-          .output(ViewLyricsOutput::Close)
-          .expect("ViewLyricsOutput receiver dropped");
+
+      match key {
+        gdk::Key::Escape => sender_handle.input(ViewLyricsMsg::CloseRequested),
+        gdk::Key::space => sender_handle.input(ViewLyricsMsg::PlayerTogglePlay),
+        gdk::Key::Left if modifier == gdk::ModifierType::CONTROL_MASK => {
+          // Skip to start
+          sender_handle.input(ViewLyricsMsg::PlayerSkipTime(f64::MIN));
+        }
+        gdk::Key::Left => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(-5.0)),
+        gdk::Key::Right => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(5.0)),
+        _ => {}
       }
-      gtk::glib::Propagation::Proceed
+
+      glib::Propagation::Proceed
     });
     root.add_controller(controller);
 
     ComponentParts { model, widgets }
   }
 
-  fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
       ViewLyricsMsg::SetViewingRaw(enabled) => {
         debug!("ViewLyrics: Viewing raw text page: {}", enabled);
         self.is_viewing_raw = enabled;
+      }
+
+      ViewLyricsMsg::PlayerStateChanged(state) => {
+        debug!("ViewLyrics: PlayerState changed to \"{:?}\"", state);
+
+        if self.lyrics_sync {
+          match state {
+            PlayerState::Playing => {
+              for idx in 0..self.lyrics_lines.len() {
+                if self.current_lyric_line.is_some_and(|cur| idx == cur) {
+                  continue;
+                }
+
+                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
+              }
+            }
+            PlayerState::Stopped => {
+              for idx in 0..self.lyrics_lines.len() {
+                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+              }
+
+              self.current_lyric_line = None;
+            }
+            PlayerState::Paused => (),
+          }
+        }
+      }
+
+      ViewLyricsMsg::CurrentLyricsLine(maybe_idx) => {
+        trace!("ViewLyrics: Current lyrics line is {maybe_idx:?}");
+
+        if let Some(idx) = maybe_idx {
+          // Un-dim current line
+          self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+
+          // Re-dim the previous line
+          if let Some(prev_idx) = self.current_lyric_line {
+            self
+              .lyrics_lines
+              .send(prev_idx, LyricsLineMsg::SetDimmed(true));
+          }
+
+          self.current_lyric_line = Some(idx);
+        } else {
+          for idx in 0..self.lyrics_lines.len() {
+            self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
+          }
+
+          self.current_lyric_line = None;
+        }
+      }
+
+      ViewLyricsMsg::PlayerTogglePlay => {
+        debug!("ViewLyrics: Toggle play requested");
+
+        self.player.sender().emit(PlayerMsg::TogglePlay);
+      }
+
+      ViewLyricsMsg::PlayerSkipTime(delta) => {
+        debug!("ViewLyrics: Skip time by {delta}s requested");
+
+        self.player.sender().emit(PlayerMsg::SkipTime(delta));
+      }
+
+      ViewLyricsMsg::CloseRequested => {
+        debug!("ViewLyrics: Close window requested");
+
+        self.player.sender().emit(PlayerMsg::CloseRequested);
+
+        // Close the window from the main app
+        sender
+          .output(ViewLyricsOutput::Close)
+          .expect("ViewLyricsOutput receiver dropped");
       }
     }
   }

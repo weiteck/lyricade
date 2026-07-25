@@ -95,3 +95,36 @@ pub(crate) fn file_modified_at(path: &Utf8Path, file: Option<&std::fs::File>) ->
 pub(crate) fn scale(value: f64, min: i32, max: i32) -> i32 {
   (min + (value.abs() * f64::from(max)) as i32).min(max)
 }
+
+#[allow(clippy::cast_possible_truncation)]
+#[must_use]
+pub(crate) fn secs_f64_to_hms(secs: f64) -> String {
+  let secs = secs.round() as i64;
+
+  let td = chrono::TimeDelta::try_seconds(secs).unwrap_or_default();
+
+  let hours = td.num_hours();
+  let mins = td.num_minutes() % 60;
+  let secs = td.num_seconds() % 60;
+
+  format!(
+    "{}{mins:02}:{secs:02}",
+    if hours > 0 {
+      format!("{hours:02}:")
+    } else {
+      String::new()
+    }
+  )
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn secs_f64_to_hms_output() {
+    assert_eq!(secs_f64_to_hms(32.6), String::from("00:33"));
+    assert_eq!(secs_f64_to_hms(92.4), String::from("01:32"));
+    assert_eq!(secs_f64_to_hms(7292.4), String::from("02:01:32"));
+  }
+}
