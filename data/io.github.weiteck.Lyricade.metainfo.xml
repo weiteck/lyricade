@@ -62,25 +62,25 @@
     <screenshot type="default">
       <caption>The main window</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/1.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.3.0/data/screenshots/1.png
       </image>
     </screenshot>
     <screenshot>
       <caption>The main window (dark) with track details</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/2.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.3.0/data/screenshots/2.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Preferences window</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/3.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.3.0/data/screenshots/3.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Lyrics viewer</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.1.0-alpha.1/data/screenshots/4.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.3.0/data/screenshots/4.png
       </image>
     </screenshot>
   </screenshots>
@@ -96,6 +96,19 @@
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
 
   <releases>
+    <release version="0.3.0" date="2026-07-25">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.3.0</url>
+      <description>
+          <p>Audio player added to the lyrics viewer window</p>
+        <ul>
+          <li>Added: audio player in lyrics viewer</li>
+          <li>Added: current lyric highlighting</li>
+          <li>Fixed: refresh libraries command not working</li>
+          <li>Fixed: track details sidebar empty on initial pinning</li>
+          <li>Fixed: track-related menu actions now disabled when there are no tracks</li>
+        </ul>
+      </description>
+    </release>
     <release version="0.2.0" date="2026-07-14">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.2.0</url>
       <description>
