@@ -13,6 +13,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
 - Scan your music and find missing lyrics from [lrclib.net](https://lrclib.net)
 - Download either synchronous LRC or plain lyrics
 - Embed lyrics to the metadata tag, save as a sidecar file, or both
+- Lyrics viewer with audio playback and LRC lyric highlighting
 - Supports multiple local music libraries
 
 ### Lyric management
