@@ -2,11 +2,20 @@ use relm4::{
   actions::{AccelsPlus, RelmAction, RelmActionGroup},
   prelude::*,
 };
+use tracing::debug;
 
 use crate::{settings::APP_NAME_PRETTY, ui::app::AppMsg};
 
 #[derive(Debug, Clone)]
-pub(super) struct MainMenuButtonModel;
+pub(super) struct MainMenuButtonModel {
+  refresh_action: RelmAction<ActionRefreshLibraries>,
+  manage_action: RelmAction<ActionManageLyrics>,
+}
+
+#[derive(Debug)]
+pub(super) enum MainMenuButtonMsg {
+  NoTracks(bool),
+}
 
 relm4::new_action_group!(pub(super) MainMenuActionGroup, "main_menu");
 relm4::new_stateless_action!(ActionRefreshLibraries, MainMenuActionGroup, "refresh_libraries");
@@ -24,7 +33,7 @@ relm4::new_stateless_action!(ActionPinSidebar, WindowActionGroup, "pin_sidebar")
 #[relm4::component(pub(super))]
 impl SimpleComponent for MainMenuButtonModel {
   type Init = adw::ApplicationWindow;
-  type Input = AppMsg;
+  type Input = MainMenuButtonMsg;
   type Output = AppMsg;
 
   view! {
@@ -48,7 +57,7 @@ impl SimpleComponent for MainMenuButtonModel {
           .output(AppMsg::RefreshLibraries)
           .expect("MainMenuButtonModel output receiver dropped");
       });
-    menu_actions_group.add_action(action_refresh_libraries);
+    menu_actions_group.add_action(action_refresh_libraries.clone());
 
     let sender_handle = sender.clone();
     let action_manage_lyrics: RelmAction<ActionManageLyrics> =
@@ -57,7 +66,7 @@ impl SimpleComponent for MainMenuButtonModel {
           .output(AppMsg::ShowManageLyricsWindow)
           .expect("MainMenuButtonModel output receiver dropped");
       });
-    menu_actions_group.add_action(action_manage_lyrics);
+    menu_actions_group.add_action(action_manage_lyrics.clone());
 
     let sender_handle = sender.clone();
     let action_prefs: RelmAction<ActionPrefs> = RelmAction::new_stateless(move |_| {
@@ -150,14 +159,31 @@ impl SimpleComponent for MainMenuButtonModel {
     menu_actions_group.register_for_widget(&app_window);
     window_actions_group.register_for_widget(&app_window);
 
-    let model = MainMenuButtonModel;
+    let model = MainMenuButtonModel {
+      refresh_action: action_refresh_libraries,
+      manage_action: action_manage_lyrics,
+    };
+
     let widgets = view_output!();
+
     ComponentParts { model, widgets }
   }
 
-  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
-    sender
-      .output(message)
-      .expect("MainMenuButtonModel output receiver dropped");
+  fn update(&mut self, message: Self::Input, _sender: ComponentSender<Self>) {
+    match message {
+      MainMenuButtonMsg::NoTracks(no_tracks) => {
+        if no_tracks {
+          debug!("No tracks present - disabling track-related menu actions");
+
+          self.refresh_action.set_enabled(false);
+          self.manage_action.set_enabled(false);
+        } else {
+          debug!("Tracks present - enabling track-related menu actions");
+
+          self.refresh_action.set_enabled(true);
+          self.manage_action.set_enabled(true);
+        }
+      }
+    }
   }
 }

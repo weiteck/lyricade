@@ -20,7 +20,7 @@ use crate::ui::about::AboutModel;
 use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
 };
-use crate::ui::app::main_menu::MainMenuButtonModel;
+use crate::ui::app::main_menu::{MainMenuButtonModel, MainMenuButtonMsg};
 use crate::ui::app::track_stats::TrackStats;
 use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
@@ -1153,6 +1153,11 @@ impl AsyncComponent for AppModel {
 
           self.load_tracks();
           sender.input(AppMsg::BuildTracksTable);
+
+          // Disable track-related menu items if there are no tracks
+          self
+            .main_menu_button
+            .emit(MainMenuButtonMsg::NoTracks(self.no_tracks));
         } else if rebuild_required {
           // Refresh table as datetime format has changed
           sender.input(AppMsg::BuildTracksTable);
@@ -1231,6 +1236,11 @@ impl AsyncComponent for AppModel {
           sender.input(AppMsg::BuildTracksTable);
 
           self.no_tracks = self.tracks.is_empty();
+
+          // Disable track-related menu items if there are no tracks
+          self
+            .main_menu_button
+            .emit(MainMenuButtonMsg::NoTracks(self.no_tracks));
 
           // Reset track selection state
           self.selected_track_id = None;
