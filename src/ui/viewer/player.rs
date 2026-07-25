@@ -5,7 +5,7 @@ use std::{
   time::{Duration, Instant},
 };
 
-use relm4::gtk::{GestureClick, gio, glib};
+use relm4::gtk::{gio, glib};
 use relm4::prelude::*;
 use relm4::{adw::prelude::*, gtk::gdk};
 use rodio::Source;
@@ -71,27 +71,24 @@ impl SimpleAsyncComponent for PlayerModel {
       inline_css: "background: @sidebar_bg_color;",
       set_vexpand: false,
       set_hexpand: false,
+      set_spacing: 24,
 
-      // Left box - cover art
+      // Cover art
       gtk::Box {
         set_visible: model.cover.is_some(),
         set_expand: false,
 
         gtk::Image {
-          inline_css: "background: lightgrey;",
           set_paintable: model.cover.as_ref(),
           set_overflow: gtk::Overflow::Hidden,
           set_pixel_size: COVER_ART_SIZE,
         },
       },
 
-      // Right box - controls
+      // Control buttons
       gtk::Box {
         set_valign: gtk::Align::Center,
         set_spacing: 12,
-        set_margin_start: 24,
-        set_margin_end: 12,
-        set_margin_vertical: 12,
 
         gtk::Button {
           inline_css: "border-radius: 1000px;",
@@ -122,23 +119,33 @@ impl SimpleAsyncComponent for PlayerModel {
 
       gtk::Box {
         set_valign: gtk::Align::Center,
-        set_hexpand: true,
+        set_expand: true,
         set_margin_end: 24,
-        set_margin_start: 12,
-        set_margin_vertical: 12,
+        set_spacing: 6,
 
-        #[local_ref]
-        progress_bar -> gtk::ProgressBar {
+        // Seek bar
+        gtk::Box {
           set_hexpand: true,
-          set_show_text: true,
-          add_css_class: "seekbar",
 
-          #[watch]
-          set_text: Some(&model.timestamp),
+          #[local_ref]
+          seek_bar -> gtk::Scale {
+            set_hexpand: true,
 
-          #[watch]
-          set_fraction: if model.length_secs == 0.0 { 0.0 }
-            else { model.position_secs / model.length_secs },
+
+            #[watch]
+            set_value: if model.length_secs == 0.0 { 0.0 }
+              else { model.position_secs / model.length_secs },
+          },
+        },
+
+        // Timestamp
+        gtk::Box {
+          set_halign: gtk::Align::Center,
+
+          gtk::Label {
+            #[watch]
+            set_text: &model.timestamp,
+          },
         },
       },
     },
@@ -304,19 +311,16 @@ impl SimpleAsyncComponent for PlayerModel {
       }
     };
 
-    let gesture_click = GestureClick::new();
-    let sender_handle = sender.clone();
-    gesture_click.connect_pressed(move |gesture, _btn, x, _y| {
-      if let Some(width) = gesture.widget().map(|widget| f64::from(widget.width()))
-        && width > 0.0
-      {
-        let pos = x / width;
-        sender_handle.input(PlayerMsg::Seek(pos));
-      }
-    });
+    // Setup seek bar
+    let seek_bar = &gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
+    seek_bar.set_range(0.0, 1.0);
 
-    let progress_bar = &gtk::ProgressBar::new();
-    progress_bar.add_controller(gesture_click);
+    // Handle seek value change
+    let sender_handle = sender.clone();
+    seek_bar.connect_change_value(move |_, _, pos| {
+      sender_handle.input(PlayerMsg::Seek(pos));
+      glib::Propagation::Stop
+    });
 
     let widgets = view_output!();
 

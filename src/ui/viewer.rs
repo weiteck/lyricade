@@ -66,7 +66,7 @@ impl SimpleComponent for ViewLyricsModel {
     adw::Window {
       connect_close_request[sender] => move |_| {
         sender.input(ViewLyricsMsg::CloseRequested);
-        gtk::glib::Propagation::Proceed
+        glib::Propagation::Proceed
       },
 
       set_title: Some("Lyrics"),
