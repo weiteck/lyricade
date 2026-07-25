@@ -33,6 +33,7 @@ pub(super) struct PlayerModel {
   position_secs: f64,
   length_secs: f64,
   timestamp: String,
+  volume: f64,
   cover: Option<gdk::Texture>,
 }
 
@@ -44,6 +45,7 @@ pub(super) enum PlayerMsg {
   Seek(f64),
   SkipTime(f64),
   PlaybackEnded,
+  SetVolume(f64),
   CloseRequested,
 }
 
@@ -71,7 +73,6 @@ impl SimpleAsyncComponent for PlayerModel {
       inline_css: "background: @sidebar_bg_color;",
       set_vexpand: false,
       set_hexpand: false,
-      set_spacing: 24,
 
       // Cover art
       gtk::Box {
@@ -85,66 +86,119 @@ impl SimpleAsyncComponent for PlayerModel {
         },
       },
 
-      // Control buttons
+      // Controls
       gtk::Box {
-        set_valign: gtk::Align::Center,
-        set_spacing: 12,
+        set_spacing: 24,
 
-        gtk::Button {
-          inline_css: "border-radius: 1000px;",
-          set_icon_name: "media-skip-backward-symbolic",
-          set_tooltip: "Skip to Start",
-
-          connect_clicked[sender] => move |_btn| {
-            sender.input(PlayerMsg::Seek(0.0));
-          },
-        },
-
-        gtk::Button {
-          inline_css: "border-radius: 1000px;",
-          #[watch]
-          set_icon_name: if let PlayerState::Playing = model.state
-            { "media-playback-pause-symbolic" }
-            else { "media-playback-start-symbolic"},
-          #[watch]
-          set_tooltip: if let PlayerState::Playing = model.state
-            { "Pause" }
-            else { "Play"},
-
-          connect_clicked[sender] => move |_btn| {
-            sender.input(PlayerMsg::TogglePlay);
-          },
-        },
-      },
-
-      gtk::Box {
-        set_valign: gtk::Align::Center,
-        set_expand: true,
-        set_margin_end: 24,
-        set_spacing: 6,
-
-        // Seek bar
+        // Buttons
         gtk::Box {
-          set_hexpand: true,
+          set_valign: gtk::Align::Center,
+          set_margin_start: 24,
+          set_spacing: 12,
 
-          #[local_ref]
-          seek_bar -> gtk::Scale {
+          // Add some padding for when there is no cover art to control the height
+          set_margin_vertical: 12,
+
+          gtk::Button {
+            inline_css: "border-radius: 1000px;",
+            set_icon_name: "media-skip-backward-symbolic",
+            set_tooltip: "Skip to Start",
+
+            connect_clicked[sender] => move |_btn| {
+              sender.input(PlayerMsg::Seek(0.0));
+            },
+          },
+
+          gtk::Button {
+            inline_css: "border-radius: 1000px;",
+            #[watch]
+            set_icon_name: if let PlayerState::Playing = model.state
+              { "media-playback-pause-symbolic" }
+              else { "media-playback-start-symbolic"},
+            #[watch]
+            set_tooltip: if let PlayerState::Playing = model.state
+              { "Pause" }
+              else { "Play"},
+
+            connect_clicked[sender] => move |_btn| {
+              sender.input(PlayerMsg::TogglePlay);
+            },
+          },
+        },
+
+        // Seek bar and timestamp
+        gtk::Box {
+          set_valign: gtk::Align::Center,
+          set_expand: true,
+          set_spacing: 6,
+
+          // Seek bar
+          gtk::Box {
             set_hexpand: true,
 
+            gtk::Scale {
+              set_hexpand: true,
+              set_range: (0.0, 1.0),
+              #[watch]
+              set_value: if model.length_secs == 0.0 { 0.0 }
+                else { model.position_secs / model.length_secs },
 
-            #[watch]
-            set_value: if model.length_secs == 0.0 { 0.0 }
-              else { model.position_secs / model.length_secs },
+              connect_change_value[sender] => move |_, _, value| {
+                sender.input(PlayerMsg::Seek(value));
+                gtk::glib::Propagation::Stop
+              },
+            },
+          },
+
+          // Timestamp
+          gtk::Box {
+            set_halign: gtk::Align::Center,
+
+            gtk::Label {
+              #[watch]
+              set_text: &model.timestamp,
+            },
           },
         },
 
-        // Timestamp
+        // Volume
         gtk::Box {
-          set_halign: gtk::Align::Center,
+          set_valign: gtk::Align::Center,
+          set_vexpand: true,
+          set_margin_end: 24,
 
-          gtk::Label {
+          gtk::MenuButton {
+            set_tooltip: "Volume",
+            add_css_class: "flat",
+            set_direction: gtk::ArrowType::Up,
             #[watch]
-            set_text: &model.timestamp,
+            set_icon_name: match model.volume {
+              0.67.. => "audio-volume-high-symbolic",
+              0.33..0.67 => "audio-volume-medium-symbolic",
+              0.0 => "audio-volume-muted-symbolic",
+              _ => "audio-volume-low-symbolic",
+            },
+
+            #[wrap(Some)]
+            set_popover = &gtk::Popover {
+              set_position: gtk::PositionType::Top,
+              set_height_request: 150,
+
+              gtk::Scale {
+                set_orientation: gtk::Orientation::Vertical,
+                set_range: (0.0, 1.0),
+                set_inverted: true,
+                #[watch]
+                set_value: model.volume,
+                #[watch]
+                set_tooltip: &format!("{:.0}", model.volume * 100.0),
+
+                connect_change_value[sender] => move |_, _, value| {
+                  sender.input(PlayerMsg::SetVolume(value));
+                  gtk::glib::Propagation::Stop
+                },
+              },
+            },
           },
         },
       },
@@ -174,6 +228,7 @@ impl SimpleAsyncComponent for PlayerModel {
       let player = Arc::new(rodio::Player::connect_new(output.mixer()));
       player.append(source);
       player.pause();
+      player.set_volume(1.0);
 
       let player_handle = Arc::clone(&player);
       let sender_handle = sender.clone();
@@ -291,6 +346,7 @@ impl SimpleAsyncComponent for PlayerModel {
         position_secs: 0.0,
         length_secs,
         timestamp: util::secs_f64_to_hms(0.0),
+        volume: 1.0,
         cover: cover(),
       }
     } else {
@@ -307,20 +363,10 @@ impl SimpleAsyncComponent for PlayerModel {
         position_secs: 0.0,
         length_secs: 0.0,
         timestamp: String::new(),
+        volume: 1.0,
         cover: None,
       }
     };
-
-    // Setup seek bar
-    let seek_bar = &gtk::Scale::with_range(gtk::Orientation::Horizontal, 0.0, 1.0, 0.01);
-    seek_bar.set_range(0.0, 1.0);
-
-    // Handle seek value change
-    let sender_handle = sender.clone();
-    seek_bar.connect_change_value(move |_, _, pos| {
-      sender_handle.input(PlayerMsg::Seek(pos));
-      glib::Propagation::Stop
-    });
 
     let widgets = view_output!();
 
@@ -358,6 +404,13 @@ impl SimpleAsyncComponent for PlayerModel {
       PlayerMsg::Seek(pos) => {
         let pos = pos.clamp(0.0, 1.0);
         let secs = pos * self.length_secs;
+
+        if (self.position_secs - secs).abs() < 0.5 {
+          warn!("Ignoring seek to current position {secs:.2}s");
+
+          return;
+        }
+
         let dur = Duration::from_secs_f64(secs);
 
         debug!("Seeking to position {secs:.2}s");
@@ -389,6 +442,20 @@ impl SimpleAsyncComponent for PlayerModel {
         sender
           .output(PlayerOutput::StateChanged(self.state))
           .expect("PlayerOutput receiver dropped");
+      }
+
+      PlayerMsg::SetVolume(vol) => {
+        let vol = vol.clamp(0.0, 1.0);
+
+        debug!("Setting volume to {}%", vol * 100.0);
+
+        self.volume = vol;
+
+        #[allow(clippy::cast_possible_truncation)]
+        self
+          .player
+          .as_ref()
+          .inspect(|&player| player.0.set_volume(vol as f32));
       }
 
       PlayerMsg::CloseRequested => {
