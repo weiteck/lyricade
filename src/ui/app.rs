@@ -107,6 +107,7 @@ enum AppMsg {
   LoadLibraries,
   /// Scan library paths for changes.
   RefreshLibraries,
+  RefreshLibrariesComplete,
   /// Update the table with the tracks in `AppModel`.
   BuildTracksTable,
   GracefulQuit,
@@ -609,6 +610,7 @@ impl AsyncComponent for AppModel {
                             model.filtered_track_count.map(|n| format!("{}/",n.to_formatted_string(&*NUM_LOCALE))).unwrap_or_default(),
                             model.track_count.to_formatted_string(&*NUM_LOCALE)
                           ),
+
                           connect_activate => AppMsg::RefreshTrackStats,
 
                           #[wrap(Some)]
@@ -1314,6 +1316,9 @@ impl AsyncComponent for AppModel {
 
       AppMsg::RefreshLibraries => {
         let libs = self.libraries.clone();
+
+        debug!("Refresh of {} Libraries requested", self.libraries.len());
+
         let sender_handle = sender.clone();
 
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
@@ -1343,11 +1348,17 @@ impl AsyncComponent for AppModel {
               .inspect_err(|error| warn!("{error}"));
           }
 
-          sender_handle.input(AppMsg::LoadLibraries);
-          sender_handle.input(AppMsg::HideSpinner);
+          sender_handle.input(AppMsg::RefreshLibrariesComplete);
         });
+      }
+
+      AppMsg::RefreshLibrariesComplete => {
+        debug!("ApplyManageLyricsChanges completed");
 
         self.refresh_library_cancel_token = None;
+
+        sender.input(AppMsg::LoadLibraries);
+        sender.input(AppMsg::HideSpinner);
       }
 
       AppMsg::SearchQueryChanged(query) => {
