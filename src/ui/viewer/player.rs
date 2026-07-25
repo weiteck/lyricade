@@ -271,8 +271,7 @@ impl SimpleAsyncComponent for PlayerModel {
 
       // Extract cover art
       let cover = || {
-        let file = std::fs::File::open(track.path()).ok()?;
-        let bytes = Track::get_cover_art_bytes_for_file(file).ok()?;
+        let bytes = track.get_cover_art_bytes().ok()?;
         let texture = scale_cover_art_to_texture(&bytes, COVER_ART_SIZE)?;
         Some(texture)
       };

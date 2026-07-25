@@ -439,6 +439,11 @@ impl Track {
     Ok(())
   }
 
+  pub(crate) fn get_cover_art_bytes(&self) -> Result<Vec<u8>> {
+    let file = std::fs::File::open(self.path())?;
+    Self::get_cover_art_bytes_for_file(file)
+  }
+
   pub(crate) fn get_cover_art_bytes_for_file(mut file: fs::File) -> Result<Vec<u8>> {
     file.rewind()?;
 
