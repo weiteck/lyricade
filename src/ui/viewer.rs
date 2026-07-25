@@ -1,7 +1,10 @@
 use std::rc::Rc;
 
 use adw::prelude::*;
-use relm4::{gtk::EventControllerKey, prelude::*};
+use relm4::{
+  gtk::{EventControllerKey, gdk, glib},
+  prelude::*,
+};
 use tracing::{debug, trace};
 
 use crate::{
@@ -42,6 +45,8 @@ pub(crate) enum ViewLyricsMsg {
   SetViewingRaw(bool),
   PlayerStateChanged(PlayerState),
   CurrentLyricsLine(Option<usize>),
+  PlayerTogglePlay,
+  PlayerSkipTime(f64),
   CloseRequested,
 }
 
@@ -260,10 +265,20 @@ impl SimpleComponent for ViewLyricsModel {
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("ViewLyrics key event: key {key} + {:?}", modifier);
-      if key == gtk::gdk::Key::Escape {
-        sender_handle.input(ViewLyricsMsg::CloseRequested);
+
+      match key {
+        gdk::Key::Escape => sender_handle.input(ViewLyricsMsg::CloseRequested),
+        gdk::Key::space => sender_handle.input(ViewLyricsMsg::PlayerTogglePlay),
+        gdk::Key::Left if modifier == gdk::ModifierType::CONTROL_MASK => {
+          // Skip to start
+          sender_handle.input(ViewLyricsMsg::PlayerSkipTime(f64::MIN));
+        }
+        gdk::Key::Left => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(-5.0)),
+        gdk::Key::Right => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(5.0)),
+        _ => {}
       }
-      gtk::glib::Propagation::Proceed
+
+      glib::Propagation::Proceed
     });
     root.add_controller(controller);
 
@@ -325,6 +340,18 @@ impl SimpleComponent for ViewLyricsModel {
 
           self.current_lyric_line = None;
         }
+      }
+
+      ViewLyricsMsg::PlayerTogglePlay => {
+        debug!("ViewLyrics: Toggle play requested");
+
+        self.player.sender().emit(PlayerMsg::TogglePlay);
+      }
+
+      ViewLyricsMsg::PlayerSkipTime(delta) => {
+        debug!("ViewLyrics: Skip time by {delta}s requested");
+
+        self.player.sender().emit(PlayerMsg::SkipTime(delta));
       }
 
       ViewLyricsMsg::CloseRequested => {

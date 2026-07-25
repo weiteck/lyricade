@@ -42,6 +42,7 @@ pub(super) enum PlayerMsg {
   UpdatePosition(f64),
   /// Seek to a point in the track, where `0.0` is 0% and `1.0` is 100%.
   Seek(f64),
+  SkipTime(f64),
   PlaybackEnded,
   CloseRequested,
 }
@@ -368,7 +369,17 @@ impl SimpleAsyncComponent for PlayerModel {
         self.update_position_and_timestamp(secs);
       }
 
+      PlayerMsg::SkipTime(delta) => {
+        debug!("Skipping by {delta}s");
+
+        let pos = (self.position_secs + delta).clamp(0.0, self.length_secs) / self.length_secs;
+
+        sender.input(PlayerMsg::Seek(pos));
+      }
+
       PlayerMsg::PlaybackEnded => {
+        debug!("Playback ended - resetting position to 0.0");
+
         sender.input(PlayerMsg::Seek(0.0));
 
         self.state = PlayerState::Stopped;
