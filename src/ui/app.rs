@@ -180,6 +180,7 @@ impl AsyncComponent for AppModel {
         set_icon_name: "edit-find-symbolic",
         #[watch]
         set_active: model.is_search_revealed,
+
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::ShowSearch(btn.is_active()));
         },
@@ -195,12 +196,12 @@ impl AsyncComponent for AppModel {
       pack_end = &gtk::ToggleButton {
         #[watch]
         set_tooltip_text: if model.is_sidebar_pinned { Some("Unpin Track Details") } else { Some("Pin Track Details") },
-        // set_icon_name: "sidebar-show-right-symbolic",
         set_icon_name: "info-outline-symbolic",
         #[watch]
         set_sensitive: !model.no_tracks,
         #[watch]
         set_active: model.is_sidebar_pinned,
+
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::PinTrackDetailsSidebar(btn.is_active()));
         },
@@ -214,6 +215,7 @@ impl AsyncComponent for AppModel {
         set_margin_end: 12,
         #[watch]
         set_visible: model.is_fetching_lyrics,
+
         connect_clicked => AppMsg::CancelOperation,
       },
 
@@ -231,6 +233,7 @@ impl AsyncComponent for AppModel {
         set_class_active: ("suggested-action", !model.no_tracks),
         #[watch]
         set_sensitive: !model.no_tracks,
+
         connect_clicked => AppMsg::RequestConfirmGetLyrics,
       },
     },
@@ -284,6 +287,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyrics),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyrics, btn.is_active())));
               },
@@ -298,6 +302,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NoLyricsTag),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NoLyricsTag, btn.is_active())));
               },
@@ -312,6 +317,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::Lrc),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Lrc, btn.is_active())));
               },
@@ -326,6 +332,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::Txt),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::Txt, btn.is_active())));
               },
@@ -340,6 +347,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NotSync),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotSync, btn.is_active())));
               },
@@ -354,6 +362,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NeverChecked),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NeverChecked, btn.is_active())));
               },
@@ -368,6 +377,7 @@ impl AsyncComponent for AppModel {
               inline_css: "padding: 0 0.75rem",
               #[watch]
               set_active: model.active_search_filters.contains(&TracksTableFilter::NotInstrumental),
+
               connect_toggled[sender] => move |btn| {
                 sender.input(AppMsg::SetSearchFilter((TracksTableFilter::NotInstrumental, btn.is_active())));
               },
@@ -862,7 +872,8 @@ impl AsyncComponent for AppModel {
     widgets.main_window.set_default_size(width, height);
 
     if is_sidebar_pinned {
-      model.is_sidebar_pinned = is_sidebar_pinned;
+      model.is_sidebar_pinned = true;
+      model.is_sidebar_revealed = true;
       model.rebuild_sidebar_widget();
     }
 
@@ -1431,9 +1442,11 @@ impl AsyncComponent for AppModel {
       AppMsg::PinTrackDetailsSidebar(active) => {
         if !self.no_tracks {
           debug!("Pinning sidebar: {active}");
-          if active && self.is_sidebar_revealed {
+
+          if active {
             self.rebuild_sidebar_widget();
           }
+
           self.is_sidebar_pinned = active;
           self.is_sidebar_revealed = active;
         }
