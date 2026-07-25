@@ -143,8 +143,28 @@ impl SimpleAsyncComponent for PlayerModel {
               set_value: if model.length_secs == 0.0 { 0.0 }
                 else { model.position_secs / model.length_secs },
 
-              connect_change_value[sender] => move |_, _, value| {
-                sender.input(PlayerMsg::Seek(value));
+              connect_change_value[sender] => move |_scale, scroll, value| {
+                match scroll {
+                    gtk::ScrollType::Jump => sender.input(PlayerMsg::Seek(value)),
+                    gtk::ScrollType::StepBackward
+                    | gtk::ScrollType::PageBackward
+                    | gtk::ScrollType::StepDown
+                    | gtk::ScrollType::PageDown
+                    | gtk::ScrollType::StepLeft
+                    | gtk::ScrollType::PageLeft => sender.input(PlayerMsg::SkipTime(-5.0)),
+                    gtk::ScrollType::StepForward
+                    | gtk::ScrollType::PageForward
+                    | gtk::ScrollType::StepUp
+                    | gtk::ScrollType::PageUp
+                    | gtk::ScrollType::StepRight
+                    | gtk::ScrollType::PageRight => sender.input(PlayerMsg::SkipTime(5.0)),
+                    gtk::ScrollType::Start => sender.input(PlayerMsg::Seek(0.0)),
+                    gtk::ScrollType::End => sender.input(PlayerMsg::Seek(model.length_secs)),
+                    _ => {
+                      debug!("Unsupported Scroll Type: {:?}", scroll);
+                    }
+                }
+
                 gtk::glib::Propagation::Stop
               },
             },
@@ -406,7 +426,7 @@ impl SimpleAsyncComponent for PlayerModel {
         let secs = pos * self.length_secs;
 
         if (self.position_secs - secs).abs() < 0.5 {
-          warn!("Ignoring seek to current position {secs:.2}s");
+          trace!("Ignoring seek to current position {secs:.2}s");
 
           return;
         }
