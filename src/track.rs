@@ -32,14 +32,24 @@ use crate::{
   util::{self, now},
 };
 
-static TAG_PARSE_OPTIONS: LazyLock<ParseOptions> = LazyLock::new(|| {
+/// All track data required for creating a `Track`, i.e. excludes cover art.
+static TAG_PARSE_OPTIONS_FOR_INGEST: LazyLock<ParseOptions> = LazyLock::new(|| {
   ParseOptions::new()
     .read_properties(true)
     .read_tags(true)
     .read_cover_art(false)
     .parsing_mode(lofty::config::ParsingMode::Relaxed)
     .max_junk_bytes(2048)
-    .implicit_conversions(true)
+});
+
+/// All track data required for updating tags, i.e. includes cover art.
+static TAG_PARSE_OPTIONS_FOR_WRITING: LazyLock<ParseOptions> = LazyLock::new(|| {
+  ParseOptions::new()
+    .read_properties(false)
+    .read_tags(true)
+    .read_cover_art(true)
+    .parsing_mode(lofty::config::ParsingMode::BestAttempt)
+    .max_junk_bytes(2048)
 });
 
 static TAG_WRITE_OPTIONS: LazyLock<WriteOptions> = LazyLock::new(|| {
@@ -165,7 +175,7 @@ impl Track {
     let file = fs::File::open(self.path()).inspect_err(|error| error!("{error}"))?;
     let mut reader = io::BufReader::new(&file);
     let probe = Probe::new(&mut reader)
-      .options(*TAG_PARSE_OPTIONS)
+      .options(*TAG_PARSE_OPTIONS_FOR_INGEST)
       .guess_file_type()
       .inspect_err(|error| warn!("{self} scan: {error}"))?;
 
@@ -194,21 +204,27 @@ impl Track {
       // Try to get concrete ID3v2 tag type from supported formats so sync lyrics frames can be handled
       match file_type {
         lofty::file::FileType::Aac => {
-          if let Ok(file) = lofty::aac::AacFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+          if let Ok(file) =
+            lofty::aac::AacFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_INGEST)
+          {
             self.duration = file.properties().duration().as_secs_f32();
             file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
           }
         }
 
         lofty::file::FileType::Aiff => {
-          if let Ok(file) = lofty::iff::aiff::AiffFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+          if let Ok(file) =
+            lofty::iff::aiff::AiffFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_INGEST)
+          {
             self.duration = file.properties().duration().as_secs_f32();
             file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
           }
         }
 
         lofty::file::FileType::Mpeg => {
-          if let Ok(file) = lofty::mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+          if let Ok(file) =
+            lofty::mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_INGEST)
+          {
             self.duration = file.properties().duration().as_secs_f32();
             file
               .id3v2()
@@ -217,7 +233,9 @@ impl Track {
         }
 
         lofty::file::FileType::Wav => {
-          if let Ok(file) = lofty::iff::wav::WavFile::read_from(&mut reader, *TAG_PARSE_OPTIONS) {
+          if let Ok(file) =
+            lofty::iff::wav::WavFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_INGEST)
+          {
             self.duration = file.properties().duration().as_secs_f32();
             file.id3v2().inspect(|tag| read_id3v2_tag(tag, None));
           }
@@ -258,7 +276,7 @@ impl Track {
       );
 
       let tag = Probe::new(&mut reader)
-        .options(*TAG_PARSE_OPTIONS)
+        .options(*TAG_PARSE_OPTIONS_FOR_INGEST)
         .guess_file_type()
         .inspect_err(|error| warn!("{self} scan: {error}"))?
         .read()
@@ -532,7 +550,8 @@ impl Track {
     // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
     // (ID3v2 has a specific 'SYLT' frame for this, unlike other tag formats)
     if let Some("mp3") = &self.path().extension()
-      && let Ok(mut mpeg_file) = mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS)
+      && let Ok(mut mpeg_file) =
+        mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_WRITING)
       && mpeg_file.contains_tag_type(tag::TagType::Id3v2)
     {
       trace!("{self} write updated tag: Detected MP3 with ID3v2 type tag");
@@ -593,7 +612,7 @@ impl Track {
     } else {
       // Probe file type and use abstract `TaggedFile`
       let mut tagged_file = Probe::new(reader)
-        .options(*TAG_PARSE_OPTIONS)
+        .options(*TAG_PARSE_OPTIONS_FOR_WRITING)
         .guess_file_type()
         .inspect_err(|error| warn!("{self} scan: {error}"))?
         .read()
