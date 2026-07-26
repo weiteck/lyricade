@@ -1,7 +1,7 @@
 name = "lyricade"
 product-name = "Lyricade"
 identifier = "io.github.weiteck.Lyricade"
-version = "0.3.0"
+version = "0.3.1"
 description = "Download and manage lyrics for your music library"
 authors = ["Chris Price <fair.lake5766_AT_fastmail.com>"]
 copyright = "Copyright © 2026 Chris Price"

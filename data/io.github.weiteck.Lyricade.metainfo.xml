@@ -97,10 +97,23 @@
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
 
   <releases>
+    <release version="0.3.1" date="2026-07-26" urgency="critical">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.3.1</url>
+      <description>
+        <p>This patch release fixes a serious issue with tag writing</p>
+        <ul>
+          <li>Fixed: cover art was excluded when writing tags</li>
+        </ul>
+      </description>
+      <issues>
+        <issue url="https://github.com/weiteck/lyricade/issues/2">#2</issue>
+      </issues>
+    </release>
+
     <release version="0.3.0" date="2026-07-25">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.3.0</url>
       <description>
-          <p>Audio player added to the lyrics viewer window</p>
+        <p>Audio player added to the lyrics viewer window</p>
         <ul>
           <li>Added: audio player in lyrics viewer</li>
           <li>Added: current lyric highlighting</li>
@@ -110,16 +123,18 @@
         </ul>
       </description>
     </release>
+
     <release version="0.2.0" date="2026-07-14">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.2.0</url>
       <description>
-          <p>This release adds to the lyrics management features.</p>
+        <p>This release adds to the lyrics management features.</p>
         <ul>
           <li>Add conditional guards for deleting sidecar files if a tag exists</li>
           <li>Add conditional guards for deleting lyrics tags if a sidecar file exists</li>
         </ul>
       </description>
     </release>
+
     <release version="0.1.0" date="2026-07-13">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.1.0</url>
       <description>
