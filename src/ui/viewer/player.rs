@@ -233,10 +233,12 @@ impl SimpleAsyncComponent for PlayerModel {
     let path = track.path();
 
     // Open audio file, create the decoder and open the default sound output device
-    let model = if let Ok(file) = std::fs::File::open(path.clone()).inspect_err(|e| warn!("{e}"))
-      && let Ok(mut source) = rodio::Decoder::try_from(file).inspect_err(|e| warn!("{e}"))
-      && let Ok(mut output) =
-        rodio::DeviceSinkBuilder::open_default_sink().inspect_err(|e| warn!("{e}"))
+    let model = if let Ok(file) =
+      std::fs::File::open(path.clone()).inspect_err(|e| warn!("Failed to open file: {e}"))
+      && let Ok(mut source) =
+        rodio::Decoder::try_from(file).inspect_err(|e| warn!("Failed to create Decoder: {e}"))
+      && let Ok(mut output) = rodio::DeviceSinkBuilder::open_default_sink()
+        .inspect_err(|e| warn!("Failed to open audio device: {e}"))
     {
       output.log_on_drop(false);
 
@@ -370,7 +372,7 @@ impl SimpleAsyncComponent for PlayerModel {
         cover: cover(),
       }
     } else {
-      warn!("Failed to open audio stream for {track} - player will be hidden");
+      warn!("Could not initialise Player for {track} - player will be hidden");
 
       // Hide the player if we fail to decode the file or open the sound output device
       root.set_visible(false);
