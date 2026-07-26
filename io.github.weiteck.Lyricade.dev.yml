@@ -29,7 +29,7 @@ modules:
       - mkdir -p .cargo
       - cp cargo/config .cargo/config.toml
 
-      - cargo build --bin lyricade --offline --frozen --release
+      - cargo build --bin lyricade --offline --release
 
       - install -Dm0755 target/release/lyricade ${FLATPAK_DEST}/bin/lyricade
       - install -Dm0644 data/icons/${FLATPAK_ID}.svg ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/${FLATPAK_ID}.svg
