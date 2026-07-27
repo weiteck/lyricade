@@ -10,7 +10,6 @@ use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
 use relm4::tokio::sync::oneshot;
 use relm4::{JoinHandle, RelmContainerExt, prelude::*};
-use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, error, trace, warn};
 
 use crate::manage::ManageLyricsOptions;
@@ -54,7 +53,7 @@ struct AppModel {
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
 
-  confirm_get_lyrics_dialog: Controller<Alert>,
+  confirm_get_lyrics_alert_dialog: adw::AlertDialog,
 
   get_lyrics_requires_confirmation: bool,
 
@@ -123,7 +122,6 @@ enum AppMsg {
 
   GetLyricsMenuChanged(GetLyricsMenuState),
   RequestConfirmGetLyrics,
-  HandleGetLyricsResponse(AlertResponse),
 
   ShowToast(String),
 
@@ -407,7 +405,6 @@ impl AsyncComponent for AppModel {
           trace!("New window size: {} x {}", window.default_width(), window.default_height());
         }
       },
-
 
       #[local_ref]
       toast_overlay -> adw::ToastOverlay {
@@ -789,19 +786,26 @@ impl AsyncComponent for AppModel {
 
     let about_widget = AboutModel::builder().launch(()).detach();
 
-    let confirm_get_lyrics_dialog = Alert::builder()
-      .transient_for(&root)
-      .launch(AlertSettings {
-        text: Some("Are you sure?".into()),
-        secondary_text: Some("Tags will be written to your files. This cannot be undone.".into()),
-        is_modal: true,
-        destructive_accept: true,
-        confirm_label: Some("Confirm".into()),
-        cancel_label: Some("Cancel".into()),
-        option_label: None,
-        extra_child: None,
-      })
-      .forward(sender.input_sender(), AppMsg::HandleGetLyricsResponse);
+    let confirm_get_lyrics_alert_dialog = adw::AlertDialog::builder()
+      .heading("Are you sure?")
+      .body("Tags will be written to your files. This cannot be undone.")
+      .default_response("cancel")
+      .close_response("cancel")
+      .build();
+    confirm_get_lyrics_alert_dialog.add_response("cancel", "Cancel");
+    confirm_get_lyrics_alert_dialog.add_response("confirm", "Confirm");
+    confirm_get_lyrics_alert_dialog
+      .set_response_appearance("confirm", adw::ResponseAppearance::Destructive);
+
+    let sender_handle = sender.clone();
+    confirm_get_lyrics_alert_dialog.connect_response(None, move |_, resp| {
+      if resp == "confirm" {
+        debug!("User confirmed Get Lyrics request");
+        sender_handle.input(AppMsg::FetchLyrics);
+      } else {
+        debug!("User cancelled Get Lyrics request");
+      }
+    });
 
     let mut model = AppModel {
       sender: sender.clone(),
@@ -817,7 +821,7 @@ impl AsyncComponent for AppModel {
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
       manage_lyrics_widget,
-      confirm_get_lyrics_dialog,
+      confirm_get_lyrics_alert_dialog,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       get_lyrics_requires_confirmation: true,
@@ -909,18 +913,9 @@ impl AsyncComponent for AppModel {
         // Show confirmation dialog only if tags will be written
         if self.get_lyrics_requires_confirmation {
           debug!("Showing Get Lyrics confirmation alert");
-          self.confirm_get_lyrics_dialog.emit(AlertMsg::Show);
+          self.confirm_get_lyrics_alert_dialog.present(Some(root));
         } else {
           sender.input(AppMsg::FetchLyrics);
-        }
-      }
-
-      AppMsg::HandleGetLyricsResponse(response) => {
-        if let AlertResponse::Confirm = response {
-          debug!("User confirmed Get Lyrics request");
-          sender.input(AppMsg::FetchLyrics);
-        } else {
-          debug!("User cancelled Get Lyrics request");
         }
       }
 
