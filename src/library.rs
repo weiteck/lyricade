@@ -1,5 +1,5 @@
 use std::{
-  collections::HashSet,
+  collections::{HashMap, HashSet},
   fmt::Display,
   hash::Hash,
   time::{Duration, Instant},
@@ -12,11 +12,11 @@ use chrono::NaiveDateTime;
 use diesel::{dsl::insert_into, prelude::*};
 
 use relm4::tokio::sync::oneshot;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
 use crate::{
-  AUDIO_FILE_EXTENSIONS, DB_POOL, Result, SETTINGS,
+  AUDIO_FILE_EXTENSIONS, DB_POOL, LYRICS_FILE_EXTENSIONS, Result, SETTINGS,
   schema::{libraries, tracks},
   settings::Settings,
   track::{NewTrack, Track},
@@ -159,8 +159,19 @@ impl Library {
 
     on_progress("Discovering paths…\n".into());
 
-    let paths = self
-      .file_paths()
+    let (audio_paths, mut lyrics_paths) = self.file_paths();
+
+    let lrc_paths = lyrics_paths.remove("lrc").unwrap_or_default();
+    let txt_paths = lyrics_paths.remove("txt").unwrap_or_default();
+
+    trace!(
+      "{self} refresh: Discovered paths for {} audio files, {} LRC sidecar files, and {} TXT sidecar files",
+      audio_paths.len(),
+      lrc_paths.len(),
+      txt_paths.len()
+    );
+
+    let audio_paths = audio_paths
       .iter()
       .map(Utf8PathBuf::to_string)
       .collect::<HashSet<_>>();
@@ -177,7 +188,7 @@ impl Library {
         .conn(conn)
         .call()?
         .into_iter()
-        .partition(|t| paths.contains(&t.path));
+        .partition(|t| audio_paths.contains(&t.path));
       existing_count = existing_tracks.len();
 
       // Build new tracks from paths not in the database
@@ -185,7 +196,7 @@ impl Library {
         .iter()
         .map(|t| t.path.clone())
         .collect::<HashSet<_>>();
-      let new_track_paths = paths
+      let new_track_paths = audio_paths
         .iter()
         .filter(|&p| !existing_track_paths.contains(p))
         .collect::<HashSet<_>>();
@@ -211,7 +222,7 @@ impl Library {
         .filter(tracks::added_at.eq(now))
         .load::<Track>(conn)?;
 
-      // Optionally discard unchanged files
+      // Optionally scan changed files, or where sidecar lyrics have been added/removed
       let existing_tracks_to_scan = if scan_new_only {
         on_progress("Checking for modified files…\n".into());
 
@@ -242,7 +253,24 @@ impl Library {
             );
           }
 
-          if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
+          let lrc_path_exists = lrc_paths.contains(&track.path().with_extension("lrc"));
+          let txt_path_exists = txt_paths.contains(&track.path().with_extension("txt"));
+
+          // Re-scan if sidecar lyrics files added or removed, then if audio file modified
+          if track.lyrics_sidecar_lrc_file.is_none() && lrc_path_exists {
+            trace!("{self} refresh: {track} new LRC sidecar file found - added to scan queue");
+            modified_tracks.push(track);
+          } else if track.lyrics_sidecar_lrc_file.is_some() && !lrc_path_exists {
+            trace!("{self} refresh: {track} LRC sidecar file not found - added to scan queue");
+            modified_tracks.push(track);
+          } else if track.lyrics_sidecar_txt_file.is_none() && txt_path_exists {
+            trace!("{self} refresh: {track} new TXT sidecar file found - added to scan queue");
+            modified_tracks.push(track);
+          } else if track.lyrics_sidecar_txt_file.is_some() && !txt_path_exists {
+            trace!("{self} refresh: {track} TXT sidecar not file found - added to scan queue");
+            modified_tracks.push(track);
+          } else if track.file_modified_at != util::file_modified_at().path(&track.path()).call() {
+            trace!("{self} refresh: {track} modified timestamp changed - added to scan queue");
             modified_tracks.push(track);
           }
 
@@ -432,21 +460,45 @@ impl Library {
     Ok(())
   }
 
-  /// All audio file paths within this `Library`'s path.
-  pub(crate) fn file_paths(&self) -> HashSet<Utf8PathBuf> {
-    WalkDir::new(&self.path)
+  /// All audio file and sidecar lyrics file paths within this `Library`'s path.
+  /// Sidecar lyrics file path map is keyed by file extension.
+  pub(crate) fn file_paths(&self) -> (HashSet<Utf8PathBuf>, HashMap<&str, HashSet<Utf8PathBuf>>) {
+    let set = WalkDir::new(&self.path)
       .into_iter()
       .filter_map(core::result::Result::ok)
       .filter(|e| e.file_type().is_file())
       .filter(|e| {
         e.path().extension().is_some_and(|ext| {
-          ext
-            .to_str()
-            .is_some_and(|ext| AUDIO_FILE_EXTENSIONS.contains(&ext))
+          ext.to_str().is_some_and(|ext| {
+            AUDIO_FILE_EXTENSIONS.contains(&ext) || LYRICS_FILE_EXTENSIONS.contains(&ext)
+          })
         })
       })
       .filter_map(|e| Utf8PathBuf::try_from(e.into_path()).ok())
-      .collect::<HashSet<_>>()
+      .collect::<HashSet<_>>();
+
+    let (mut lyrics, audio): (HashSet<_>, HashSet<_>) = set.into_iter().partition(|path| {
+      path
+        .extension()
+        .is_some_and(|ext| ["lrc", "txt"].contains(&ext))
+    });
+
+    let mut lrc = HashSet::new();
+    let mut txt = HashSet::new();
+
+    for path in lyrics.drain() {
+      match path.extension() {
+        Some("lrc") => lrc.insert(path),
+        Some("txt") => txt.insert(path),
+        _ => false,
+      };
+    }
+
+    let mut lyrics = HashMap::new();
+    lyrics.insert("lrc", lrc);
+    lyrics.insert("txt", txt);
+
+    (audio, lyrics)
   }
 
   /// Insert or update library in database.

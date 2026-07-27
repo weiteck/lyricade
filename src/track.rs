@@ -316,6 +316,10 @@ impl Track {
     ///// Handle sidecar files /////
     ////////////////////////////////
 
+    // Reset fields in case this is an existing track and sidecars have changed
+    self.lyrics_sidecar_lrc_file = None;
+    self.lyrics_sidecar_txt_file = None;
+
     if let Some(sidecar_lyrics) = LyricsFile::from_track(self) {
       // Add sidecar lyrics to `Track`
       for lyrics_file in &sidecar_lyrics {

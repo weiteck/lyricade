@@ -93,6 +93,9 @@ pub(crate) static AUDIO_FILE_EXTENSIONS: &[&str] = &[
     "wv",
 ];
 
+/// Supported sidecar lyrics file types.
+pub(crate) static LYRICS_FILE_EXTENSIONS: &[&str] = &["lrc", "txt"];
+
 pub(crate) fn init_app() -> Result<()> {
   // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
   // is stored in a static so it is not dropped for the duration of the program
