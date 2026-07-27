@@ -29,6 +29,7 @@ pub(crate) enum ViewLyricsSource {
   Txt,
 }
 
+#[allow(clippy::struct_excessive_bools)]
 pub(crate) struct ViewLyricsModel {
   track: Rc<Track>,
   lyrics: String,
@@ -38,7 +39,10 @@ pub(crate) struct ViewLyricsModel {
   lyrics_lines_box: gtk::Box,
   stylised_scrolled_window: gtk::ScrolledWindow,
   scroll_animation: Option<adw::Animation>,
+
   is_viewing_raw: bool,
+  is_highlighting_lyrics: bool,
+  is_following_lyrics: bool,
 
   player: AsyncController<PlayerModel>,
   current_lyric_line: Option<usize>,
@@ -47,6 +51,8 @@ pub(crate) struct ViewLyricsModel {
 #[derive(Debug)]
 pub(crate) enum ViewLyricsMsg {
   SetViewingRaw(bool),
+  SetHighlightingLyrics(bool),
+  SetFollowingLyrics(bool),
   PlayerStateChanged(PlayerState),
   CurrentLyricsLine(Option<usize>),
   PlayerTogglePlay,
@@ -79,15 +85,43 @@ impl SimpleComponent for ViewLyricsModel {
       #[wrap(Some)]
       set_content = &adw::ToolbarView {
         add_top_bar = &adw::HeaderBar {
-          pack_start = &gtk::ToggleButton {
-            set_icon_name: "format-text-rich-symbolic",
+          pack_end = &gtk::ToggleButton {
+            set_icon_name: "format-text-plaintext-symbolic",
             add_css_class: "flat",
-            set_tooltip: "View Raw Text",
+            set_tooltip: "Plain Text View",
             #[watch]
             set_active: model.is_viewing_raw,
 
             connect_toggled[sender] => move |btn| {
               sender.input(ViewLyricsMsg::SetViewingRaw(btn.is_active()));
+            },
+          },
+
+          pack_end = &gtk::ToggleButton {
+            set_icon_name: "media-playback-start-symbolic",
+            add_css_class: "flat",
+            set_tooltip: "Follow Current Lyric",
+            #[watch]
+            set_visible: model.lyrics_sync && !model.is_viewing_raw,
+            #[watch]
+            set_active: model.is_following_lyrics,
+
+            connect_toggled[sender] => move |btn| {
+              sender.input(ViewLyricsMsg::SetFollowingLyrics(btn.is_active()));
+            },
+          },
+
+          pack_end = &gtk::ToggleButton {
+            set_icon_name: "marker-symbolic",
+            add_css_class: "flat",
+            set_tooltip: "Highlight Current Lyric",
+            #[watch]
+            set_visible: model.lyrics_sync && !model.is_viewing_raw,
+            #[watch]
+            set_active: model.is_highlighting_lyrics,
+
+            connect_toggled[sender] => move |btn| {
+              sender.input(ViewLyricsMsg::SetHighlightingLyrics(btn.is_active()));
             },
           },
         },
@@ -265,6 +299,8 @@ impl SimpleComponent for ViewLyricsModel {
       stylised_scrolled_window,
       scroll_animation: None,
       is_viewing_raw: false,
+      is_following_lyrics: lyrics_sync,
+      is_highlighting_lyrics: lyrics_sync,
       current_lyric_line: None,
     };
 
@@ -304,7 +340,24 @@ impl SimpleComponent for ViewLyricsModel {
     match message {
       ViewLyricsMsg::SetViewingRaw(enabled) => {
         debug!("ViewLyrics: Viewing raw text page: {}", enabled);
+
         self.is_viewing_raw = enabled;
+      }
+
+      ViewLyricsMsg::SetHighlightingLyrics(enabled) => {
+        debug!("ViewLyrics: Highlighting current lyric: {}", enabled);
+
+        self.is_highlighting_lyrics = enabled;
+        self.set_all_lyrics_dimmed(enabled);
+      }
+
+      ViewLyricsMsg::SetFollowingLyrics(enabled) => {
+        debug!("ViewLyrics: Following current lyric: {}", enabled);
+
+        self.is_following_lyrics = enabled;
+        if enabled {
+          self.scroll_to_current_lyric();
+        }
       }
 
       ViewLyricsMsg::PlayerStateChanged(state) => {
@@ -313,23 +366,25 @@ impl SimpleComponent for ViewLyricsModel {
         if self.lyrics_sync {
           match state {
             PlayerState::Playing => {
-              for idx in 0..self.lyrics_lines.len() {
-                if self.current_lyric_line.is_some_and(|cur| idx == cur) {
-                  continue;
-                }
+              if self.is_highlighting_lyrics {
+                self.set_all_lyrics_dimmed(true);
+              }
 
-                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
+              if self.is_following_lyrics {
+                self.scroll_to_current_lyric();
               }
             }
             PlayerState::Stopped => {
-              for idx in 0..self.lyrics_lines.len() {
-                self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
-              }
-
               self.current_lyric_line = None;
 
-              // Scroll back to top
-              self.animate_vertical_scroll(0.0);
+              if self.is_highlighting_lyrics {
+                self.set_all_lyrics_dimmed(false);
+              }
+
+              if self.is_following_lyrics {
+                // Scroll back to top
+                self.animate_vertical_scroll(0.0);
+              }
             }
             PlayerState::Paused => (),
           }
@@ -339,38 +394,27 @@ impl SimpleComponent for ViewLyricsModel {
       ViewLyricsMsg::CurrentLyricsLine(maybe_idx) => {
         trace!("ViewLyrics: Current lyrics line is {maybe_idx:?}");
 
-        if let Some(idx) = maybe_idx {
-          // Un-dim current line
-          self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+        let previous_lyric_line = self.current_lyric_line;
+        self.current_lyric_line = maybe_idx;
 
-          // Re-dim the previous line
-          if let Some(prev_idx) = self.current_lyric_line {
-            self
-              .lyrics_lines
-              .send(prev_idx, LyricsLineMsg::SetDimmed(true));
+        if self.is_highlighting_lyrics {
+          if let Some(idx) = maybe_idx {
+            // Un-dim current line
+            self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(false));
+
+            // Re-dim the previous line
+            if let Some(prev_idx) = previous_lyric_line {
+              self
+                .lyrics_lines
+                .send(prev_idx, LyricsLineMsg::SetDimmed(true));
+            }
+          } else {
+            self.set_all_lyrics_dimmed(true);
           }
+        }
 
-          self.current_lyric_line = Some(idx);
-
-          // Scroll to lyric line
-          if let Some((_, widget)) = self
-            .lyrics_lines_box
-            .iter_children()
-            .enumerate()
-            .find(|(i, _)| *i == idx)
-            && let Some(point) =
-              widget.compute_point(&self.lyrics_lines_box, &gtk::graphene::Point::zero())
-          {
-            let to = f64::from(point.y());
-
-            self.animate_vertical_scroll(to);
-          }
-        } else {
-          for idx in 0..self.lyrics_lines.len() {
-            self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
-          }
-
-          self.current_lyric_line = None;
+        if self.is_following_lyrics {
+          self.scroll_to_current_lyric();
         }
       }
 
@@ -420,6 +464,36 @@ impl ViewLyricsModel {
     self.scroll_animation.as_ref().inspect(|anim| anim.pause());
     animation.play();
     self.scroll_animation = Some(animation.into());
+  }
+
+  fn scroll_to_current_lyric(&mut self) {
+    if let Some(idx) = self.current_lyric_line
+      && let Some((_, widget)) = self
+        .lyrics_lines_box
+        .iter_children()
+        .enumerate()
+        .find(|(i, _)| *i == idx)
+      && let Some(point) =
+        widget.compute_point(&self.lyrics_lines_box, &gtk::graphene::Point::zero())
+    {
+      let to = f64::from(point.y());
+
+      self.animate_vertical_scroll(to);
+    }
+  }
+
+  fn set_all_lyrics_dimmed(&self, dimmed: bool) {
+    trace!("ViewLyrics: Setting all lyrics dimmed: {dimmed}");
+
+    for idx in 0..self.lyrics_lines.len() {
+      if dimmed && self.current_lyric_line.is_some_and(|cur| idx == cur) {
+        continue;
+      }
+
+      self
+        .lyrics_lines
+        .send(idx, LyricsLineMsg::SetDimmed(dimmed));
+    }
   }
 }
 
