@@ -37,6 +37,7 @@ pub(crate) struct ViewLyricsModel {
   lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
   lyrics_lines_box: gtk::Box,
   stylised_scrolled_window: gtk::ScrolledWindow,
+  scroll_animation: Option<adw::Animation>,
   is_viewing_raw: bool,
 
   player: AsyncController<PlayerModel>,
@@ -262,6 +263,7 @@ impl SimpleComponent for ViewLyricsModel {
       lyrics_lines,
       lrc_tags,
       stylised_scrolled_window,
+      scroll_animation: None,
       is_viewing_raw: false,
       current_lyric_line: None,
     };
@@ -327,8 +329,7 @@ impl SimpleComponent for ViewLyricsModel {
               self.current_lyric_line = None;
 
               // Scroll back to top
-              let adjustment = self.stylised_scrolled_window.vadjustment();
-              adjustment.set_value(0.0);
+              self.animate_vertical_scroll(0.0);
             }
             PlayerState::Paused => (),
           }
@@ -360,12 +361,9 @@ impl SimpleComponent for ViewLyricsModel {
             && let Some(point) =
               widget.compute_point(&self.lyrics_lines_box, &gtk::graphene::Point::zero())
           {
-            let y = f64::from(point.y());
+            let to = f64::from(point.y());
 
-            trace!("ViewLyrics: Scrolling to lyric at y={:.2}", point.y());
-
-            let adjustment = self.stylised_scrolled_window.vadjustment();
-            adjustment.set_value(y);
+            self.animate_vertical_scroll(to);
           }
         } else {
           for idx in 0..self.lyrics_lines.len() {
@@ -399,6 +397,29 @@ impl SimpleComponent for ViewLyricsModel {
           .expect("ViewLyricsOutput receiver dropped");
       }
     }
+  }
+}
+
+impl ViewLyricsModel {
+  fn animate_vertical_scroll(&mut self, to: f64) {
+    trace!("ViewLyrics: Scrolling to y={:.2}", to);
+
+    let adjustment = self.stylised_scrolled_window.vadjustment();
+
+    let target = adw::PropertyAnimationTarget::new(&adjustment, "value");
+
+    let animation = adw::TimedAnimation::builder()
+      .widget(&self.stylised_scrolled_window)
+      .target(&target)
+      .value_from(adjustment.value())
+      .value_to(to)
+      .duration(500)
+      .easing(adw::Easing::EaseInOutQuad)
+      .build();
+
+    self.scroll_animation.as_ref().inspect(|anim| anim.pause());
+    animation.play();
+    self.scroll_animation = Some(animation.into());
   }
 }
 
