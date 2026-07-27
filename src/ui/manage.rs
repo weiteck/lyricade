@@ -1,6 +1,5 @@
 use adw::prelude::*;
 use relm4::{gtk::EventControllerKey, prelude::*};
-use relm4_components::alert::{Alert, AlertMsg, AlertResponse, AlertSettings};
 use tracing::{debug, trace};
 
 use crate::manage::{ManageLyricsOptions, ManageLyricsTarget};
@@ -8,7 +7,7 @@ use crate::manage::{ManageLyricsOptions, ManageLyricsTarget};
 pub(crate) struct ManageLyricsModel {
   state: ManageLyricsOptions,
   default_state: ManageLyricsOptions,
-  confirm_dialog: Controller<Alert>,
+  alert_dialog: adw::AlertDialog,
 }
 
 #[derive(Debug)]
@@ -17,7 +16,6 @@ pub(crate) enum ManageLyricsMsg {
   ShowConfirmDialog,
   Confirm,
   ResetState,
-  Noop,
 }
 
 #[derive(Debug)]
@@ -39,9 +37,10 @@ pub(crate) enum ExposedSetting {
 }
 
 #[relm4::component(pub)]
-impl SimpleComponent for ManageLyricsModel {
+impl Component for ManageLyricsModel {
   type Input = ManageLyricsMsg;
   type Output = ManageLyricsOutput;
+  type CommandOutput = ();
   type Init = ();
 
   view! {
@@ -252,8 +251,7 @@ impl SimpleComponent for ManageLyricsModel {
                 set_label: "Apply",
                 #[watch]
                 set_sensitive: model.state != model.default_state,
-                #[watch]
-                set_class_active: ("destructive-action", model.state != model.default_state),
+                add_css_class: "suggested-action",
 
                 connect_clicked[sender] => move |_btn| {
                   sender.input(ManageLyricsMsg::ShowConfirmDialog);
@@ -262,9 +260,7 @@ impl SimpleComponent for ManageLyricsModel {
             },
           },
         },
-
       },
-
     },
   }
 
@@ -276,27 +272,27 @@ impl SimpleComponent for ManageLyricsModel {
     let sender_handle = sender.clone();
     root.connect_show(move |_| sender_handle.input(ManageLyricsMsg::ResetState));
 
-    let confirm_dialog = Alert::builder()
-      .transient_for(&root)
-      .launch(AlertSettings {
-        text: Some("Are you sure?".into()),
-        secondary_text: Some("This action cannot be undone.".into()),
-        is_modal: true,
-        destructive_accept: true,
-        confirm_label: Some("Confirm".into()),
-        cancel_label: Some("Cancel".into()),
-        option_label: None,
-        extra_child: None,
-      })
-      .forward(sender.input_sender(), |msg| match msg {
-        AlertResponse::Confirm => ManageLyricsMsg::Confirm,
-        AlertResponse::Cancel | AlertResponse::Option => ManageLyricsMsg::Noop,
-      });
+    let alert_dialog = adw::AlertDialog::builder()
+      .heading("Are you sure?")
+      .body("This action cannot be undone.")
+      .default_response("cancel")
+      .close_response("cancel")
+      .build();
+    alert_dialog.add_response("cancel", "Cancel");
+    alert_dialog.add_response("confirm", "Confirm");
+    alert_dialog.set_response_appearance("confirm", adw::ResponseAppearance::Destructive);
+
+    let sender_handle = sender.clone();
+    alert_dialog.connect_response(None, move |_, resp| {
+      if resp == "confirm" {
+        sender_handle.input(ManageLyricsMsg::Confirm);
+      }
+    });
 
     let model = ManageLyricsModel {
       state: ManageLyricsOptions::default(),
       default_state: ManageLyricsOptions::default(),
-      confirm_dialog,
+      alert_dialog,
     };
 
     let widgets = view_output!();
@@ -318,12 +314,8 @@ impl SimpleComponent for ManageLyricsModel {
     ComponentParts { model, widgets }
   }
 
-  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
+  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, root: &Self::Root) {
     match message {
-      ManageLyricsMsg::Noop => {
-        trace!("ManageLyrics: No-op");
-      }
-
       ManageLyricsMsg::UpdateState(setting) => {
         trace!("ManageLyrics: Updating state with setting: {:?}", &setting);
 
@@ -349,7 +341,7 @@ impl SimpleComponent for ManageLyricsModel {
 
       ManageLyricsMsg::ShowConfirmDialog => {
         debug!("ManageLyrics: Showing confirmation dialog");
-        self.confirm_dialog.emit(AlertMsg::Show);
+        self.alert_dialog.present(Some(root));
       }
 
       ManageLyricsMsg::Confirm => {
