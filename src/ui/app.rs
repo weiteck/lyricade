@@ -125,7 +125,7 @@ enum AppMsg {
 
   ShowToast(String),
 
-  ShowTrackDetailsSidebar,
+  ShowTrackDetailsSidebar(bool),
   PinTrackDetailsSidebar(bool),
   TogglePinTrackDetailsSidebar,
 
@@ -514,6 +514,13 @@ impl AsyncComponent for AppModel {
                       set_enable_hide_gesture: !model.is_sidebar_pinned,
                       set_sidebar_width_fraction: 0.5,
 
+                      // Sync state when user collapses sidebar
+                      connect_show_sidebar_notify[sender] => move |osv| {
+                        if !osv.shows_sidebar() {
+                          sender.input(AppMsg::ShowTrackDetailsSidebar(false));
+                        }
+                      },
+
                       // Tracks table view
                       #[wrap(Some)]
                       #[local_ref]
@@ -771,7 +778,7 @@ impl AsyncComponent for AppModel {
       TracksTableModel::builder()
         .launch(())
         .forward(sender.input_sender(), |msg| match msg {
-          TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar,
+          TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar(true),
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
           TracksTableOutput::TrackIdsVisible(set) => AppMsg::UpdateFiltered(set),
         });
@@ -1449,10 +1456,15 @@ impl AsyncComponent for AppModel {
           .emit(TracksTableMsg::SetFilter((transformed_filter, active)));
       }
 
-      AppMsg::ShowTrackDetailsSidebar => {
-        debug!("Showing sidebar");
-        self.is_sidebar_revealed = true;
-        self.rebuild_sidebar_widget();
+      AppMsg::ShowTrackDetailsSidebar(active) => {
+        if active && !self.is_sidebar_revealed {
+          debug!("Showing sidebar");
+          self.is_sidebar_revealed = true;
+          self.rebuild_sidebar_widget();
+        } else if !active && self.is_sidebar_revealed {
+          debug!("Hiding sidebar");
+          self.is_sidebar_revealed = false;
+        }
       }
 
       AppMsg::PinTrackDetailsSidebar(active) => {
@@ -1481,7 +1493,7 @@ impl AsyncComponent for AppModel {
 
         // Selection changed; hide track details unless pinned
         if !self.is_sidebar_pinned {
-          self.is_sidebar_revealed = false;
+          sender.input(AppMsg::ShowTrackDetailsSidebar(false));
         }
 
         self.update_selection_state();
