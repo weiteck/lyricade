@@ -25,6 +25,7 @@ impl FactoryComponent for ViewLyricsLine {
   type Output = ();
   type CommandOutput = ();
   type ParentWidget = gtk::Box;
+  // type Widgets = ;
 
   view! {
     gtk::Box {
@@ -40,6 +41,12 @@ impl FactoryComponent for ViewLyricsLine {
         .max(MAX_SPACING)
         .call()
       },
+
+      // add_tick_callback => |bx, _| {
+      //   let y = bx.allocation().y();
+      //   error!("LAYOUT MGR NOTIFY FIRED WITH Y = {y}");
+      //   gtk::glib::ControlFlow::Break
+      // },
 
       gtk::Box {
         set_visible: self.inner.timestamp.is_some(),
@@ -67,6 +74,7 @@ impl FactoryComponent for ViewLyricsLine {
         set_xalign: 0.0,
         set_wrap: true,
         set_wrap_mode: gtk::pango::WrapMode::WordChar,
+        set_use_markup: false,
         set_label: &self.inner.contents,
       },
     },
@@ -83,6 +91,17 @@ impl FactoryComponent for ViewLyricsLine {
       dimmed: false,
     }
   }
+
+  // fn init_widgets(
+  //     &mut self,
+  //     index: &Self::Index,
+  //     root: Self::Root,
+  //     returned_widget: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
+  //     sender: FactorySender<Self>,
+  // ) -> Self::Widgets
+  // {
+
+  // }
 
   fn update(&mut self, message: Self::Input, _sender: FactorySender<Self>) {
     match message {

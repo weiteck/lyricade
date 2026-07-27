@@ -2,6 +2,7 @@ use std::rc::Rc;
 
 use adw::prelude::*;
 use relm4::{
+  RelmIterChildrenExt,
   gtk::{EventControllerKey, gdk, glib},
   prelude::*,
 };
@@ -34,6 +35,8 @@ pub(crate) struct ViewLyricsModel {
   lyrics_sync: bool,
   lyrics_lines: FactoryVecDeque<ViewLyricsLine>,
   lrc_tags: FactoryVecDeque<ViewLyricsLrcTag>,
+  lyrics_lines_box: gtk::Box,
+  stylised_scrolled_window: gtk::ScrolledWindow,
   is_viewing_raw: bool,
 
   player: AsyncController<PlayerModel>,
@@ -104,7 +107,9 @@ impl SimpleComponent for ViewLyricsModel {
 
         // Stylised lyrics page
         adw::ViewStack {
-          add = &gtk::ScrolledWindow {
+          #[local_ref]
+          add = stylised_scrolled_window -> gtk::ScrolledWindow {
+            // Track info
             gtk::Box {
               set_orientation: gtk::Orientation::Vertical,
               set_spacing: 12,
@@ -116,6 +121,7 @@ impl SimpleComponent for ViewLyricsModel {
                 set_css_classes: &["view-lyrics", "track-info"],
 
                 gtk::Label {
+                  set_use_markup: false,
                   set_halign: gtk::Align::Start,
                   set_label: &model.track.artist_name,
                   set_css_classes: &["view-lyrics", "artist-name"],
@@ -129,6 +135,7 @@ impl SimpleComponent for ViewLyricsModel {
                 },
 
                 gtk::Label {
+                  set_use_markup: false,
                   set_label: &model.track.track_name,
                   set_css_classes: &["view-lyrics", "track-name"],
                   set_hexpand: true,
@@ -183,6 +190,7 @@ impl SimpleComponent for ViewLyricsModel {
               set_margin_all: 24,
 
               gtk::Label {
+                set_use_markup: false,
                 set_label: &model.lyrics,
               },
             }
@@ -243,18 +251,23 @@ impl SimpleComponent for ViewLyricsModel {
 
     let lyrics_sync = lyrics_are_synchronised(&lyrics);
 
+    let stylised_scrolled_window = gtk::ScrolledWindow::new();
+
     let model = ViewLyricsModel {
       player,
       track,
       lyrics,
       lyrics_sync,
+      lyrics_lines_box: lyrics_lines.widget().clone(),
       lyrics_lines,
       lrc_tags,
+      stylised_scrolled_window,
       is_viewing_raw: false,
       current_lyric_line: None,
     };
 
-    let lyrics_lines_box = model.lyrics_lines.widget();
+    let stylised_scrolled_window = &model.stylised_scrolled_window;
+    let lyrics_lines_box = &model.lyrics_lines_box;
     let lrc_tags_box = model.lrc_tags.widget();
     let player = model.player.widget();
 
@@ -312,6 +325,10 @@ impl SimpleComponent for ViewLyricsModel {
               }
 
               self.current_lyric_line = None;
+
+              // Scroll back to top
+              let adjustment = self.stylised_scrolled_window.vadjustment();
+              adjustment.set_value(0.0);
             }
             PlayerState::Paused => (),
           }
@@ -333,6 +350,23 @@ impl SimpleComponent for ViewLyricsModel {
           }
 
           self.current_lyric_line = Some(idx);
+
+          // Scroll to lyric line
+          if let Some((_, widget)) = self
+            .lyrics_lines_box
+            .iter_children()
+            .enumerate()
+            .find(|(i, _)| *i == idx)
+            && let Some(point) =
+              widget.compute_point(&self.lyrics_lines_box, &gtk::graphene::Point::zero())
+          {
+            let y = f64::from(point.y());
+
+            trace!("ViewLyrics: Scrolling to lyric at y={:.2}", point.y());
+
+            let adjustment = self.stylised_scrolled_window.vadjustment();
+            adjustment.set_value(y);
+          }
         } else {
           for idx in 0..self.lyrics_lines.len() {
             self.lyrics_lines.send(idx, LyricsLineMsg::SetDimmed(true));
