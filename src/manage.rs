@@ -1,12 +1,11 @@
 use std::{fs, time::Duration};
 
-use anyhow::anyhow;
 use relm4::tokio::sync::oneshot;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
   DB_POOL, Result, SETTINGS,
-  lyrics::{Lyrics, LyricsType, convert_sync_lyrics_to_plain},
+  lyrics::{Lyrics, LyricsFileType, LyricsType, convert_sync_lyrics_to_plain},
   track::Track,
   util::reporter::IntervalReporter,
 };
@@ -101,10 +100,8 @@ impl ManageLyricsOptions {
         .try_recv()
         .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
       {
-        return Err(
-          anyhow!(diesel::result::Error::RollbackTransaction)
-            .context("User cancelled the ManageLyrics operation"),
-        );
+        debug!("ManageLyrics: Cancelled");
+        break;
       }
 
       match [
@@ -117,22 +114,25 @@ impl ManageLyricsOptions {
       ]
       .iter()
       .max()
-      .expect("not empty")
+      .unwrap_or(&ManageLyricsResult::NoAction)
       {
         ManageLyricsResult::NoAction => trace!("ManageLyrics: {track} unchanged"),
         ManageLyricsResult::WriteToDb => {
           debug!("ManageLyrics: {track} changed: Writing to database");
 
-          track.write_to_db().conn(&mut conn).call()?;
+          let _ = track.write_to_db().conn(&mut conn).call().inspect_err(|e| {
+            error!("ManageLyrics: Error updating {track}: {e}");
+          });
         }
         ManageLyricsResult::WriteToFileAndDb => {
           debug!("ManageLyrics: {track} lyrics tag changed: Writing to file and database");
 
-          track
+          let _ = track
             .write_to_file_and_db()
             .plain_lyrics_in_id3v2_uslt_frame(plain_uslt)
             .conn(&mut conn)
-            .call()?;
+            .call()
+            .inspect_err(|e| error!("ManageLyrics: Error updating {track}: {e}"));
         }
       }
 
@@ -213,66 +213,19 @@ impl ManageLyricsOptions {
 
     if tag_condition_guard {
       match self.sidecars.delete {
-        ManageLyricsTarget::Plain if let Some(path) = track.txt_file_path() => {
-          debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
+        ManageLyricsTarget::Plain => delete_sidecar_file(track, LyricsFileType::Txt),
 
-          if fs::remove_file(&path)
-            .inspect_err(|error| error!("{error}"))
-            .is_ok()
-          {
-            track.lyrics_sidecar_txt_file = None;
-          }
-
-          ManageLyricsResult::WriteToDb
-        }
-
-        ManageLyricsTarget::Sync if let Some(path) = track.lrc_file_path() => {
-          debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
-
-          if fs::remove_file(&path)
-            .inspect_err(|error| error!("{error}"))
-            .is_ok()
-          {
-            track.lyrics_sidecar_lrc_file = None;
-          }
-
-          ManageLyricsResult::WriteToDb
-        }
+        ManageLyricsTarget::Sync => delete_sidecar_file(track, LyricsFileType::Lrc),
 
         ManageLyricsTarget::All => {
-          let result = if let Some(path) = track.lrc_file_path() {
-            debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
+          let txt_res = delete_sidecar_file(track, LyricsFileType::Txt);
+          let lrc_res = delete_sidecar_file(track, LyricsFileType::Lrc);
 
-            if fs::remove_file(&path)
-              .inspect_err(|error| error!("{error}"))
-              .is_ok()
-            {
-              track.lyrics_sidecar_lrc_file = None;
-            }
-
-            ManageLyricsResult::WriteToDb
-          } else {
-            ManageLyricsResult::NoAction
-          };
-
-          if let Some(path) = track.txt_file_path() {
-            debug!("{}: Deleting sidecar file: \"{}\"", track, &path);
-
-            if fs::remove_file(&path)
-              .inspect_err(|error| error!("{error}"))
-              .is_ok()
-            {
-              track.lyrics_sidecar_txt_file = None;
-            }
-
-            ManageLyricsResult::WriteToDb
-          } else {
-            ManageLyricsResult::NoAction
-          }
-          .max(result) // return most actionable result
+          // Return the most actionable result
+          txt_res.max(lrc_res)
         }
 
-        _ => ManageLyricsResult::NoAction,
+        ManageLyricsTarget::None => ManageLyricsResult::NoAction,
       }
     } else {
       ManageLyricsResult::NoAction
@@ -342,10 +295,8 @@ impl ManageLyricsOptions {
   }
 
   /// Copy from lyrics tag to sidecar lyrics file.
-  /// Will copy any lyrics type if no `source` provided (sync preferred).
+  /// Will copy any lyrics type if no `source` provided.
   fn copy_from_lyrics_tag_to_sidecar(self, track: &mut Track) -> ManageLyricsResult {
-    // TODO: This should be done as an atomic operation outside of a transaction so the db stays in sync if cancelled
-
     match self.sidecars.copy {
       ManageLyricsTarget::Sync | ManageLyricsTarget::All
         if track.lyrics_synchronised
@@ -355,7 +306,13 @@ impl ManageLyricsOptions {
           lyrics_type: LyricsType::Sync,
           contents: lyrics.clone(),
         };
-        if track.save_sidecar_file(&lyrics).is_ok() {
+        if track
+          .save_sidecar_file(&lyrics)
+          .inspect_err(|e| {
+            error!("ManageLyrics: Error writing LRC sidecar file from tag for {track}: {e}");
+          })
+          .is_ok()
+        {
           track.lyrics_sidecar_lrc_file = track.lyrics.clone();
           ManageLyricsResult::WriteToDb
         } else {
@@ -371,7 +328,13 @@ impl ManageLyricsOptions {
           lyrics_type: LyricsType::Plain,
           contents: lyrics.clone(),
         };
-        if track.save_sidecar_file(&lyrics).is_ok() {
+        if track
+          .save_sidecar_file(&lyrics)
+          .inspect_err(|e| {
+            error!("ManageLyrics: Error writing TXT sidecar file from tag for {track}: {e}");
+          })
+          .is_ok()
+        {
           track.lyrics_sidecar_txt_file = track.lyrics.clone();
           ManageLyricsResult::WriteToDb
         } else {
@@ -400,8 +363,6 @@ impl ManageLyricsOptions {
   /// If sidecar lyrics file is sync type (LRC), convert to plain text.
   /// This will change the `.lrc` extension to `.txt`, overwriting any existing file with that name.
   fn convert_sync_sidecar_to_plain(self, track: &mut Track) -> ManageLyricsResult {
-    // TODO: This should be done as an atomic operation outside of a transaction so the db stays in sync if cancelled
-
     if self.sidecars.convert_to_plain
       && let Some(lyrics) = track.lyrics_sidecar_lrc_file.as_ref()
     {
@@ -412,30 +373,78 @@ impl ManageLyricsOptions {
       };
 
       // Write out TXT file
-      let result = if track.save_sidecar_file(&lyrics).is_ok() {
+      if track
+        .save_sidecar_file(&lyrics)
+        .inspect_err(|e| {
+          error!("ManageLyrics: Error writing converted sidecar file for {track}: {e}");
+        })
+        .is_ok()
+      {
         track.lyrics_sidecar_txt_file = Some(lyrics.contents);
 
-        ManageLyricsResult::WriteToDb
-      } else {
-        ManageLyricsResult::NoAction
-      };
-
-      // Delete LRC file
-      if let Some(path) = track.lrc_file_path()
-        && fs::remove_file(&path)
-          .inspect_err(|error| error!("{error}"))
-          .is_ok()
-      {
-        track.lyrics_sidecar_lrc_file = None;
+        // Delete LRC file
+        delete_sidecar_file(track, LyricsFileType::Lrc);
 
         ManageLyricsResult::WriteToDb
       } else {
         ManageLyricsResult::NoAction
       }
-      .max(result) // return most actionable result
     } else {
       ManageLyricsResult::NoAction
     }
+  }
+}
+
+// Helper function to delete a sidecar file
+fn delete_sidecar_file(track: &mut Track, lyrics_type: LyricsFileType) -> ManageLyricsResult {
+  let path = match lyrics_type {
+    LyricsFileType::Lrc => {
+      if track.lyrics_sidecar_lrc_file.is_none() {
+        return ManageLyricsResult::NoAction;
+      }
+
+      track.lrc_file_path()
+    }
+    LyricsFileType::Txt => {
+      if track.lyrics_sidecar_txt_file.is_none() {
+        return ManageLyricsResult::NoAction;
+      }
+
+      track.txt_file_path()
+    }
+  };
+
+  if let Some(path) = path {
+    debug!("{track}: Deleting sidecar file: \"{path}\"");
+
+    match fs::remove_file(&path) {
+      Ok(()) => {
+        match lyrics_type {
+          LyricsFileType::Lrc => track.lyrics_sidecar_lrc_file = None,
+          LyricsFileType::Txt => track.lyrics_sidecar_txt_file = None,
+        }
+
+        ManageLyricsResult::WriteToDb
+      }
+
+      Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+        warn!("ManageLyrics: Path \"{path}\" not found");
+
+        match lyrics_type {
+          LyricsFileType::Lrc => track.lyrics_sidecar_lrc_file = None,
+          LyricsFileType::Txt => track.lyrics_sidecar_txt_file = None,
+        }
+
+        ManageLyricsResult::WriteToDb
+      }
+
+      Err(e) => {
+        error!("ManageLyrics: Error deleting file: {e}");
+        ManageLyricsResult::NoAction
+      }
+    }
+  } else {
+    ManageLyricsResult::NoAction
   }
 }
 
