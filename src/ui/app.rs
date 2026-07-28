@@ -178,7 +178,9 @@ impl AsyncComponent for AppModel {
         set_tooltip_text: Some("Search"),
         set_icon_name: "edit-find-symbolic",
         #[watch]
-        set_active: model.is_search_revealed,
+        set_sensitive: !model.no_tracks,
+        #[watch]
+        set_active: model.is_search_revealed && !model.no_tracks,
 
         connect_toggled[sender] => move |btn| {
           sender.input(AppMsg::ShowSearch(btn.is_active()));
@@ -240,8 +242,7 @@ impl AsyncComponent for AppModel {
     #[name(search_bar)]
     &gtk::SearchBar {
       #[watch]
-      set_search_mode: model.is_search_revealed,
-      set_key_capture_widget: Some(&main_window),
+      set_search_mode: model.is_search_revealed && !model.no_tracks,
       connect_entry: search_entry,
 
       #[wrap(Some)]
@@ -896,12 +897,15 @@ impl AsyncComponent for AppModel {
     AsyncComponentParts { model, widgets }
   }
 
-  async fn update(
+  async fn update_with_view(
     &mut self,
+    widgets: &mut Self::Widgets,
     message: Self::Input,
     sender: AsyncComponentSender<Self>,
     root: &Self::Root,
   ) {
+    let sender_handle = sender.clone();
+
     match message {
       AppMsg::GetLyricsMenuChanged(state) => {
         debug!("Get Lyrics menu state updated: {:#?}", &state);
@@ -1267,6 +1271,15 @@ impl AsyncComponent for AppModel {
             )));
           }
         }
+
+        // Disable search key capture if no tracks to prevent search bar reveal
+        if self.no_tracks && widgets.search_bar.key_capture_widget().is_some() {
+          widgets.search_bar.set_key_capture_widget(gtk::Widget::NONE);
+        } else if !self.no_tracks && widgets.search_bar.key_capture_widget().is_none() {
+          widgets
+            .search_bar
+            .set_key_capture_widget(Some(&widgets.main_window));
+        }
       }
 
       AppMsg::BuildTracksTable => {
@@ -1374,14 +1387,16 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::SearchQueryChanged(query) => {
-        debug!("Searching for: {}", &query);
-        self.is_search_revealed = true;
-        self.search_query = if query.is_empty() { None } else { Some(query) };
+        if !self.no_tracks {
+          debug!("Searching for: {}", &query);
+          self.is_search_revealed = true;
+          self.search_query = if query.is_empty() { None } else { Some(query) };
 
-        self
-          .tracks_table_widget
-          .sender()
-          .emit(TracksTableMsg::Filter(self.search_query.clone()));
+          self
+            .tracks_table_widget
+            .sender()
+            .emit(TracksTableMsg::Filter(self.search_query.clone()));
+        }
       }
 
       AppMsg::ShowToast(msg) => {
@@ -1614,6 +1629,8 @@ impl AsyncComponent for AppModel {
         });
       }
     }
+
+    self.update_view(widgets, sender_handle);
   }
 
   async fn update_cmd(
