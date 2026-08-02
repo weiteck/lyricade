@@ -8,6 +8,10 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 **Lyricade** is a modern GTK4/libadwaita application that aims to follow GNOME Human Interface Guidelines.
 
+<p>
+  <a href="https://flathub.org/apps/io.github.weiteck.Lyricade"><img src="https://flathub.org/assets/badges/flathub-badge-en.png" width="200"/></a>
+</p>
+
 ## Features
       
 - Scan your music and find missing lyrics from [lrclib.net](https://lrclib.net)
@@ -39,6 +43,12 @@ A Linux desktop application for fetching and managing lyrics in your local music
 ## Releases
 
 The latest release is available as a `flatpak` package via [Flathub](https://flathub.org/en/apps/io.github.weiteck.Lyricade), or can be downloaded as an `AppImage` package from the [Releases](https://github.com/weiteck/lyricade/releases) section.
+
+If you already have Flathub [configured](https://flathub.org/en/setup), you can install by running:
+
+```bash
+flatpak install flathub io.github.weiteck.Lyricade
+```
 
 ## Building
 
