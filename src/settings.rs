@@ -16,7 +16,12 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use crate::{
-  DB_POOL, Result, lyrics::LyricsType, schema::settings, ui::app::get_lyrics_menu, util::now,
+  DB_POOL, Result,
+  lyrics::LyricsType,
+  provider::{ProviderId, Providers},
+  schema::settings,
+  ui::app::get_lyrics_menu,
+  util::now,
 };
 
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
@@ -79,6 +84,9 @@ pub(crate) struct Settings {
   pub(crate) get_lyrics_menu_target_visible: bool,
   pub(crate) get_lyrics_menu_target_selected: bool,
 
+  pub(crate) primary_providers: Providers,
+  pub(crate) secondary_providers: Providers,
+
   // Appearance
   pub(crate) colour_scheme: ColourScheme,
   pub(crate) tracks_table_col_separators: bool,
@@ -99,7 +107,8 @@ impl Settings {
     let mut conn = DB_POOL.get()?;
 
     let res = settings::table
-      .find(1) // singleton table; always id = 1
+      .select(Settings::as_select()) // needed to decouple schema column order from struct field order
+      .find(1) // singleton table; `id` is always 1
       .first::<Settings>(&mut conn);
 
     let settings = match res {
@@ -132,7 +141,7 @@ impl Settings {
 
     if diesel::insert_into(settings::table)
       .values(&*self)
-      .on_conflict(settings::id) // singleton table; id = 1 and should always conflict
+      .on_conflict(settings::id) // singleton table; `id` is always 1 so should conflict
       .do_update()
       .set(&*self)
       .execute(&mut conn)
@@ -173,6 +182,9 @@ impl Default for Settings {
       get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
       get_lyrics_menu_target_visible: false,
       get_lyrics_menu_target_selected: false,
+
+      primary_providers: Providers(vec![ProviderId::LrcLib]),
+      secondary_providers: Providers(vec![ProviderId::SimpMusic]),
 
       colour_scheme: ColourScheme::System,
       tracks_table_col_separators: true,
