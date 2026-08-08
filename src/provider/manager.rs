@@ -13,19 +13,10 @@ use tracing::trace;
 use crate::{
   SETTINGS, USER_AGENT,
   lyrics::LyricsType,
-  provider::{
-    LyricsData, Provider, ProviderError, ProviderId, lrclib::LrcLibProvider,
-    simpmusic::SimpMusicProvider,
-  },
+  provider::{LyricsData, Provider, ProviderError, ProviderId},
   settings::CONNECTION_LIMIT,
   track::Track,
 };
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Direction {
-  Up,
-  Down,
-}
 
 #[derive(Debug)]
 pub(crate) struct ProviderManager {
@@ -116,7 +107,7 @@ impl ProviderManager {
     // (1) we have the lyrics type requested;
     // (2) a Provider says the Track is instrumental; or
     // (3) all *primary* Providers have returned a result.
-    // Secondary providers are intended as a fallback for when primary Providers are rate-limited
+    // Secondary providers are a fallback for when primary Providers are busy
     loop {
       for provider in providers.iter() {
         let id = provider.id();
@@ -146,6 +137,7 @@ impl ProviderManager {
               Some(new_data)
             }
           }
+
           Err(e) => match e {
             ProviderError::NotFound | ProviderError::Permanent => {
               primary_not_checked.remove(&id);
@@ -181,26 +173,27 @@ impl ProviderManager {
     }
   }
 
-  /// Returns the new order.
-  // pub(crate) fn reorder(&self, provider: ProviderId, direction: Direction) -> Vec<ProviderId> {
-  //   let mut order = self.primary_providers_order.load().to_vec();
+  pub(crate) fn reorder_primary_providers(&self, provider: ProviderId, direction: Direction) {
+    let mut order = self.primary_providers_order.load().to_vec();
 
-  //   if let Some(prev_idx) = order.iter().position(|&pid| pid == provider) {
-  //     let provider = order.remove(prev_idx);
+    reorder_providers(&mut order, provider, direction);
+    self.primary_providers_order.swap(Arc::new(order));
 
-  //     let new_idx = match direction {
-  //       Direction::Up => prev_idx.saturating_sub(1),
-  //       Direction::Down => prev_idx + 1,
-  //     };
+    let providers =
+      Arc::new(init_providers(&self.primary_providers_order(), &self.secondary_providers_order()));
+    self.providers.swap(providers);
+  }
 
-  //     order.insert(new_idx.max(order.len()), provider);
-  //   }
+  pub(crate) fn reorder_secondary_providers(&self, provider: ProviderId, direction: Direction) {
+    let mut order = self.secondary_providers_order.load().to_vec();
 
-  //   let providers = Arc::new(init_providers(&order));
-  //   self.primary_providers.swap(providers);
+    reorder_providers(&mut order, provider, direction);
+    self.secondary_providers_order.swap(Arc::new(order));
 
-  //   order
-  // }
+    let providers =
+      Arc::new(init_providers(&self.primary_providers_order(), &self.secondary_providers_order()));
+    self.providers.swap(providers);
+  }
 
   pub(crate) fn primary_providers_order(&self) -> Vec<ProviderId> {
     self.primary_providers_order.load().to_vec()
@@ -239,16 +232,35 @@ fn init_providers(
   let primary_providers = primary_order
     .iter()
     .filter(|&id| primary_set.insert(id))
-    .map(ProviderId::init_provider)
+    .map(|id| id.init_provider())
     .collect::<Vec<_>>();
   let secondary_providers = secondary_order
     .iter()
     .filter(|&id| !primary_set.contains(&id) && secondary_set.insert(id))
-    .map(ProviderId::init_provider)
+    .map(|id| id.init_provider())
     .collect::<Vec<_>>();
 
   primary_providers
     .into_iter()
-    .chain(secondary_providers.into_iter())
+    .chain(secondary_providers)
     .collect()
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Direction {
+  Up,
+  Down,
+}
+
+fn reorder_providers(order: &mut Vec<ProviderId>, provider: ProviderId, direction: Direction) {
+  if let Some(prev_idx) = order.iter().position(|&pid| pid == provider) {
+    let provider = order.remove(prev_idx);
+
+    let new_idx = match direction {
+      Direction::Up => prev_idx.saturating_sub(1),
+      Direction::Down => prev_idx + 1,
+    };
+
+    order.insert(new_idx.max(order.len()), provider);
+  }
 }

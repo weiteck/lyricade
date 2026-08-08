@@ -30,7 +30,6 @@ use crate::{
 };
 
 pub(crate) mod library;
-pub(crate) mod lrclib;
 pub(crate) mod lyrics;
 pub(crate) mod manage;
 pub(crate) mod provider;
@@ -75,7 +74,6 @@ pub(crate) static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
     .expect("error creating database connection pool")
 });
 
-// pub(crate) static LRCLIB_CLIENT: LazyLock<LrcLibClient> = LazyLock::new(LrcLibClient::new);
 pub(crate) static PROVIDER_MANAGER: LazyLock<ProviderManager> = LazyLock::new(ProviderManager::new);
 
 /// Supported audio file types.

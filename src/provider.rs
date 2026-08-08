@@ -53,7 +53,7 @@ impl From<&str> for ProviderId {
 }
 
 impl ProviderId {
-  pub(crate) fn init_provider(&self) -> Arc<dyn Provider> {
+  pub(crate) fn init_provider(self) -> Arc<dyn Provider> {
     match self {
       ProviderId::LrcLib => Arc::new(LrcLibProvider::new()),
       ProviderId::SimpMusic => Arc::new(SimpMusicProvider::new()),
@@ -112,12 +112,15 @@ pub(crate) enum ProviderError {
 pub(crate) type ProviderResult = Result<LyricsData, ProviderError>;
 
 #[async_trait]
-trait Provider: Debug + Send + Sync {
+pub(crate) trait Provider: Debug + Send + Sync {
   #[must_use]
   fn id(&self) -> ProviderId;
 
+  /// Function checks if the `Provider` is busy (rate-limited or no free connections),
+  // and resets the stored state if no longer busy.
   fn is_busy(&self) -> bool;
 
+  /// Get lyrics from the API.
   #[must_use]
   async fn fetch(
     &self,

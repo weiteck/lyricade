@@ -85,11 +85,6 @@ impl Provider for LrcLibProvider {
       }
     }
 
-    // Limiting is checked before calling function, so we can safely reset here
-    if self.rate_limited_until.load().is_some() {
-      self.rate_limited_until.swap(Arc::new(None));
-    }
-
     let url = Url::parse_with_params(
       API_URL,
       &[
@@ -181,10 +176,17 @@ impl Provider for LrcLibProvider {
   }
 
   fn is_busy(&self) -> bool {
-    self.semaphore.available_permits() == 0
-      || self
-        .rate_limited_until
-        .load()
-        .is_some_and(|dt| dt > Utc::now())
+    if let Some(dt) = self.rate_limited_until.load().as_ref() {
+      if dt > &Utc::now() {
+        self.semaphore.available_permits() == 0
+      } else {
+        trace!("LrcLibProvider: Rate-limit expired");
+        self.rate_limited_until.swap(Arc::new(None));
+
+        self.semaphore.available_permits() == 0
+      }
+    } else {
+      self.semaphore.available_permits() == 0
+    }
   }
 }
