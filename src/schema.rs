@@ -32,6 +32,8 @@ diesel::table! {
         sidebar_pinned -> Bool,
         added_at -> Timestamp,
         updated_at -> Timestamp,
+        primary_providers -> Text,
+        secondary_providers -> Text,
     }
 }
 

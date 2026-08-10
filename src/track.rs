@@ -23,9 +23,9 @@ use std::{
 use tracing::{debug, error, trace, warn};
 
 use crate::{
-  DB_POOL, LRCLIB_CLIENT, Result, SETTINGS,
-  lrclib::LrcLibLyricsResponse,
+  DB_POOL, PROVIDER_MANAGER, Result, SETTINGS,
   lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType, lyrics_are_synchronised},
+  provider::LyricsData,
   schema::tracks,
   settings::Settings,
   tags::{insert_lyrics_into_id3v2, lrc_lyrics_from_id3v2},
@@ -367,85 +367,87 @@ impl Track {
     let mut update_db = true; // default to true to record API check timestamp
     self.last_api_check_at = Some(now());
 
-    let response = LRCLIB_CLIENT.lyrics_from_track_signature(self).await;
-    if response.is_err() {
+    if let Some(data) = PROVIDER_MANAGER.fetch(self).await {
+      trace!("Got lyrics for {self}:\n{data:#?}");
+
+      let LyricsData {
+        instrumental,
+        plain_lyrics,
+        sync_lyrics,
+      } = data;
+
+      if instrumental.is_some_and(|inst| inst) && self.instrumental.is_none_or(|inst| !inst) {
+        self.instrumental = Some(true);
+      } else {
+        // Extract the preferred lyrics type and update tags
+        let lyrics = match options.prefer_lyrics_type {
+          LyricsType::Sync => sync_lyrics.or(if options.ignore_plain_lyrics {
+            None
+          } else {
+            plain_lyrics
+          }),
+          LyricsType::Plain => plain_lyrics.or(sync_lyrics.map(Lyrics::into_plain)),
+        };
+
+        // Generate sidecar file
+        if let Some(lyrics) = &lyrics
+          && options.save_sidecar_file
+          && ((lyrics.lyrics_type == LyricsType::Sync && self.lyrics_sidecar_lrc_file.is_none())
+            || (lyrics.lyrics_type == LyricsType::Plain && self.lyrics_sidecar_txt_file.is_none()))
+        {
+          self.save_sidecar_file(lyrics)?;
+
+          match lyrics.lyrics_type {
+            LyricsType::Sync => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
+            LyricsType::Plain => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
+          }
+
+          modified = true;
+        }
+
+        let upgrade_tag = if options.update_lyrics_tag {
+          match options.prefer_lyrics_type {
+            LyricsType::Sync
+              if self.lyrics.is_none()
+                || (!self.lyrics_synchronised
+                  && lyrics
+                    .as_ref()
+                    .is_some_and(|l| l.lyrics_type == LyricsType::Sync)) =>
+            {
+              true
+            }
+            LyricsType::Plain if self.lyrics.is_none() => true,
+            _ => false,
+          }
+        } else {
+          false
+        };
+
+        if upgrade_tag {
+          self.lyrics_synchronised = lyrics
+            .as_ref()
+            .is_some_and(|l| l.lyrics_type == LyricsType::Sync);
+          self.lyrics = lyrics.as_ref().map(|l| l.contents.clone());
+
+          self
+            .write_to_file_and_db()
+            .plain_lyrics_in_id3v2_uslt_frame(options.plain_lyrics_in_id3v2_uslt_frame)
+            .call()?;
+          update_db = false;
+          modified = true;
+        }
+      }
+
+      if update_db {
+        self.write_to_db().call()?;
+      }
+
+      Ok(modified)
+    } else {
       // Update DB on error to record the API check timestamp
       self.write_to_db().call()?;
-      return Ok(false);
+      Ok(false)
     }
-    let LrcLibLyricsResponse {
-      instrumental,
-      plain_lyrics,
-      synced_lyrics,
-    } = response.expect("checked result ok");
-
-    if instrumental && self.instrumental.is_none_or(|inst| !inst) {
-      self.instrumental = Some(true);
-    } else {
-      // Extract the preferred lyrics type and update tags
-      let lyrics = match options.prefer_lyrics_type {
-        LyricsType::Sync => synced_lyrics.or(if options.ignore_plain_lyrics {
-          None
-        } else {
-          plain_lyrics
-        }),
-        LyricsType::Plain => plain_lyrics.or(synced_lyrics.map(Lyrics::into_plain)),
-      };
-
-      // Generate sidecar file
-      if let Some(lyrics) = &lyrics
-        && options.save_sidecar_file
-        && ((lyrics.lyrics_type == LyricsType::Sync && self.lyrics_sidecar_lrc_file.is_none())
-          || (lyrics.lyrics_type == LyricsType::Plain && self.lyrics_sidecar_txt_file.is_none()))
-      {
-        self.save_sidecar_file(lyrics)?;
-
-        match lyrics.lyrics_type {
-          LyricsType::Sync => self.lyrics_sidecar_lrc_file = Some(lyrics.contents.clone()),
-          LyricsType::Plain => self.lyrics_sidecar_txt_file = Some(lyrics.contents.clone()),
-        }
-
-        modified = true;
-      }
-
-      let upgrade_tag = if options.update_lyrics_tag {
-        match options.prefer_lyrics_type {
-          LyricsType::Sync
-            if self.lyrics.is_none()
-              || (!self.lyrics_synchronised
-                && lyrics
-                  .as_ref()
-                  .is_some_and(|l| l.lyrics_type == LyricsType::Sync)) =>
-          {
-            true
-          }
-          LyricsType::Plain if self.lyrics.is_none() => true,
-          _ => false,
-        }
-      } else {
-        false
-      };
-
-      if upgrade_tag {
-        self.lyrics_synchronised = lyrics
-          .as_ref()
-          .is_some_and(|l| l.lyrics_type == LyricsType::Sync);
-        self.lyrics = lyrics.as_ref().map(|l| l.contents.clone());
-
-        self
-          .write_to_file_and_db()
-          .plain_lyrics_in_id3v2_uslt_frame(options.plain_lyrics_in_id3v2_uslt_frame)
-          .call()?;
-        update_db = false;
-        modified = true;
-      }
-    }
-
-    if update_db {
-      self.write_to_db().call()?;
-    }
-
-    Ok(modified)
   }
 
   pub(crate) fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {

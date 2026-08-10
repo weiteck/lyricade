@@ -76,3 +76,8 @@ label.view-lyrics.text {
   font-weight: bold;
   opacity: 1;
 }
+
+row.drop-target {
+    outline: 1px solid var(--accent-color);
+    outline-offset: -1px;
+}

@@ -1,7 +1,11 @@
-use std::{collections::HashSet, path::PathBuf};
+use std::{collections::HashSet, ops::Add, path::PathBuf};
 
 use camino::Utf8PathBuf;
-use relm4::{adw::PreferencesDialog, adw::prelude::*, prelude::*};
+use relm4::{
+  RelmIterChildrenExt,
+  adw::{PreferencesDialog, prelude::*},
+  prelude::*,
+};
 use relm4_components::open_dialog::{
   OpenDialog, OpenDialogMsg, OpenDialogResponse, OpenDialogSettings,
 };
@@ -11,12 +15,17 @@ use crate::{
   SETTINGS,
   library::Library,
   lyrics::LyricsType,
+  provider::{ProviderId, ProviderState, ProviderTier},
   settings::{ColourScheme, Settings},
-  ui::prefs::library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
+  ui::prefs::{
+    library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
+    provider_row::{ProviderRow, ProviderRowMsg},
+  },
   util::{self, now},
 };
 
 mod library_row;
+mod provider_row;
 
 pub(crate) struct PrefsModel {
   root: PreferencesDialog,
@@ -25,6 +34,9 @@ pub(crate) struct PrefsModel {
   library_rows: FactoryVecDeque<LibraryRow>,
 
   editing_library_row: Option<DynamicIndex>,
+
+  primary_provider_rows: FactoryVecDeque<ProviderRow>,
+  secondary_provider_rows: FactoryVecDeque<ProviderRow>,
 
   settings_initial: Settings,
   settings_current: Settings,
@@ -48,6 +60,21 @@ pub(crate) enum PrefsMsg {
   EditLibraryFileDialogResponse(PathBuf),
 
   DeleteLibraryRow(DynamicIndex),
+
+  ProviderRowHandleDragOver {
+    target_tier: ProviderTier,
+    target_y: Option<i32>,
+  },
+  ProviderRowHandleDrop {
+    target_tier: ProviderTier,
+    target_y: i32,
+    id: ProviderId,
+  },
+  ProviderRowMoveUp(ProviderState),
+  ProviderRowMoveDown(ProviderState),
+  ProviderRowSwapTier(ProviderState),
+  ProviderRowToggle(ProviderState),
+  ProvidersChanged,
 
   ShowToast(String, bool),
 
@@ -170,6 +197,33 @@ impl SimpleComponent for PrefsModel {
             set_active: model.settings_current.save_sidecar_file_on_fetch,
             connect_active_notify[sender] => move |btn| {
               sender.input(PrefsMsg::UpdateSetting(ExposedSetting::SaveSidecarOnFetch(btn.is_active())));
+            },
+          },
+        },
+
+        adw::PreferencesGroup {
+          set_title: "Lyrics Providers",
+          set_description: Some("<b>Primary Providers</b> are guaranteed to be tried, unless the requested lyrics type has already been found. <b>Fallback Providers</b> are tried only if Primary Providers are rate-limited or otherwise busy. Having more than one Primary Providers can slow down the fetching process for large libraries."),
+
+          gtk::Box {
+            set_homogeneous: true,
+            set_spacing: 12,
+
+            adw::PreferencesGroup {
+              set_title: "Primary Providers",
+
+              #[local_ref]
+              primary_providers_list_box -> gtk::ListBox {
+              },
+            },
+
+            adw::PreferencesGroup {
+              set_title: "Fallback Providers",
+
+              #[local_ref]
+              secondary_providers_list_box -> gtk::ListBox {
+                set_selection_mode: gtk::SelectionMode::None,
+              },
             },
           },
         },
@@ -371,6 +425,7 @@ impl SimpleComponent for PrefsModel {
     },
   }
 
+  #[allow(clippy::cast_possible_truncation)]
   fn init(
     (settings, libraries): Self::Init,
     root: Self::Root,
@@ -388,10 +443,48 @@ impl SimpleComponent for PrefsModel {
     let example_datetime_simple2 = util::ndt_utc_to_humanised_string(ndt);
     let example_datetime_accurate2 = util::ndt_utc_to_ui_string(ndt);
 
-    let libraries = libraries.into_iter().collect::<HashSet<_>>();
-
     // Build library rows
+    let libraries = libraries.into_iter().collect::<HashSet<_>>();
     let library_rows = build_library_rows(libraries.clone(), &sender);
+
+    // Build provider rows
+    let primary_providers = settings
+      .primary_providers
+      .0
+      .iter()
+      .map(|&id| ProviderState {
+        id,
+        enabled: true,
+        tier: ProviderTier::Primary,
+      })
+      .collect::<Vec<_>>();
+
+    let secondary_providers = settings
+      .secondary_providers
+      .0
+      .iter()
+      .map(|&id| ProviderState {
+        id,
+        enabled: true,
+        tier: ProviderTier::Secondary,
+      })
+      .chain(
+        ProviderId::ALL
+          .iter()
+          .filter(|&id| {
+            !settings.primary_providers.0.contains(id)
+              && !settings.secondary_providers.0.contains(id)
+          })
+          .map(|&id| ProviderState {
+            id,
+            enabled: false,
+            tier: ProviderTier::Secondary,
+          }),
+      )
+      .collect::<Vec<_>>();
+
+    let primary_provider_rows = build_provider_rows(primary_providers, &sender);
+    let secondary_provider_rows = build_provider_rows(secondary_providers, &sender);
 
     // Create file dialogs
     let file_dialog_settings = OpenDialogSettings {
@@ -420,6 +513,8 @@ impl SimpleComponent for PrefsModel {
       libraries,
       library_rows,
       editing_library_row: None,
+      primary_provider_rows,
+      secondary_provider_rows,
       settings_initial: settings.clone(),
       settings_current: settings,
       settings_default: Settings::default(),
@@ -429,12 +524,113 @@ impl SimpleComponent for PrefsModel {
     };
 
     let libraries_list_box = model.library_rows.widget();
+    let primary_providers_list_box = model.primary_provider_rows.widget();
+    let secondary_providers_list_box = model.secondary_provider_rows.widget();
+
+    let provider_placeholder_row = adw::ActionRow::default();
+    provider_placeholder_row.set_title("Empty");
+    provider_placeholder_row.inline_css("font-style: italic;");
+    provider_placeholder_row.add_css_class("dimmed");
+    provider_placeholder_row.set_halign(gtk::Align::Center);
+
+    secondary_providers_list_box.set_placeholder(Some(&provider_placeholder_row));
+
+    // Provider list drag and drop controllers
+    let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    let sender_handle = sender.clone();
+    drop_target.connect_drop(move |_, value, _x, y| {
+      if let Ok(s) = value.get::<String>()
+        && let id = ProviderId::from(s.as_str())
+      {
+        sender_handle.input(PrefsMsg::ProviderRowHandleDrop {
+          target_tier: ProviderTier::Primary,
+          target_y: y as i32,
+          id,
+        });
+        true
+      } else {
+        false
+      }
+    });
+    primary_providers_list_box.add_controller(drop_target);
+
+    let drop_target = gtk::DropTarget::new(String::static_type(), gtk::gdk::DragAction::MOVE);
+    let sender_handle = sender.clone();
+    drop_target.connect_drop(move |_, value, _x, y| {
+      if let Ok(s) = value.get::<String>()
+        && let id = ProviderId::from(s.as_str())
+      {
+        sender_handle.input(PrefsMsg::ProviderRowHandleDrop {
+          target_tier: ProviderTier::Secondary,
+          target_y: y as i32,
+          id,
+        });
+        true
+      } else {
+        false
+      }
+    });
+    secondary_providers_list_box.add_controller(drop_target);
+
+    let sender_handle = sender.clone();
+    let drop_motion = gtk::DropControllerMotion::new();
+    drop_motion.connect_motion(move |_, _x, y| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Primary,
+        target_y: Some(y as i32),
+      });
+    });
+    let sender_handle = sender.clone();
+    drop_motion.connect_enter(move |_, _x, y| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Primary,
+
+        target_y: Some(y as i32),
+      });
+    });
+    let sender_handle = sender.clone();
+    drop_motion.connect_leave(move |_| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Primary,
+        target_y: None,
+      });
+    });
+    primary_providers_list_box.add_controller(drop_motion);
+
+    let sender_handle = sender.clone();
+    let drop_motion = gtk::DropControllerMotion::new();
+    drop_motion.connect_motion(move |_, _x, y| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Secondary,
+        target_y: Some(y as i32),
+      });
+    });
+    let sender_handle = sender.clone();
+    drop_motion.connect_enter(move |_, _x, y| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Secondary,
+
+        target_y: Some(y as i32),
+      });
+    });
+    let sender_handle = sender.clone();
+    drop_motion.connect_leave(move |_| {
+      sender_handle.input(PrefsMsg::ProviderRowHandleDragOver {
+        target_tier: ProviderTier::Secondary,
+        target_y: None,
+      });
+    });
+    secondary_providers_list_box.add_controller(drop_motion);
+
     let widgets = view_output!();
 
     // Start at Music Libraries page if empty
     if model.libraries.is_empty() {
       model.root.set_visible_page_name("libraries");
     }
+
+    // Ensure Provider menu state is current
+    sender.input(PrefsMsg::ProvidersChanged);
 
     ComponentParts { model, widgets }
   }
@@ -452,6 +648,22 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::SaveAndClose => {
+        // Update providers
+        let providers = self
+          .primary_provider_rows
+          .iter()
+          .filter(|pr| pr.state.enabled)
+          .map(|pr| pr.state.id)
+          .collect();
+        self.settings_current.primary_providers.0 = providers;
+        let providers = self
+          .secondary_provider_rows
+          .iter()
+          .filter(|pr| pr.state.enabled)
+          .map(|pr| pr.state.id)
+          .collect();
+        self.settings_current.secondary_providers.0 = providers;
+
         if self.settings_current != self.settings_initial {
           if let Ok(mut guard) = SETTINGS.write() {
             *guard = self.settings_current.clone();
@@ -590,6 +802,201 @@ impl SimpleComponent for PrefsModel {
         self.library_rows.guard().remove(idx.current_index());
       }
 
+      PrefsMsg::ProviderRowHandleDragOver {
+        target_tier,
+        target_y,
+      } => {
+        let target = match target_tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        target
+          .widget()
+          .iter_children()
+          .for_each(|c| c.remove_css_class("drop-target"));
+
+        if let Some(target_y) = target_y
+          && let Some(row) = target.widget().row_at_y(target_y)
+        {
+          row.add_css_class("drop-target");
+        }
+      }
+
+      PrefsMsg::ProviderRowHandleDrop {
+        target_tier,
+        target_y,
+        id,
+      } => {
+        let Some((source_state, source_idx)) = self
+          .primary_provider_rows
+          .iter()
+          .chain(self.secondary_provider_rows.iter())
+          .find(|pr| pr.state.id == id)
+          .map(|pr| (pr.state, pr.index.current_index()))
+        else {
+          return;
+        };
+
+        let source = match source_state.tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        if source_state.tier == ProviderTier::Primary
+          && target_tier == ProviderTier::Secondary
+          && source.iter().filter(|pr| pr.state.enabled).count() == 1
+        {
+          sender.input(PrefsMsg::ShowToast(String::from("Must have a Primary Provider"), true));
+          return;
+        }
+
+        if source.guard().remove(source_idx).is_none() {
+          return;
+        }
+
+        let target = match target_tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        #[allow(deprecated)]
+        let target_idx = if let Some(row) = target.widget().row_at_y(target_y) {
+          let row_y = row.allocation().y();
+          let row_height = row.allocation().height();
+
+          if (target_y) < row_y + row_height {
+            row.index() as usize
+          } else {
+            (row.index() + 1) as usize
+          }
+        } else {
+          target.len()
+        };
+
+        let target_state = ProviderState {
+          tier: target_tier,
+          ..source_state
+        };
+
+        target.guard().insert(target_idx, target_state);
+
+        // Update settings and menu state
+        sender.input(PrefsMsg::ProvidersChanged);
+      }
+
+      PrefsMsg::ProviderRowMoveUp(state) => {
+        let factory = match state.tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        let Some(start_idx) = factory.iter().position(|pr| pr.state.id == state.id) else {
+          return;
+        };
+        if factory.guard().remove(start_idx).is_none() {
+          return;
+        }
+
+        let target_idx = start_idx.saturating_sub(1);
+        factory.guard().insert(target_idx, state);
+
+        // Update settings and menu state
+        sender.input(PrefsMsg::ProvidersChanged);
+      }
+
+      PrefsMsg::ProviderRowMoveDown(state) => {
+        let factory = match state.tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        let Some(start_idx) = factory.iter().position(|pr| pr.state.id == state.id) else {
+          return;
+        };
+        if factory.guard().remove(start_idx).is_none() {
+          return;
+        }
+
+        let target_idx = start_idx.add(1).min(factory.len());
+        factory.guard().insert(target_idx, state);
+
+        // Update settings and menu state
+        sender.input(PrefsMsg::ProvidersChanged);
+      }
+
+      PrefsMsg::ProviderRowSwapTier(state) => {
+        let (source, target) = match state.tier {
+          ProviderTier::Primary => {
+            (&mut self.primary_provider_rows, &mut self.secondary_provider_rows)
+          }
+          ProviderTier::Secondary => {
+            (&mut self.secondary_provider_rows, &mut self.primary_provider_rows)
+          }
+        };
+
+        if state.tier == ProviderTier::Primary
+          && source.iter().filter(|pr| pr.state.enabled).count() == 1
+        {
+          sender.input(PrefsMsg::ShowToast(
+            String::from("Must have at least one Primary Provider"),
+            true,
+          ));
+          return;
+        }
+
+        let Some(source_idx) = source.iter().position(|pr| pr.state.id == state.id) else {
+          return;
+        };
+        if source.guard().remove(source_idx).is_none() {
+          return;
+        }
+
+        let target_state = ProviderState {
+          tier: match state.tier {
+            ProviderTier::Primary => ProviderTier::Secondary,
+            ProviderTier::Secondary => ProviderTier::Primary,
+          },
+          ..state
+        };
+
+        let target_idx = target.len();
+        target.guard().insert(target_idx, target_state);
+
+        // Update settings and menu state
+        sender.input(PrefsMsg::ProvidersChanged);
+      }
+
+      PrefsMsg::ProviderRowToggle(state) => {
+        let factory = match state.tier {
+          ProviderTier::Primary => &mut self.primary_provider_rows,
+          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        };
+
+        if let Some(idx) = factory.iter().position(|pr| pr.state.id == state.id) {
+          factory.send(idx, ProviderRowMsg::Enable(!state.enabled));
+
+          // Update settings and menu state
+          sender.input(PrefsMsg::ProvidersChanged);
+        }
+      }
+
+      PrefsMsg::ProvidersChanged => {
+        let len = self.primary_provider_rows.len();
+        for idx in 0..len {
+          self
+            .primary_provider_rows
+            .send(idx, ProviderRowMsg::ListChangedWithLength(len));
+        }
+
+        let len = self.secondary_provider_rows.len();
+        for idx in 0..len {
+          self
+            .secondary_provider_rows
+            .send(idx, ProviderRowMsg::ListChangedWithLength(len));
+        }
+      }
+
       PrefsMsg::ShowToast(msg, is_error) => {
         debug!("Emit toast notification: \"{}\"", &msg);
 
@@ -630,4 +1037,27 @@ fn build_library_rows(
   }
 
   library_rows
+}
+
+fn build_provider_rows(
+  state: impl IntoIterator<Item = ProviderState>,
+  sender: &ComponentSender<PrefsModel>,
+) -> FactoryVecDeque<ProviderRow> {
+  let mut provider_rows = FactoryVecDeque::builder()
+    .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
+    .forward(sender.input_sender(), |msg| match msg {
+      provider_row::ProviderRowOutput::MoveUp(state) => PrefsMsg::ProviderRowMoveUp(state),
+      provider_row::ProviderRowOutput::MoveDown(state) => PrefsMsg::ProviderRowMoveDown(state),
+      provider_row::ProviderRowOutput::SwapTier(state) => PrefsMsg::ProviderRowSwapTier(state),
+      provider_row::ProviderRowOutput::Toggle(state) => PrefsMsg::ProviderRowToggle(state),
+    });
+
+  {
+    let mut guard = provider_rows.guard();
+    state.into_iter().for_each(|state| {
+      guard.push_back(state);
+    });
+  }
+
+  provider_rows
 }

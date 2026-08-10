@@ -14,6 +14,8 @@ codegen-units = 1
 
 [dependencies]
 anyhow = "1.0"
+arc-swap = "1.9.2"
+async-trait = "0.1"
 bon = "3.9"
 bstr = "1.12"
 camino = { version = "1.2", features = ["serde1"] }
@@ -33,7 +35,7 @@ leaky-bucket = { version = "1.1", features = ["tracing"] }
 libsqlite3-sys = { version = "0.37", features = ["bundled"] }
 lofty = "0.24"
 mimalloc = "0.1"
-num-format = { version = "0.4.4", features = ["with-system-locale"] }
+num-format = { version = "0.4", features = ["with-system-locale"] }
 rand = "0.10"
 regex = "1.13"
 relm4 = { version = "0.11", features = ["gnome_49", "libadwaita"] }
