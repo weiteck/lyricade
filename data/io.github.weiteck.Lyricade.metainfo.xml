@@ -63,25 +63,25 @@
     <screenshot type="default">
       <caption>The main window</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.4.0/data/screenshots/1.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.5.0/data/screenshots/1.png
       </image>
     </screenshot>
     <screenshot>
       <caption>The main window (dark) with track details</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.4.0/data/screenshots/2.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.5.0/data/screenshots/2.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Preferences window</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.4.0/data/screenshots/3.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.5.0/data/screenshots/3.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Lyrics viewer</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.4.0/data/screenshots/4.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.5.0/data/screenshots/4.png
       </image>
     </screenshot>
   </screenshots>
@@ -97,6 +97,21 @@
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
 
   <releases>
+    <release version="0.5.0" date="2026-07-10">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.5.0</url>
+      <description>
+        <p>This release includes a rewrite of the backend lyrics fetching architecture
+          to allow additional lyrics providers to be added.</p>
+        <p>LRCLIB recently began rate-limiting requests and have introduced new restrictions
+          for clients accessing the API, including not allowing parallel requests. SimpMusic
+          has been added as a fallback provider to help reduce the impact of this when
+          scanning large libraries, and I hope to add additional providers in the future.</p>
+        <ul>
+          <li>Added: add SimpMusic lyrics provider</li>
+        </ul>
+      </description>
+    </release>
+
     <release version="0.4.0" date="2026-07-28">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.4.0</url>
       <description>
