@@ -62,8 +62,8 @@ impl FactoryComponent for ProviderRow {
 
       add_prefix = &gtk::Box {
         gtk::Image {
-        set_icon_name: Some("list-drag-handle-symbolic"),
-        add_css_class: "drag-handle",
+          set_icon_name: Some("list-drag-handle-symbolic"),
+          set_css_classes: &["dimmed", "drag-handle"],
         },
       },
 
@@ -71,6 +71,8 @@ impl FactoryComponent for ProviderRow {
         gtk::MenuButton {
           set_icon_name: "view-more-symbolic",
           set_direction: gtk::ArrowType::Down,
+          set_valign: gtk::Align::Center,
+          set_vexpand: false,
           set_menu_model: Some(menu),
           set_css_classes: &["flat", "popup"],
         }
