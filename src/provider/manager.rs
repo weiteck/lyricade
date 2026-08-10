@@ -4,17 +4,16 @@ use std::{
   time::Duration,
 };
 
-use anyhow::anyhow;
 use arc_swap::ArcSwap;
 use reqwest::Client as HttpClient;
 use tokio::sync::Semaphore;
-use tracing::trace;
+use tracing::{error, info, trace};
 
 use crate::{
   SETTINGS, USER_AGENT,
   lyrics::LyricsType,
   provider::{LyricsData, Provider, ProviderError, ProviderId},
-  settings::CONNECTION_LIMIT,
+  settings::{CONNECTION_LIMIT, Settings},
   track::Track,
 };
 
@@ -34,9 +33,11 @@ impl ProviderManager {
   pub(crate) fn new() -> Self {
     let (primary_providers_order, secondary_providers_order) = SETTINGS
       .read()
-      .map(|settings| (settings.primary_providers.clone(), settings.secondary_providers.clone()))
-      .map_err(|e| anyhow!("{e}"))
-      .unwrap_or_default();
+      .inspect_err(|_| error!("Settings lock was poisoned while initialising lyrics providers"))
+      .map_or_else(
+        |_| (Settings::default().primary_providers, Settings::default().secondary_providers),
+        |g| (g.primary_providers.clone(), g.secondary_providers.clone()),
+      );
 
     let providers = init_providers(&primary_providers_order.0, &secondary_providers_order.0);
     let providers = ArcSwap::new(Arc::new(providers));
@@ -173,22 +174,21 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) fn reorder_primary_providers(&self, provider: ProviderId, direction: Direction) {
-    let mut order = self.primary_providers_order.load().to_vec();
+  pub(crate) fn init_providers_from_settings(&self) {
+    let (primary_providers_order, secondary_providers_order) = SETTINGS
+      .read()
+      .inspect_err(|_| error!("Settings lock was poisoned while initialising lyrics providers"))
+      .map_or_else(
+        |_| (Settings::default().primary_providers, Settings::default().secondary_providers),
+        |g| (g.primary_providers.clone(), g.secondary_providers.clone()),
+      );
 
-    reorder_providers(&mut order, provider, direction);
-    self.primary_providers_order.swap(Arc::new(order));
-
-    let providers =
-      Arc::new(init_providers(&self.primary_providers_order(), &self.secondary_providers_order()));
-    self.providers.swap(providers);
-  }
-
-  pub(crate) fn reorder_secondary_providers(&self, provider: ProviderId, direction: Direction) {
-    let mut order = self.secondary_providers_order.load().to_vec();
-
-    reorder_providers(&mut order, provider, direction);
-    self.secondary_providers_order.swap(Arc::new(order));
+    self
+      .primary_providers_order
+      .swap(Arc::new(primary_providers_order.0));
+    self
+      .secondary_providers_order
+      .swap(Arc::new(secondary_providers_order.0));
 
     let providers =
       Arc::new(init_providers(&self.primary_providers_order(), &self.secondary_providers_order()));
@@ -201,24 +201,6 @@ impl ProviderManager {
 
   pub(crate) fn secondary_providers_order(&self) -> Vec<ProviderId> {
     self.secondary_providers_order.load().to_vec()
-  }
-
-  pub(crate) fn primary_provider_order_strings(&self) -> Vec<String> {
-    self
-      .primary_providers_order
-      .load()
-      .iter()
-      .map(ProviderId::to_string)
-      .collect()
-  }
-
-  pub(crate) fn secondary_provider_order_strings(&self) -> Vec<String> {
-    self
-      .secondary_providers_order
-      .load()
-      .iter()
-      .map(ProviderId::to_string)
-      .collect()
   }
 }
 
@@ -240,27 +222,15 @@ fn init_providers(
     .map(|id| id.init_provider())
     .collect::<Vec<_>>();
 
-  primary_providers
+  let providers = primary_providers
     .into_iter()
     .chain(secondary_providers)
-    .collect()
-}
+    .collect::<Vec<_>>();
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Direction {
-  Up,
-  Down,
-}
+  info!(
+    "Initialised lyrics providers: {:#?}",
+    providers.iter().map(|p| p.id()).collect::<Vec<_>>()
+  );
 
-fn reorder_providers(order: &mut Vec<ProviderId>, provider: ProviderId, direction: Direction) {
-  if let Some(prev_idx) = order.iter().position(|&pid| pid == provider) {
-    let provider = order.remove(prev_idx);
-
-    let new_idx = match direction {
-      Direction::Up => prev_idx.saturating_sub(1),
-      Direction::Down => prev_idx + 1,
-    };
-
-    order.insert(new_idx.max(order.len()), provider);
-  }
+  providers
 }

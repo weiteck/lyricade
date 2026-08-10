@@ -1,4 +1,4 @@
-use std::{env, fs, path::PathBuf, sync::LazyLock};
+use std::{collections::HashSet, env, fs, path::PathBuf, sync::LazyLock};
 
 use camino::Utf8PathBuf;
 use chrono::NaiveDateTime;
@@ -111,7 +111,7 @@ impl Settings {
       .find(1) // singleton table; `id` is always 1
       .first::<Settings>(&mut conn);
 
-    let settings = match res {
+    let mut settings = match res {
       Ok(settings) => {
         info!("Loaded settings");
         Ok(settings)
@@ -130,6 +130,23 @@ impl Settings {
         }
       }
     }?;
+
+    // Ensure at least one primary Provider
+    if settings.primary_providers.0.is_empty() {
+      settings.primary_providers = Self::default().primary_providers;
+    }
+
+    // Ensure no duplicate Providers
+    let mut primary_set = HashSet::with_capacity(settings.primary_providers.0.len());
+    let mut secondary_set = HashSet::with_capacity(settings.secondary_providers.0.len());
+    settings
+      .primary_providers
+      .0
+      .retain(|&id| primary_set.insert(id));
+    settings
+      .secondary_providers
+      .0
+      .retain(|&id| !settings.primary_providers.0.contains(&id) && secondary_set.insert(id));
 
     Ok(settings)
   }

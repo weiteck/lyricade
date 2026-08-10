@@ -25,7 +25,7 @@ use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::{NUM_LOCALE, SETTINGS, util};
+use crate::{NUM_LOCALE, PROVIDER_MANAGER, SETTINGS, util};
 use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
@@ -1167,6 +1167,23 @@ impl AsyncComponent for AppModel {
         } else if rebuild_required {
           // Refresh table as datetime format has changed
           sender.input(AppMsg::BuildTracksTable);
+        }
+
+        // Providers may have changed
+        let mut current_providers = PROVIDER_MANAGER.primary_providers_order();
+        current_providers.extend_from_slice(&PROVIDER_MANAGER.secondary_providers_order());
+        if let Ok(guard) = SETTINGS.read() {
+          let providers_from_settings = guard
+            .primary_providers
+            .0
+            .iter()
+            .chain(guard.secondary_providers.0.iter())
+            .copied()
+            .collect::<Vec<_>>();
+
+          if current_providers != providers_from_settings {
+            PROVIDER_MANAGER.init_providers_from_settings();
+          }
         }
 
         self.refresh_from_settings(root, &sender);

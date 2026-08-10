@@ -33,6 +33,10 @@ pub(crate) enum ProviderId {
   SimpMusic,
 }
 
+impl ProviderId {
+  pub(crate) const ALL: [Self; 2] = [ProviderId::LrcLib, ProviderId::SimpMusic];
+}
+
 impl Display for ProviderId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
@@ -50,6 +54,19 @@ impl From<&str> for ProviderId {
       _ => ProviderId::default(),
     }
   }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ProviderTier {
+  Primary,
+  Secondary,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProviderState {
+  pub(crate) id: ProviderId,
+  pub(crate) enabled: bool,
+  pub(crate) tier: ProviderTier,
 }
 
 impl ProviderId {
