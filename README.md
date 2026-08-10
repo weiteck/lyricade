@@ -13,12 +13,15 @@ A Linux desktop application for fetching and managing lyrics in your local music
 </p>
 
 ## Features
-      
-- Scan your music and find missing lyrics from [lrclib.net](https://lrclib.net)
+
+- Scan your music and find missing lyrics
 - Download either synchronous LRC or plain lyrics
 - Embed lyrics to the metadata tag, save as a sidecar file, or both
 - Lyrics viewer with audio playback and LRC lyric highlighting
 - Supports multiple local music libraries
+- Two lyrics providers supported with more to be come:
+  - [LRCLIB](https://lrclib.net)
+  - [SimpMusic](https://lyrics-frontend-zeta.vercel.app)
 
 ### Lyric management
 
