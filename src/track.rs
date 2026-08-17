@@ -20,6 +20,7 @@ use std::{
   sync::LazyLock,
   time::Duration,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -348,6 +349,7 @@ impl Track {
   pub(crate) async fn fetch_lyrics_test(
     &mut self,
     options: Option<FetchLyricsOptions>,
+    _cancel_token: CancellationToken,
   ) -> Result<bool> {
     self.last_api_check_at = Some(now());
     debug!("Running fetch_lyrics_test -- sleeping 500ms");
@@ -358,7 +360,11 @@ impl Track {
   /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
   /// Returns `true` if tag was written or sidecar file was saved.
   #[builder]
-  pub(crate) async fn fetch_lyrics(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
+  pub(crate) async fn fetch_lyrics(
+    &mut self,
+    options: Option<FetchLyricsOptions>,
+    cancel_token: CancellationToken,
+  ) -> Result<bool> {
     let options = {
       let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
       options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
@@ -368,7 +374,7 @@ impl Track {
     let mut update_db = true; // default to true to record API check timestamp
     self.last_api_check_at = Some(now());
 
-    if let Some(data) = PROVIDER_MANAGER.fetch(self).await {
+    if let Some(data) = PROVIDER_MANAGER.fetch(self, cancel_token.clone()).await {
       trace!("Got lyrics for {self}:\n{data:#?}");
 
       let LyricsData {
@@ -445,8 +451,10 @@ impl Track {
 
       Ok(modified)
     } else {
-      // Update DB on error to record the API check timestamp
-      self.write_to_db().call()?;
+      if !cancel_token.is_cancelled() {
+        // Update DB on error to record the API check timestamp
+        self.write_to_db().call()?;
+      }
       Ok(false)
     }
   }

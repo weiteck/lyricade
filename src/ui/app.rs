@@ -8,8 +8,11 @@ use futures::stream::StreamExt;
 use num_format::ToFormattedString;
 use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
+use relm4::gtk::glib;
+use relm4::gtk::glib::property::PropertyGet;
 use relm4::tokio::sync::oneshot;
 use relm4::{JoinHandle, RelmContainerExt, prelude::*};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::manage::ManageLyricsOptions;
@@ -20,6 +23,7 @@ use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
 };
 use crate::ui::app::main_menu::{MainMenuButtonModel, MainMenuButtonMsg};
+use crate::ui::app::provider_state_row::{ProviderStateRow, ProviderStateRowMsg};
 use crate::ui::app::track_stats::TrackStats;
 use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
@@ -30,6 +34,7 @@ use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
 mod main_menu;
+mod provider_state_row;
 mod track_stats;
 
 #[expect(clippy::struct_excessive_bools)]
@@ -50,6 +55,7 @@ struct AppModel {
   manage_lyrics_widget: Controller<ManageLyricsModel>,
 
   sidebar_widget: gtk::Box,
+  get_lyrics_progress_window: adw::Window,
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
 
@@ -76,6 +82,8 @@ struct AppModel {
 
   is_fetching_lyrics: bool,
   fetch_lyrics_task: Option<JoinHandle<()>>,
+  fetch_lyrics_cancel_token: Option<CancellationToken>,
+  provider_state_rows: FactoryVecDeque<ProviderStateRow>,
 
   is_applying_manage_lyrics: bool,
   manage_lyrics_cancel_token: Option<oneshot::Sender<()>>,
@@ -409,6 +417,112 @@ impl AsyncComponent for AppModel {
 
       #[local_ref]
       toast_overlay -> adw::ToastOverlay {
+
+        #[local_ref]
+        get_lyrics_progress_window -> adw::Window {
+          #[watch]
+          set_visible: model.is_fetching_lyrics,
+          set_title: Some("Getting Lyrics…"),
+          set_size_request: (300, 150),
+          set_default_size: (300, 150),
+
+          connect_close_request[sender] => move |_| {
+            sender.input(AppMsg::CancelOperation);
+            glib::Propagation::Proceed
+          },
+
+          #[wrap(Some)]
+          set_content = &adw::ToolbarView {
+            add_top_bar = &adw::HeaderBar,
+
+            #[wrap(Some)]
+            set_content = &gtk::Box {
+              set_expand: true,
+              set_align: gtk::Align::Fill,
+              set_orientation: gtk::Orientation::Vertical,
+              set_margin_horizontal: 24,
+              set_margin_bottom: 24,
+              set_spacing: 24,
+
+              gtk::Box {
+                gtk::ProgressBar {
+                  set_expand: true,
+                  set_halign: gtk::Align::Fill,
+                  set_valign: gtk::Align::Center,
+                  set_show_text: true,
+                  #[watch]
+                  set_fraction: model.progress,
+                },
+              },
+
+              gtk::Box {
+                set_expand: true,
+                set_align: gtk::Align::Fill,
+                set_spacing: 12,
+                set_orientation: gtk::Orientation::Vertical,
+
+                // #[local_ref]
+                // provider_state_rows_box -> gtk::Box {
+                //   set_orientation: gtk::Orientation::Vertical,
+                //   set_halign: gtk::Align::Fill,
+                //   set_homogeneous: true,
+                //   set_hexpand: true,
+                //   set_spacing: 6,
+                // },
+                adw::PreferencesGroup {
+                  #[local_ref]
+                  provider_state_rows_expander -> adw::ExpanderRow {
+                    set_valign: gtk::Align::Center,
+                    set_focusable: false,
+                    set_selectable: false,
+                    set_use_markup: false,
+                    set_title: "Providers",
+
+                    #[name = "provider_state_heading_row"]
+                    add_row = &gtk::Box {
+                      set_halign: gtk::Align::Fill,
+                      set_homogeneous: true,
+                      set_hexpand: true,
+                      set_spacing: 6,
+                      add_css_class: "heading",
+
+                      gtk::Box {
+                        set_halign: gtk::Align::Center,
+                        gtk::Label {
+                          set_text: "Provider",
+                          set_tooltip: "Lyrics Provider",
+                        },
+                      },
+                      gtk::Box {
+                        set_halign: gtk::Align::Center,
+                        gtk::Label {
+                          set_text: "Rate-Limited",
+                          set_tooltip: "Rate-Limited",
+                        },
+                      },
+                      gtk::Box {
+                        set_halign: gtk::Align::Center,
+                        gtk::Label {
+                          set_text: "Current",
+                          set_tooltip: "Current Requests",
+                        },
+                      },
+                      gtk::Box {
+                        set_halign: gtk::Align::Center,
+                        gtk::Label {
+                          set_text: "Total",
+                          set_tooltip: "Total Requests",
+                        },
+                      },
+                    },
+
+                  },
+                },
+              },
+            },
+          },
+        },
+
         adw::ToolbarView {
           add_top_bar: &header_bar,
           add_top_bar: &search_bar,
@@ -794,6 +908,21 @@ impl AsyncComponent for AppModel {
 
     let about_widget = AboutModel::builder().launch(()).detach();
 
+    // Get Lyrics progress window
+    let get_lyrics_progress_window = adw::Window::default();
+    get_lyrics_progress_window.set_modal(true);
+    get_lyrics_progress_window.set_transient_for(Some(&root));
+
+    // Get Lyrics progress window Provider state rows
+    let provider_state = PROVIDER_MANAGER.provider_state();
+    let mut provider_state_rows = FactoryVecDeque::builder().launch_default().detach();
+    {
+      let mut guard = provider_state_rows.guard();
+      provider_state.iter().cloned().for_each(|state| {
+        guard.push_back(state);
+      });
+    }
+
     let confirm_get_lyrics_alert_dialog = adw::AlertDialog::builder()
       .heading("Are you sure?")
       .body("Tags will be written to your files. This cannot be undone.")
@@ -830,6 +959,7 @@ impl AsyncComponent for AppModel {
       view_lyrics_widget: None,
       manage_lyrics_widget,
       confirm_get_lyrics_alert_dialog,
+      get_lyrics_progress_window,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       get_lyrics_requires_confirmation: true,
@@ -848,6 +978,8 @@ impl AsyncComponent for AppModel {
       is_sidebar_revealed: false,
       is_fetching_lyrics: false,
       fetch_lyrics_task: None,
+      fetch_lyrics_cancel_token: None,
+      provider_state_rows,
       is_applying_manage_lyrics: false,
       manage_lyrics_cancel_token: None,
       manage_lyrics_task: None,
@@ -866,9 +998,23 @@ impl AsyncComponent for AppModel {
     let get_lyrics_button = model.get_lyrics_button.widget();
     let toast_overlay = model.toaster.overlay_widget();
     let tracks_table = model.tracks_table_widget.widget();
+    let get_lyrics_progress_window = &model.get_lyrics_progress_window;
+    let provider_state_rows_expander = model.provider_state_rows.widget();
     let search_entry = &model.search_entry;
 
     let widgets = view_output!();
+
+    // provider_state_rows_expander.remove(&widgets.provider_state_heading_row);
+    let list: gtk::ListBox = provider_state_rows_expander.prop("list");
+    // if let Ok(list) = provider_state_rows_expander
+    //   .child()
+    //   .unwrap()
+    //   .downcast::<gtk::ListBox>()
+    // {
+    //   error!("GOT THE LIST");
+    list.remove(&widgets.provider_state_heading_row);
+    list.insert(&widgets.provider_state_heading_row, 0);
+    // }
 
     // Set window title
     widgets.main_window.set_title(Some(APP_NAME_PRETTY));
@@ -964,15 +1110,24 @@ impl AsyncComponent for AppModel {
           .map(|settings| FetchLyricsOptions::from(&*settings))
           .ok();
 
+        let token = CancellationToken::new();
+        self.fetch_lyrics_cancel_token = Some(token.clone());
+
         // Batch process tracks and update progress
         let jh = relm4::spawn(async move {
           stream
             .for_each_concurrent(batch_size, |mut track| {
               let sender = sender.clone();
+              let token = token.clone();
               let completed = Arc::clone(&completed);
 
               async move {
-                let _ = track.fetch_lyrics().maybe_options(opts).call().await;
+                let _ = track
+                  .fetch_lyrics_test()
+                  .maybe_options(opts)
+                  .cancel_token(token)
+                  .call()
+                  .await;
 
                 let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 sender
@@ -997,6 +1152,7 @@ impl AsyncComponent for AppModel {
       AppMsg::FetchLyricsComplete => {
         debug!("FetchLyrics completed");
         self.fetch_lyrics_task = None;
+        self.fetch_lyrics_cancel_token = None;
         self.is_fetching_lyrics = false;
         self.update_track_stats();
         sender.input(AppMsg::ProgressComplete);
@@ -1049,6 +1205,9 @@ impl AsyncComponent for AppModel {
       // Cancel either fetching lyrics, apply manage lyrics changes, or refresh libraries operations
       AppMsg::CancelOperation => {
         // Abort the async fetch lyrics task
+        if let Some(token) = self.fetch_lyrics_cancel_token.take() {
+          token.cancel();
+        }
         if let Some(handle) = self.fetch_lyrics_task.take() {
           handle.abort();
           debug!("FetchLyrics cancelled by user");
@@ -1183,6 +1342,16 @@ impl AsyncComponent for AppModel {
 
           if current_providers != providers_from_settings {
             PROVIDER_MANAGER.init_providers_from_settings();
+
+            // Replace ProviderState rows in Get Lyrics progress window
+            let provider_state = PROVIDER_MANAGER.provider_state();
+            {
+              let mut guard = self.provider_state_rows.guard();
+              guard.clear();
+              provider_state.iter().cloned().for_each(|state| {
+                guard.push_back(state);
+              });
+            }
           }
         }
 
@@ -1584,6 +1753,13 @@ impl AsyncComponent for AppModel {
           self.progress_step = pu.step;
         }
         self.progress = pu.progress;
+
+        // Update Provider state for fetch lyrics progress window
+        for idx in 0..self.provider_state_rows.len() {
+          self
+            .provider_state_rows
+            .send(idx, ProviderStateRowMsg::UpdateState);
+        }
       }
 
       AppMsg::ShowSpinner((task, step)) => {
@@ -1629,6 +1805,9 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::Quit => {
+        // Cancel any current tasks
+        sender.input(AppMsg::CancelOperation);
+
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
         if let Ok(mut guard) = SETTINGS.write() {

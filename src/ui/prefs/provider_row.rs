@@ -6,12 +6,12 @@ use relm4::{
 };
 use tracing::trace;
 
-use crate::provider::{ProviderState, ProviderTier};
+use crate::provider::{ProviderId, ProviderTier};
 
 pub(super) struct ProviderRow {
   pub(crate) index: DynamicIndex,
   pub(crate) name: String,
-  pub(crate) state: ProviderState,
+  pub(crate) state: ProviderRowState,
 
   menu: Menu,
   action_move_up: RelmAction<ActionMoveUp>,
@@ -32,10 +32,17 @@ pub(super) enum ProviderRowMsg {
 
 #[derive(Debug)]
 pub(super) enum ProviderRowOutput {
-  MoveUp(ProviderState),
-  MoveDown(ProviderState),
-  SwapTier(ProviderState),
-  Toggle(ProviderState),
+  MoveUp(ProviderRowState),
+  MoveDown(ProviderRowState),
+  SwapTier(ProviderRowState),
+  Toggle(ProviderRowState),
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct ProviderRowState {
+  pub(crate) id: ProviderId,
+  pub(crate) enabled: bool,
+  pub(crate) tier: ProviderTier,
 }
 
 relm4::new_action_group!(ProviderRowActionGroup, "provider_row_menu");
@@ -46,7 +53,7 @@ relm4::new_stateless_action!(ActionMoveToggle, ProviderRowActionGroup, "toggle")
 
 #[relm4::factory(pub)]
 impl FactoryComponent for ProviderRow {
-  type Init = ProviderState;
+  type Init = ProviderRowState;
   type Input = ProviderRowMsg;
   type Output = ProviderRowOutput;
   type CommandOutput = ();

@@ -1,18 +1,24 @@
 use std::{
   collections::HashSet,
-  sync::{Arc, atomic::AtomicUsize},
+  sync::{
+    Arc,
+    atomic::{AtomicUsize, Ordering},
+  },
   time::Duration,
 };
 
 use arc_swap::ArcSwap;
+use chrono::Utc;
 use reqwest::Client as HttpClient;
-use tokio::sync::Semaphore;
-use tracing::{error, info, trace};
+use tokio::{sync::Semaphore, task::JoinHandle, time::interval};
+use tokio_util::sync::CancellationToken;
+
+use tracing::{debug, error, info, trace};
 
 use crate::{
   SETTINGS, USER_AGENT,
   lyrics::LyricsType,
-  provider::{LyricsData, Provider, ProviderError, ProviderId},
+  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderState},
   settings::{CONNECTION_LIMIT, Settings},
   track::Track,
 };
@@ -22,6 +28,7 @@ pub(crate) struct ProviderManager {
   providers: ArcSwap<Vec<Arc<dyn Provider>>>,
   primary_providers_order: ArcSwap<Vec<ProviderId>>,
   secondary_providers_order: ArcSwap<Vec<ProviderId>>,
+  provider_maintenance_task: ArcSwap<JoinHandle<()>>,
   http_client: HttpClient,
   semaphore: Arc<Semaphore>,
   completed_requests: Arc<AtomicUsize>,
@@ -40,6 +47,14 @@ impl ProviderManager {
       );
 
     let providers = init_providers(&primary_providers_order.0, &secondary_providers_order.0);
+
+    // Spawn background worker to check for expired rate-limits, which is needed in case a
+    // Provider is in a rate-limited state and not tried for a while, causing the UI showing
+    // Provider state to be stale
+    let providers_cloned = providers.clone();
+    let provider_maintenance_task =
+      ArcSwap::new(Arc::new(spawn_provider_maintenance_task(providers_cloned)));
+
     let providers = ArcSwap::new(Arc::new(providers));
     let primary_providers_order = ArcSwap::new(Arc::new(primary_providers_order.0));
     let secondary_providers_order = ArcSwap::new(Arc::new(secondary_providers_order.0));
@@ -69,6 +84,7 @@ impl ProviderManager {
       providers,
       primary_providers_order,
       secondary_providers_order,
+      provider_maintenance_task,
       http_client,
       semaphore,
       completed_requests,
@@ -76,7 +92,11 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) async fn fetch(&self, track: &Track) -> Option<LyricsData> {
+  pub(crate) async fn fetch(
+    &self,
+    track: &Track,
+    cancel_token: CancellationToken,
+  ) -> Option<LyricsData> {
     let providers = self.providers.load();
     let preferred_lyrics_type = self.preferred_lyrics.load();
 
@@ -91,6 +111,12 @@ impl ProviderManager {
       .copied()
       .collect::<HashSet<_>>();
 
+    if primary_not_checked.is_empty() {
+      // This should never happen
+      error!("ProviderManager: {track}: Cannot fetch lyrics without a Primary Provider");
+      return None;
+    }
+
     let mut result: Option<LyricsData> = None;
 
     // Limit concurrent connections
@@ -100,9 +126,13 @@ impl ProviderManager {
       .await
       .expect("semaphore unexpectedly closed");
     trace!(
-      "Acquired connection semaphore permit ({} available)",
-      CONNECTION_LIMIT.saturating_sub(self.semaphore.available_permits())
+      "ProviderManager: {track}: Acquired connection semaphore permit ({} available)",
+      self.semaphore.available_permits()
     );
+
+    let mut interval = interval(Duration::from_millis(20));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval.reset();
 
     // We loop through each Provider and return only when one of the following is true:
     // (1) we have the lyrics type requested;
@@ -113,13 +143,11 @@ impl ProviderManager {
       for provider in providers.iter() {
         let id = provider.id();
 
-        if (!primary_not_checked.contains(&id) && !secondary_not_checked.contains(&id))
-          || provider.is_busy()
-        {
+        if !primary_not_checked.contains(&id) && !secondary_not_checked.contains(&id) {
           continue;
         }
 
-        trace!("Attempting to fetch lyrics from provider {} for {track}", provider.id());
+        trace!("ProviderManager: {track}: Attempting to fetch lyrics from {}", provider.id());
 
         result = match provider
           .fetch(self.http_client.clone(), Arc::clone(&self.completed_requests), track)
@@ -145,7 +173,7 @@ impl ProviderManager {
               secondary_not_checked.remove(&id);
               None
             }
-            ProviderError::Transient => None,
+            ProviderError::RateLimited | ProviderError::NoConnections => None,
           },
         };
 
@@ -157,20 +185,28 @@ impl ProviderManager {
         }) {
           return result;
         }
-      }
 
-      // Return any lyrics we have, even if not preferred type
-      if primary_not_checked.is_empty() {
-        if result.as_ref().is_some_and(|data| {
-          data.plain_lyrics.is_some() || data.sync_lyrics.is_some() || data.instrumental.is_some()
-        }) {
-          return result;
+        // Checked all primary Providers - return any lyrics we have, even if not preferred type
+        if primary_not_checked.is_empty() {
+          if result.as_ref().is_some_and(|data| {
+            data.plain_lyrics.is_some() || data.sync_lyrics.is_some() || data.instrumental.is_some()
+          }) {
+            return result;
+          }
+
+          return None;
         }
-
-        return None;
       }
 
-      std::thread::sleep(Duration::from_millis(20));
+      // Wait for next loop interval or cancellation
+      tokio::select! {
+        _ = interval.tick() => {}
+
+        () = cancel_token.cancelled() => {
+          trace!("ProviderManager: {track}: Fetch lyrics cancelled");
+          return None;
+        }
+      }
     }
   }
 
@@ -191,8 +227,14 @@ impl ProviderManager {
       .swap(Arc::new(secondary_providers_order.0));
 
     let providers =
-      Arc::new(init_providers(&self.primary_providers_order(), &self.secondary_providers_order()));
-    self.providers.swap(providers);
+      init_providers(&self.primary_providers_order(), &self.secondary_providers_order());
+
+    // Replace background worker to check for expired rate-limits
+    self.provider_maintenance_task.load().abort();
+    let jh = spawn_provider_maintenance_task(providers.clone());
+    self.provider_maintenance_task.store(Arc::new(jh));
+
+    self.providers.store(Arc::new(providers));
   }
 
   pub(crate) fn primary_providers_order(&self) -> Vec<ProviderId> {
@@ -201,6 +243,10 @@ impl ProviderManager {
 
   pub(crate) fn secondary_providers_order(&self) -> Vec<ProviderId> {
     self.secondary_providers_order.load().to_vec()
+  }
+
+  pub(crate) fn provider_state(&self) -> Vec<Arc<ProviderState>> {
+    self.providers.load().iter().map(|p| p.state()).collect()
   }
 }
 
@@ -233,4 +279,33 @@ fn init_providers(
   );
 
   providers
+}
+
+fn spawn_provider_maintenance_task(
+  providers: Vec<Arc<dyn Provider>>,
+) -> tokio::task::JoinHandle<()> {
+  tokio::spawn(async move {
+    let mut interval = interval(Duration::from_secs(1));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval.reset();
+
+    loop {
+      for provider in &providers {
+        let state = provider.state_ref();
+        let rate_limited_until = provider.rate_limited_until();
+
+        if state.rate_limited.load(Ordering::Relaxed)
+          && rate_limited_until
+            .load()
+            .as_ref()
+            .is_some_and(|expires_at| expires_at < Utc::now())
+        {
+          debug!("{}: Resetting stale expired rate-limit", provider.id());
+          rate_limited_until.store(Arc::new(None));
+        }
+      }
+
+      interval.tick().await;
+    }
+  })
 }

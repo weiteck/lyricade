@@ -15,11 +15,11 @@ use crate::{
   SETTINGS,
   library::Library,
   lyrics::LyricsType,
-  provider::{ProviderId, ProviderState, ProviderTier},
+  provider::{ProviderId, ProviderTier},
   settings::{ColourScheme, Settings},
   ui::prefs::{
     library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
-    provider_row::{ProviderRow, ProviderRowMsg},
+    provider_row::{ProviderRow, ProviderRowMsg, ProviderRowState},
   },
   util::{self, now},
 };
@@ -70,10 +70,10 @@ pub(crate) enum PrefsMsg {
     target_y: i32,
     id: ProviderId,
   },
-  ProviderRowMoveUp(ProviderState),
-  ProviderRowMoveDown(ProviderState),
-  ProviderRowSwapTier(ProviderState),
-  ProviderRowToggle(ProviderState),
+  ProviderRowMoveUp(ProviderRowState),
+  ProviderRowMoveDown(ProviderRowState),
+  ProviderRowSwapTier(ProviderRowState),
+  ProviderRowToggle(ProviderRowState),
   ProvidersChanged,
 
   ShowToast(String, bool),
@@ -452,7 +452,7 @@ impl SimpleComponent for PrefsModel {
       .primary_providers
       .0
       .iter()
-      .map(|&id| ProviderState {
+      .map(|&id| ProviderRowState {
         id,
         enabled: true,
         tier: ProviderTier::Primary,
@@ -463,7 +463,7 @@ impl SimpleComponent for PrefsModel {
       .secondary_providers
       .0
       .iter()
-      .map(|&id| ProviderState {
+      .map(|&id| ProviderRowState {
         id,
         enabled: true,
         tier: ProviderTier::Secondary,
@@ -475,7 +475,7 @@ impl SimpleComponent for PrefsModel {
             !settings.primary_providers.0.contains(id)
               && !settings.secondary_providers.0.contains(id)
           })
-          .map(|&id| ProviderState {
+          .map(|&id| ProviderRowState {
             id,
             enabled: false,
             tier: ProviderTier::Secondary,
@@ -874,7 +874,7 @@ impl SimpleComponent for PrefsModel {
           target.len()
         };
 
-        let target_state = ProviderState {
+        let target_state = ProviderRowState {
           tier: target_tier,
           ..source_state
         };
@@ -952,7 +952,7 @@ impl SimpleComponent for PrefsModel {
           return;
         }
 
-        let target_state = ProviderState {
+        let target_state = ProviderRowState {
           tier: match state.tier {
             ProviderTier::Primary => ProviderTier::Secondary,
             ProviderTier::Secondary => ProviderTier::Primary,
@@ -1040,7 +1040,7 @@ fn build_library_rows(
 }
 
 fn build_provider_rows(
-  state: impl IntoIterator<Item = ProviderState>,
+  state: impl IntoIterator<Item = ProviderRowState>,
   sender: &ComponentSender<PrefsModel>,
 ) -> FactoryVecDeque<ProviderRow> {
   let mut provider_rows = FactoryVecDeque::builder()
