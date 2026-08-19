@@ -128,7 +128,6 @@ impl Component for ProgressModalModel {
       .extra_child(&root)
       .default_response("cancel")
       .build();
-
     alert_dialog.add_response("cancel", "Cancel");
 
     let closing_programmatically = Rc::new(Cell::new(false));
@@ -193,9 +192,11 @@ impl Component for ProgressModalModel {
         self.progress = pu;
 
         // Ensure Provider state updates
-        self
-          .provider_state_rows
-          .broadcast(ProviderStateRowMsg::Tick);
+        if self.show_provider_state {
+          self
+            .provider_state_rows
+            .broadcast(ProviderStateRowMsg::Tick);
+        }
       }
 
       ProgressModalMsg::RefreshProviders => {
