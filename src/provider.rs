@@ -117,17 +117,21 @@ pub(crate) struct ProviderState {
   pub(crate) id: ProviderId,
   pub(crate) total_requests: AtomicUsize,
   pub(crate) current_requests: AtomicUsize,
-  pub(crate) available_requests: AtomicUsize,
+  pub(crate) total_permits: AtomicUsize,
+  pub(crate) available_permits: AtomicUsize,
   pub(crate) rate_limited: AtomicBool,
 }
 
 impl ProviderState {
-  fn new(id: ProviderId) -> Self {
+  fn new(id: ProviderId, semaphore: &Semaphore) -> Self {
+    let permits = semaphore.available_permits();
+
     Self {
       id,
       total_requests: AtomicUsize::new(0),
       current_requests: AtomicUsize::new(0),
-      available_requests: AtomicUsize::new(0),
+      total_permits: AtomicUsize::new(permits),
+      available_permits: AtomicUsize::new(permits),
       rate_limited: AtomicBool::new(false),
     }
   }
@@ -204,7 +208,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
     state.total_requests.fetch_add(1, Ordering::Relaxed);
     state.current_requests.fetch_add(1, Ordering::Relaxed);
     state
-      .available_requests
+      .available_permits
       .store(self.semaphore().available_permits(), Ordering::Relaxed);
 
     Ok(permit)
@@ -216,7 +220,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
     let state = self.state_ref();
     state.current_requests.fetch_sub(1, Ordering::Relaxed);
     state
-      .available_requests
+      .available_permits
       .store(self.semaphore().available_permits(), Ordering::Relaxed);
   }
 

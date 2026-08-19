@@ -78,9 +78,9 @@ struct ApiError {
 
 impl SimpMusicProvider {
   pub(crate) fn new() -> Self {
-    let semaphore = tokio::sync::Semaphore::new(4);
+    let semaphore = tokio::sync::Semaphore::new(2);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
-    let state = Arc::new(ProviderState::new(ProviderId::SimpMusic));
+    let state = Arc::new(ProviderState::new(ProviderId::SimpMusic, &semaphore));
 
     Self {
       semaphore,

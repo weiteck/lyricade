@@ -55,7 +55,7 @@ impl LrcLibProvider {
     // the delay returned in 429 responses in the 'Retry-After' header
     let semaphore = tokio::sync::Semaphore::new(1);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
-    let state = Arc::new(ProviderState::new(ProviderId::LrcLib));
+    let state = Arc::new(ProviderState::new(ProviderId::LrcLib, &semaphore));
 
     Self {
       semaphore,

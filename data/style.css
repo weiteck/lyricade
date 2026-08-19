@@ -81,3 +81,9 @@ row.drop-target {
     outline: 1px solid var(--accent-color);
     outline-offset: -1px;
 }
+
+.provider-state-progress-bar {
+  min-height: 12px !important;
+  max-height: 12px !important;
+  outline: 1px solid green !important;
+}
