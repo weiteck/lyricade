@@ -1,18 +1,16 @@
-use std::{
-  sync::{Arc, atomic::AtomicUsize},
-  time::Duration,
-};
+use std::sync::{Arc, atomic::AtomicUsize};
 
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use reqwest::{Response, StatusCode, Url};
 use serde::Deserialize;
+use tokio::sync::Semaphore;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
   lyrics::{Lyrics, LyricsType},
-  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult},
+  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState},
   track::Track,
 };
 
@@ -21,7 +19,9 @@ const API_SEARCH_URL: &str = "https://api-lyrics.simpmusic.org/v1/search";
 
 #[derive(Debug)]
 pub(crate) struct SimpMusicProvider {
+  semaphore: Semaphore,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
+  state: Arc<ProviderState>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -78,15 +78,21 @@ struct ApiError {
 
 impl SimpMusicProvider {
   pub(crate) fn new() -> Self {
+    let semaphore = tokio::sync::Semaphore::new(2);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
+    let state = Arc::new(ProviderState::new(ProviderId::SimpMusic, &semaphore));
 
-    Self { rate_limited_until }
+    Self {
+      semaphore,
+      rate_limited_until,
+      state,
+    }
   }
 }
 
 #[async_trait]
 impl Provider for SimpMusicProvider {
-  async fn fetch(
+  async fn api_fetch(
     &self,
     http_client: reqwest::Client,
     req_counter: Arc<AtomicUsize>,
@@ -105,19 +111,20 @@ impl Provider for SimpMusicProvider {
     ProviderId::SimpMusic
   }
 
-  fn is_busy(&self) -> bool {
-    if let Some(dt) = self.rate_limited_until.load().as_ref() {
-      if dt > &Utc::now() {
-        true
-      } else {
-        trace!("SimpMusicProvider: Rate-limit expired");
-        self.rate_limited_until.swap(Arc::new(None));
+  fn state(&self) -> Arc<ProviderState> {
+    Arc::clone(&self.state)
+  }
 
-        false
-      }
-    } else {
-      false
-    }
+  fn state_ref(&self) -> &Arc<ProviderState> {
+    &self.state
+  }
+
+  fn semaphore(&self) -> &Semaphore {
+    &self.semaphore
+  }
+
+  fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
+    &self.rate_limited_until
   }
 }
 
@@ -137,11 +144,11 @@ impl SimpMusicProvider {
       ProviderError::Permanent
     })?;
 
-    debug!("SimpMusicProvider: {track}: Searching for track");
+    debug!("SimpMusicProvider: {track}: Step 1/2: Finding matching videoId");
     trace!("SimpMusicProvider: {track}: GET request to \"{}\"", &search_url);
 
     let response = http_client.get(search_url).send().await.map_err(|e| {
-      error!("SimpMusicProvider: {track}: Error encountered while searching for {track}: {e}");
+      error!("SimpMusicProvider: {track}: {e}");
       ProviderError::Permanent
     })?;
     let response_status = response.status();
@@ -181,7 +188,7 @@ impl SimpMusicProvider {
       }
     }
 
-    error!("SimpMusicProvider: {track}: {response_status}");
+    error!("SimpMusicProvider: {track}: Server responded with {response_status}");
     Err(ProviderError::Permanent)
   }
 
@@ -198,7 +205,9 @@ impl SimpMusicProvider {
       ProviderError::Permanent
     })?;
 
-    debug!("SimpMusicProvider: {track}: Getting lyrics for {}", &track);
+    debug!(
+      "SimpMusicProvider: {track}: Step 2/2: Getting lyrics for track with videoId {video_id}"
+    );
     trace!("SimpMusicProvider: {track}: GET request to \"{}\"", &get_lyrics_url);
 
     let response = http_client.get(get_lyrics_url).send().await.map_err(|e| {
@@ -271,29 +280,27 @@ impl SimpMusicProvider {
       }
     }
 
-    error!("SimpMusicProvider: {track}: {response_status}");
+    error!("SimpMusicProvider: {track}: Server responded with {response_status}");
     Err(ProviderError::Permanent)
   }
 
   fn handle_error(&self, error: ApiError, track: &Track) -> ProviderError {
     match error {
       ApiError { code: 404, .. } => {
-        debug!("SimpMusicProvider: Could not find {track}");
+        debug!("SimpMusicProvider: {track}: Could not find track");
         ProviderError::NotFound
       }
 
       ApiError {
         code: 429, reason, ..
       } => {
-        debug!("SimpMusicProvider: Rate-limited while fetching {track}: {reason}");
-        self
-          .rate_limited_until
-          .swap(Arc::new(Some(Utc::now() + Duration::from_secs(2))));
-        ProviderError::Transient
+        warn!("SimpMusicProvider: {track}: API error 429: {reason}");
+        self.set_rate_limited(2.0);
+        ProviderError::RateLimited
       }
 
       ApiError { code, reason, .. } => {
-        warn!("SimpMusicProvider: {code} for {track}: {reason}");
+        error!("SimpMusicProvider: {track}: API error {code}: {reason}");
         ProviderError::Permanent
       }
     }
@@ -301,26 +308,25 @@ impl SimpMusicProvider {
 
   fn handle_too_many_requests(&self, response: &Response, track: &Track) -> ProviderError {
     // Set retry delay if 429 too many requests
-    let delay = if let Some(v) = response.headers().get("x-rate-limit-retry-after-seconds")
+    let req_delay = if let Some(v) = response.headers().get("x-rate-limit-retry-after-seconds")
       && let Ok(s) = v.to_str()
-      && let Ok(delay) = str::parse::<u64>(s)
+      && let Ok(req_delay) = str::parse::<f64>(s)
     {
       warn!(
-        "SimpMusicProvider: Too many requests for {track} - retry-delay of {delay}s requested by server"
+        "SimpMusicProvider: {track}: Too many requests - retry-delay of {req_delay:.0$}s requested by server",
+        if req_delay.fract() >= 0.01 { 2 } else { 0 }
       );
-      delay
+      req_delay
     } else {
       warn!(
-        "SimpMusicProvider: Too many requests for {track} - no retry-after header; defaulting to delay of 5s"
+        "SimpMusicProvider: {track}: Too many requests - no \"x-rate-limit-retry-after-seconds\" header; defaulting to delay of 5s"
       );
-      5
+      5.0
     };
 
-    self
-      .rate_limited_until
-      .swap(Arc::new(Some(Utc::now() + Duration::from_secs(delay))));
+    self.set_rate_limited(req_delay);
 
-    ProviderError::Transient
+    ProviderError::RateLimited
   }
 }
 

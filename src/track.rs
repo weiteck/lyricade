@@ -20,6 +20,7 @@ use std::{
   sync::LazyLock,
   time::Duration,
 };
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::{
@@ -29,7 +30,7 @@ use crate::{
   schema::tracks,
   settings::Settings,
   tags::{insert_lyrics_into_id3v2, lrc_lyrics_from_id3v2},
-  util::{self, now},
+  util::{self, now, unfold_error},
 };
 
 /// All track data required for creating a `Track`, i.e. excludes cover art.
@@ -172,12 +173,13 @@ impl Track {
     ///////////////////////////
     ///// Handle metadata /////
     ///////////////////////////
-    let file = fs::File::open(self.path()).inspect_err(|error| error!("{error}"))?;
+    let file = fs::File::open(self.path())
+      .inspect_err(|error| error!("{self} scan: {}", unfold_error(error)))?;
     let mut reader = io::BufReader::new(&file);
     let probe = Probe::new(&mut reader)
       .options(*TAG_PARSE_OPTIONS_FOR_INGEST)
       .guess_file_type()
-      .inspect_err(|error| warn!("{self} scan: {error}"))?;
+      .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))?;
 
     let mut tag_read = false;
 
@@ -245,7 +247,7 @@ impl Track {
         _ => {
           let tag = probe
             .read()
-            .inspect_err(|error| warn!("{self} scan: {error}"))
+            .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))
             .ok()
             .and_then(|tf| {
               self.duration = tf.properties().duration().as_secs_f32();
@@ -278,9 +280,9 @@ impl Track {
       let tag = Probe::new(&mut reader)
         .options(*TAG_PARSE_OPTIONS_FOR_INGEST)
         .guess_file_type()
-        .inspect_err(|error| warn!("{self} scan: {error}"))?
+        .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))?
         .read()
-        .inspect_err(|error| warn!("{self} scan: {error}"))
+        .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))
         .ok()
         .and_then(|tf| {
           self.duration = tf.properties().duration().as_secs_f32();
@@ -347,6 +349,7 @@ impl Track {
   pub(crate) async fn fetch_lyrics_test(
     &mut self,
     options: Option<FetchLyricsOptions>,
+    _cancel_token: CancellationToken,
   ) -> Result<bool> {
     self.last_api_check_at = Some(now());
     debug!("Running fetch_lyrics_test -- sleeping 500ms");
@@ -357,7 +360,11 @@ impl Track {
   /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
   /// Returns `true` if tag was written or sidecar file was saved.
   #[builder]
-  pub(crate) async fn fetch_lyrics(&mut self, options: Option<FetchLyricsOptions>) -> Result<bool> {
+  pub(crate) async fn fetch_lyrics(
+    &mut self,
+    options: Option<FetchLyricsOptions>,
+    cancel_token: CancellationToken,
+  ) -> Result<bool> {
     let options = {
       let settings = &*SETTINGS.read().map_err(|e| anyhow!("{e}"))?;
       options.unwrap_or_else(|| FetchLyricsOptions::from(settings))
@@ -367,7 +374,7 @@ impl Track {
     let mut update_db = true; // default to true to record API check timestamp
     self.last_api_check_at = Some(now());
 
-    if let Some(data) = PROVIDER_MANAGER.fetch(self).await {
+    if let Some(data) = PROVIDER_MANAGER.fetch(self, cancel_token.clone()).await {
       trace!("Got lyrics for {self}:\n{data:#?}");
 
       let LyricsData {
@@ -444,8 +451,10 @@ impl Track {
 
       Ok(modified)
     } else {
-      // Update DB on error to record the API check timestamp
-      self.write_to_db().call()?;
+      if !cancel_token.is_cancelled() {
+        // Update DB on error to record the API check timestamp
+        self.write_to_db().call()?;
+      }
       Ok(false)
     }
   }
@@ -466,6 +475,7 @@ impl Track {
   pub(crate) fn get_cover_art_bytes(&self) -> Result<Vec<u8>> {
     let file = std::fs::File::open(self.path())?;
     Self::get_cover_art_bytes_for_file(file)
+      .inspect_err(|error| warn!("{self} get cover art: {error}"))
   }
 
   pub(crate) fn get_cover_art_bytes_for_file(mut file: fs::File) -> Result<Vec<u8>> {
@@ -475,7 +485,7 @@ impl Track {
     let tagged_file = Probe::new(&mut reader)
       .options(ParseOptions::default())
       .guess_file_type()
-      .inspect_err(|error| warn!("Failed to guess file type: {error}"))?
+      .map_err(|error| anyhow!("Failed to guess file type: {error}"))?
       .read()?;
 
     let primary_tag = tagged_file.primary_tag();
@@ -499,8 +509,7 @@ impl Track {
       }
     }
 
-    debug!("No pictures found in file");
-    Err(anyhow!("No pictures found in file"))
+    Err(anyhow!("No cover art found in file"))
   }
 
   /// Insert or update track in database.
@@ -550,7 +559,7 @@ impl Track {
       .read(true)
       .write(true)
       .open(&self.path)
-      .inspect_err(|error| error!("{error}"))?;
+      .inspect_err(|error| error!("{self} write updated tag: {}", unfold_error(error)))?;
     let mut reader = io::BufReader::new(&file);
 
     // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
@@ -610,7 +619,7 @@ impl Track {
             }
             Err(e) => {
               return Err(anyhow!("{self} write updated tag (MP3): Failed: {e}"))
-                .inspect_err(|e| error!("{e}"));
+                .inspect_err(|e| error!("{self} write updated tag: {e}"));
             }
           }
         }
@@ -620,9 +629,9 @@ impl Track {
       let mut tagged_file = Probe::new(reader)
         .options(*TAG_PARSE_OPTIONS_FOR_WRITING)
         .guess_file_type()
-        .inspect_err(|error| warn!("{self} scan: {error}"))?
+        .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))?
         .read()
-        .inspect_err(|error| warn!("{self} scan: {error}"))?;
+        .inspect_err(|error| warn!("{self} scan: {}", unfold_error(error)))?;
 
       let tag = tagged_file
         .primary_tag_mut()

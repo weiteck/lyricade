@@ -10,6 +10,7 @@ use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
 use relm4::tokio::sync::oneshot;
 use relm4::{JoinHandle, RelmContainerExt, prelude::*};
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::manage::ManageLyricsOptions;
@@ -20,6 +21,9 @@ use crate::ui::app::get_lyrics_menu::{
   GetLyricsButtonModel, GetLyricsButtonOutput, GetLyricsMenuState,
 };
 use crate::ui::app::main_menu::{MainMenuButtonModel, MainMenuButtonMsg};
+use crate::ui::app::progress_modal::{
+  ProgressModalInit, ProgressModalModel, ProgressModalMsg, ProgressModalOutput,
+};
 use crate::ui::app::track_stats::TrackStats;
 use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
@@ -30,6 +34,7 @@ use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
 mod main_menu;
+mod progress_modal;
 mod track_stats;
 
 #[expect(clippy::struct_excessive_bools)]
@@ -50,6 +55,7 @@ struct AppModel {
   manage_lyrics_widget: Controller<ManageLyricsModel>,
 
   sidebar_widget: gtk::Box,
+  progress_modal_widget: Controller<ProgressModalModel>,
   search_entry: gtk::SearchEntry,
   toaster: Toaster,
 
@@ -76,6 +82,7 @@ struct AppModel {
 
   is_fetching_lyrics: bool,
   fetch_lyrics_task: Option<JoinHandle<()>>,
+  fetch_lyrics_cancel_token: Option<CancellationToken>,
 
   is_applying_manage_lyrics: bool,
   manage_lyrics_cancel_token: Option<oneshot::Sender<()>>,
@@ -137,7 +144,7 @@ enum AppMsg {
 
   RefreshTrackStats,
 
-  ProgressStart(String),
+  ProgressStart(ProgressModalInit),
   ProgressUpdate(ProgressUpdate),
   ProgressComplete,
 
@@ -157,10 +164,10 @@ enum SelectionState {
   Multi,
 }
 
-#[derive(Debug)]
-struct ProgressUpdate {
-  step: Option<String>,
-  progress: f64,
+#[derive(Debug, Clone, Default)]
+pub(crate) struct ProgressUpdate {
+  pub(crate) step: Option<String>,
+  pub(crate) progress: f64,
 }
 
 #[relm4::component(async)]
@@ -582,7 +589,6 @@ impl AsyncComponent for AppModel {
                         gtk::ProgressBar {
                           set_halign: gtk::Align::Start,
                           set_valign: gtk::Align::Center,
-                          set_ellipsize: gtk::pango::EllipsizeMode::End,
                           set_show_text: false,
                           set_margin_end: 6, // added spacing
                           #[watch]
@@ -792,6 +798,13 @@ impl AsyncComponent for AppModel {
           ManageLyricsOutput::Confirm(opts) => AppMsg::ApplyManageLyricsChanges(opts),
         });
 
+    let progress_modal_widget =
+      ProgressModalModel::builder()
+        .launch(root.clone())
+        .forward(sender.input_sender(), |msg| match msg {
+          ProgressModalOutput::Cancel => AppMsg::CancelOperation,
+        });
+
     let about_widget = AboutModel::builder().launch(()).detach();
 
     let confirm_get_lyrics_alert_dialog = adw::AlertDialog::builder()
@@ -830,6 +843,7 @@ impl AsyncComponent for AppModel {
       view_lyrics_widget: None,
       manage_lyrics_widget,
       confirm_get_lyrics_alert_dialog,
+      progress_modal_widget,
       search_entry: gtk::SearchEntry::new(),
       toaster: Toaster::default(),
       get_lyrics_requires_confirmation: true,
@@ -848,6 +862,7 @@ impl AsyncComponent for AppModel {
       is_sidebar_revealed: false,
       is_fetching_lyrics: false,
       fetch_lyrics_task: None,
+      fetch_lyrics_cancel_token: None,
       is_applying_manage_lyrics: false,
       manage_lyrics_cancel_token: None,
       manage_lyrics_task: None,
@@ -951,11 +966,15 @@ impl AsyncComponent for AppModel {
         let completed = Arc::new(AtomicUsize::new(0));
 
         // Display progress
-        sender.input(AppMsg::ProgressStart("Getting lyrics…".into()));
-        sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-          step: Some(format!("0 / {total} done")),
-          progress: 0.0,
-        }));
+        let progress_modal_init = ProgressModalInit::builder()
+          .heading(String::from("Getting lyrics…"))
+          .show_provider_state(true)
+          .progress(ProgressUpdate {
+            step: Some(format!("0 / {total}")),
+            progress: 0.0,
+          })
+          .build();
+        sender.input(AppMsg::ProgressStart(progress_modal_init));
 
         let stream = futures::stream::iter(filtered_tracks);
         let batch_size = (CONNECTION_LIMIT as f64 * 1.5) as usize;
@@ -964,15 +983,24 @@ impl AsyncComponent for AppModel {
           .map(|settings| FetchLyricsOptions::from(&*settings))
           .ok();
 
+        let token = CancellationToken::new();
+        self.fetch_lyrics_cancel_token = Some(token.clone());
+
         // Batch process tracks and update progress
         let jh = relm4::spawn(async move {
           stream
             .for_each_concurrent(batch_size, |mut track| {
               let sender = sender.clone();
+              let token = token.clone();
               let completed = Arc::clone(&completed);
 
               async move {
-                let _ = track.fetch_lyrics().maybe_options(opts).call().await;
+                let _ = track
+                  .fetch_lyrics_test()
+                  .maybe_options(opts)
+                  .cancel_token(token)
+                  .call()
+                  .await;
 
                 let completed = completed.fetch_add(1, std::sync::atomic::Ordering::SeqCst) + 1;
                 sender
@@ -980,7 +1008,7 @@ impl AsyncComponent for AppModel {
                   .emit(AppCommand::TrackUpdated(track));
 
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
-                  step: Some(format!("{completed} / {total} done")),
+                  step: Some(format!("{completed} / {total}")),
                   progress: completed as f64 / total as f64,
                 }));
               }
@@ -997,6 +1025,7 @@ impl AsyncComponent for AppModel {
       AppMsg::FetchLyricsComplete => {
         debug!("FetchLyrics completed");
         self.fetch_lyrics_task = None;
+        self.fetch_lyrics_cancel_token = None;
         self.is_fetching_lyrics = false;
         self.update_track_stats();
         sender.input(AppMsg::ProgressComplete);
@@ -1049,6 +1078,9 @@ impl AsyncComponent for AppModel {
       // Cancel either fetching lyrics, apply manage lyrics changes, or refresh libraries operations
       AppMsg::CancelOperation => {
         // Abort the async fetch lyrics task
+        if let Some(token) = self.fetch_lyrics_cancel_token.take() {
+          token.cancel();
+        }
         if let Some(handle) = self.fetch_lyrics_task.take() {
           handle.abort();
           debug!("FetchLyrics cancelled by user");
@@ -1183,6 +1215,11 @@ impl AsyncComponent for AppModel {
 
           if current_providers != providers_from_settings {
             PROVIDER_MANAGER.init_providers_from_settings();
+
+            // Update ProviderState rows in Get Lyrics progress window
+            self
+              .progress_modal_widget
+              .emit(ProgressModalMsg::RefreshProviders);
           }
         }
 
@@ -1559,17 +1596,29 @@ impl AsyncComponent for AppModel {
           .refresh_from_filtered(&self.filtered_track_ids);
       }
 
-      AppMsg::ProgressStart(task_name) => {
+      AppMsg::ProgressStart(init) => {
+        let task_name = init
+          .heading
+          .clone()
+          .unwrap_or_else(|| String::from("Unknown"));
         debug!("Progress task start: \"{task_name}\"");
+
         self.progress_task = Some(task_name);
+
+        self
+          .progress_modal_widget
+          .emit(ProgressModalMsg::Show(init));
       }
 
       AppMsg::ProgressComplete => {
         debug!(
           "Progress task complete: \"{}\"",
-          &self.progress_task.as_deref().unwrap_or_default()
+          &self.progress_task.as_deref().unwrap_or("Unknown")
         );
+
         self.progress_task = None;
+
+        self.progress_modal_widget.emit(ProgressModalMsg::Hide);
       }
 
       AppMsg::ProgressUpdate(pu) => {
@@ -1579,6 +1628,10 @@ impl AsyncComponent for AppModel {
           &self.progress_task.as_deref().unwrap_or_default(),
           &pu.step
         );
+
+        self
+          .progress_modal_widget
+          .emit(ProgressModalMsg::UpdateState(pu.clone()));
 
         if self.progress_step != pu.step {
           self.progress_step = pu.step;
@@ -1629,6 +1682,9 @@ impl AsyncComponent for AppModel {
       }
 
       AppMsg::Quit => {
+        // Cancel any current tasks
+        sender.input(AppMsg::CancelOperation);
+
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
         if let Ok(mut guard) = SETTINGS.write() {

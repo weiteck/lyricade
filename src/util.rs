@@ -117,6 +117,16 @@ pub(crate) fn secs_f64_to_hms(secs: f64) -> String {
   )
 }
 
+pub(crate) fn unfold_error(mut error: &(dyn std::error::Error + 'static)) -> String {
+  use std::fmt::Write;
+  let mut s = error.to_string();
+  while let Some(source) = error.source() {
+    let _ = write!(s, "\nCaused by: {source}");
+    error = source;
+  }
+  s
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;

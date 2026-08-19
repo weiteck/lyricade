@@ -1,9 +1,15 @@
 use std::{
   fmt::{Debug, Display},
-  sync::{Arc, atomic::AtomicUsize},
+  sync::{
+    Arc,
+    atomic::{AtomicBool, AtomicUsize, Ordering},
+  },
+  time::Duration,
 };
 
+use arc_swap::ArcSwap;
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use diesel::{
   backend::Backend,
   deserialize::{FromSql, FromSqlRow},
@@ -13,7 +19,8 @@ use diesel::{
   sqlite::Sqlite,
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
+use tracing::{debug, error, trace};
 
 use crate::{
   lyrics::Lyrics,
@@ -62,13 +69,6 @@ pub(crate) enum ProviderTier {
   Secondary,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ProviderState {
-  pub(crate) id: ProviderId,
-  pub(crate) enabled: bool,
-  pub(crate) tier: ProviderTier,
-}
-
 impl ProviderId {
   pub(crate) fn init_provider(self) -> Arc<dyn Provider> {
     match self {
@@ -112,6 +112,31 @@ impl ToSql<Text, Sqlite> for Providers {
   }
 }
 
+#[derive(Debug)]
+pub(crate) struct ProviderState {
+  pub(crate) id: ProviderId,
+  pub(crate) total_requests: AtomicUsize,
+  pub(crate) current_requests: AtomicUsize,
+  pub(crate) total_permits: AtomicUsize,
+  pub(crate) available_permits: AtomicUsize,
+  pub(crate) rate_limited: AtomicBool,
+}
+
+impl ProviderState {
+  fn new(id: ProviderId, semaphore: &Semaphore) -> Self {
+    let permits = semaphore.available_permits();
+
+    Self {
+      id,
+      total_requests: AtomicUsize::new(0),
+      current_requests: AtomicUsize::new(0),
+      total_permits: AtomicUsize::new(permits),
+      available_permits: AtomicUsize::new(permits),
+      rate_limited: AtomicBool::new(false),
+    }
+  }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) struct LyricsData {
   pub(crate) instrumental: Option<bool>,
@@ -119,10 +144,15 @@ pub(crate) struct LyricsData {
   pub(crate) sync_lyrics: Option<Lyrics>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ProviderError {
+  /// Connection semaphore permits exhausted.
+  NoConnections,
+  /// Server has returned a 429 error, so the `Provider` is temporarily not allowing new connections.
+  RateLimited,
+  /// Server returned a 404 error, or otherwise that indicated lyrics were not found.
   NotFound,
-  Transient,
+  /// Server returned an error other than 404 or 429.
   Permanent,
 }
 
@@ -133,16 +163,124 @@ pub(crate) trait Provider: Debug + Send + Sync {
   #[must_use]
   fn id(&self) -> ProviderId;
 
-  /// Function checks if the `Provider` is busy (rate-limited or no free connections),
-  // and resets the stored state if no longer busy.
-  fn is_busy(&self) -> bool;
+  fn state(&self) -> Arc<ProviderState>;
 
-  /// Get lyrics from the API.
+  fn state_ref(&self) -> &Arc<ProviderState>;
+
+  fn semaphore(&self) -> &Semaphore;
+
+  fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>>;
+
+  /// The internal fetch implementation.
+  #[must_use]
+  async fn api_fetch(
+    &self,
+    http_client: reqwest::Client,
+    req_counter: Arc<AtomicUsize>,
+    track: &Track,
+  ) -> ProviderResult;
+
+  /// Get lyrics from the API. Wraps the actual implementation.
   #[must_use]
   async fn fetch(
     &self,
     http_client: reqwest::Client,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
-  ) -> ProviderResult;
+  ) -> ProviderResult {
+    let permit = self.fetch_begin()?;
+
+    debug!("{}: {track}: Requesting lyrics from Provider", self.id());
+
+    let result = self.api_fetch(http_client, req_counter, track).await;
+
+    self.fetch_end(permit);
+
+    result
+  }
+
+  fn fetch_begin(&self) -> Result<SemaphorePermit<'_>, ProviderError> {
+    let permit = self.acquire_conn_permit()?;
+
+    self.check_rate_limited()?;
+
+    let state = self.state_ref();
+    state.total_requests.fetch_add(1, Ordering::Relaxed);
+    state.current_requests.fetch_add(1, Ordering::Relaxed);
+    state
+      .available_permits
+      .store(self.semaphore().available_permits(), Ordering::Relaxed);
+
+    Ok(permit)
+  }
+
+  fn fetch_end(&self, permit: SemaphorePermit) {
+    drop(permit);
+
+    let state = self.state_ref();
+    state.current_requests.fetch_sub(1, Ordering::Relaxed);
+    state
+      .available_permits
+      .store(self.semaphore().available_permits(), Ordering::Relaxed);
+  }
+
+  fn acquire_conn_permit(&self) -> Result<SemaphorePermit<'_>, ProviderError> {
+    let semaphore = self.semaphore();
+
+    match semaphore.try_acquire() {
+      Ok(permit) => {
+        trace!(
+          "{}: Acquired connection permit ({} available)",
+          self.id(),
+          semaphore.available_permits()
+        );
+        Ok(permit)
+      }
+      Err(e) => match e {
+        TryAcquireError::Closed => {
+          error!("{}: Error encountered while acquiring connection permit: {e}", self.id());
+          Err(ProviderError::Permanent)
+        }
+        TryAcquireError::NoPermits => {
+          trace!("{}: No connection permits available", self.id());
+          Err(ProviderError::NoConnections)
+        }
+      },
+    }
+  }
+
+  fn check_rate_limited(&self) -> Result<(), ProviderError> {
+    let rate_limited_until = self.rate_limited_until();
+
+    let res = if let Some(dt) = rate_limited_until.load().as_ref() {
+      if dt > &Utc::now() {
+        Err(ProviderError::RateLimited)
+      } else {
+        debug!("{}: Rate-limit expired", self.id());
+        rate_limited_until.swap(Arc::new(None));
+
+        Ok(())
+      }
+    } else {
+      Ok(())
+    };
+
+    let state = self.state_ref();
+    let rate_limited = state.rate_limited.load(Ordering::Relaxed);
+    if res.is_ok() && rate_limited {
+      state.rate_limited.store(false, Ordering::Relaxed);
+    } else if res.is_err() && !rate_limited {
+      state.rate_limited.store(true, Ordering::Relaxed);
+    }
+
+    res
+  }
+
+  fn set_rate_limited(&self, secs: f64) {
+    let expires_at = Utc::now() + Duration::from_secs_f64(secs);
+    self.rate_limited_until().swap(Arc::new(Some(expires_at)));
+
+    let state = self.state_ref();
+    state.rate_limited.store(true, Ordering::Relaxed);
+  }
 }

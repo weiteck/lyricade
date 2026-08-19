@@ -1,7 +1,4 @@
-use std::{
-  sync::{Arc, atomic::AtomicUsize},
-  time::Duration,
-};
+use std::sync::{Arc, atomic::AtomicUsize};
 
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
@@ -13,7 +10,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::{
   lyrics::{Lyrics, LyricsType},
-  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult},
+  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState},
   track::Track,
 };
 
@@ -21,8 +18,9 @@ const API_URL: &str = "https://lrclib.net/api/get";
 
 #[derive(Debug)]
 pub(crate) struct LrcLibProvider {
-  semaphore: Arc<Semaphore>,
+  semaphore: Semaphore,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
+  state: Arc<ProviderState>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -55,36 +53,26 @@ impl LrcLibProvider {
     // Implementation Note:
     // https://lrclib.net/docs suggests making sequential requests only and honouring
     // the delay returned in 429 responses in the 'Retry-After' header
-    let semaphore = Arc::new(tokio::sync::Semaphore::new(1));
+    let semaphore = tokio::sync::Semaphore::new(1);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
+    let state = Arc::new(ProviderState::new(ProviderId::LrcLib, &semaphore));
 
     Self {
       semaphore,
       rate_limited_until,
+      state,
     }
   }
 }
 
 #[async_trait]
 impl Provider for LrcLibProvider {
-  async fn fetch(
+  async fn api_fetch(
     &self,
     http_client: reqwest::Client,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {
-    // Limit connections - LrcLib docs suggest sequential-only requests
-    match self.semaphore.acquire().await {
-      Ok(_) => trace!(
-        "LrcLibProvider: Acquired Provider connection semaphore permit ({} available)",
-        self.semaphore.available_permits()
-      ),
-      Err(e) => {
-        error!("LrcLibProvider: Error encountered while getting lyrics for {track}: {e}");
-        return Err(ProviderError::Permanent);
-      }
-    }
-
     let url = Url::parse_with_params(
       API_URL,
       &[
@@ -95,15 +83,14 @@ impl Provider for LrcLibProvider {
       ],
     )
     .map_err(|e| {
-      error!("LrcLibProvider: Could not parse Track into request URL for {track}: {e}");
+      error!("LrcLibProvider: {track}: Could not parse Track into request URL: {e}");
       ProviderError::Permanent
     })?;
 
-    debug!("LrcLibProvider: Getting lyrics from lrclib.net for {}", &track);
-    trace!("LrcLibProvider: GET request to \"{}\"", &url);
+    trace!("LrcLibProvider: {track}: GET request to \"{}\"", &url);
 
     let response = http_client.get(url).send().await.map_err(|e| {
-      error!("LrcLibProvider: Error encountered while getting lyrics for {track}: {e}");
+      error!("LrcLibProvider: {track}: {e}");
       ProviderError::Permanent
     })?;
     let response_status = response.status();
@@ -111,22 +98,28 @@ impl Provider for LrcLibProvider {
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     // Return requested retry delay if 429 too many requests
-    if response_status == StatusCode::TOO_MANY_REQUESTS
-      && let Some(v) = response.headers().get("Retry-After")
-      && let Ok(s) = v.to_str()
-      && let Ok(delay) = str::parse::<u64>(s)
-    {
-      warn!(
-        "LrcLibProvider: Too many requests for {track} - retry-delay of {delay}s requested by server"
-      );
-      self
-        .rate_limited_until
-        .swap(Arc::new(Some(Utc::now() + Duration::from_secs(delay))));
-      return Err(ProviderError::Transient);
+    if response_status == StatusCode::TOO_MANY_REQUESTS {
+      if let Some(v) = response.headers().get("Retry-After")
+        && let Ok(s) = v.to_str()
+        && let Ok(req_delay) = str::parse::<f64>(s)
+      {
+        warn!(
+          "LrcLibProvider: {track}: Too many requests - retry-delay of {req_delay:.0$}s requested by server",
+          if req_delay.fract() >= 0.01 { 2 } else { 0 }
+        );
+        self.set_rate_limited(req_delay);
+      } else {
+        warn!(
+          "LrcLibProvider: {track}: Too many requests - no \"Retry-After\" header; defaulting to delay of 5s"
+        );
+        self.set_rate_limited(5.0);
+      }
+
+      return Err(ProviderError::RateLimited);
     }
 
     if let Ok(api_response) = response.json::<ApiResponse>().await {
-      trace!("LrcLibProvider: lrclib.net API response:\n{:#?}", &api_response);
+      trace!("LrcLibProvider: {track}: lrclib.net API response:\n{:#?}", &api_response);
 
       match api_response {
         ApiResponse::Success {
@@ -134,7 +127,7 @@ impl Provider for LrcLibProvider {
           plain_lyrics,
           synced_lyrics,
         } => {
-          debug!("LrcLibProvider: Found {track}");
+          debug!("LrcLibProvider: {track}: Found track");
 
           return Ok(LyricsData {
             instrumental: if instrumental { Some(true) } else { None },
@@ -152,7 +145,7 @@ impl Provider for LrcLibProvider {
         ApiResponse::Error {
           status_code: 404, ..
         } => {
-          debug!("LrcLibProvider: Could not find {track}");
+          debug!("LrcLibProvider: {track}: Could not find track");
           return Err(ProviderError::NotFound);
         }
 
@@ -161,13 +154,13 @@ impl Provider for LrcLibProvider {
           name,
           message,
         } => {
-          warn!("LrcLibProvider: {status_code} {name} for {track}: {message}");
+          warn!("LrcLibProvider: {track}: {status_code} {name}: {message}");
           return Err(ProviderError::Permanent);
         }
       };
     }
 
-    error!("LrcLibProvider: {response_status} server response while getting lyrics for {track}");
+    error!("LrcLibProvider: {track}: server responded with {response_status}");
     Err(ProviderError::Permanent)
   }
 
@@ -175,18 +168,19 @@ impl Provider for LrcLibProvider {
     ProviderId::LrcLib
   }
 
-  fn is_busy(&self) -> bool {
-    if let Some(dt) = self.rate_limited_until.load().as_ref() {
-      if dt > &Utc::now() {
-        self.semaphore.available_permits() == 0
-      } else {
-        trace!("LrcLibProvider: Rate-limit expired");
-        self.rate_limited_until.swap(Arc::new(None));
+  fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
+    &self.rate_limited_until
+  }
 
-        self.semaphore.available_permits() == 0
-      }
-    } else {
-      self.semaphore.available_permits() == 0
-    }
+  fn state(&self) -> Arc<ProviderState> {
+    Arc::clone(&self.state)
+  }
+
+  fn state_ref(&self) -> &Arc<ProviderState> {
+    &self.state
+  }
+
+  fn semaphore(&self) -> &Semaphore {
+    &self.semaphore
   }
 }
