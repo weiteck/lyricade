@@ -16,6 +16,7 @@ mod provider_state_row;
 
 pub(crate) struct ProgressModalModel {
   alert_dialog: AlertDialog,
+  parent: adw::ApplicationWindow,
   progress: ProgressUpdate,
   provider_state_rows: FactoryVecDeque<ProviderStateRow>,
   show_provider_state: bool,
@@ -110,7 +111,7 @@ impl Component for ProgressModalModel {
   }
 
   fn init(
-    _init: Self::Init,
+    parent: Self::Init,
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
@@ -151,6 +152,7 @@ impl Component for ProgressModalModel {
 
     let model = ProgressModalModel {
       alert_dialog,
+      parent,
       progress: ProgressUpdate::default(),
       provider_state_rows,
       show_provider_state: true,
@@ -177,7 +179,7 @@ impl Component for ProgressModalModel {
         sender.input(ProgressModalMsg::UpdateState(init.progress));
 
         self.showing.set(true);
-        self.alert_dialog.present(None::<&adw::ApplicationWindow>);
+        self.alert_dialog.present(Some(&self.parent));
       }
 
       ProgressModalMsg::Hide => {
