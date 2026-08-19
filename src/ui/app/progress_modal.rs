@@ -18,6 +18,8 @@ pub(crate) struct ProgressModalModel {
   alert_dialog: AlertDialog,
   parent: adw::ApplicationWindow,
   progress: ProgressUpdate,
+  heading: Option<String>,
+  body: Option<String>,
   provider_state_rows: FactoryVecDeque<ProviderStateRow>,
   show_provider_state: bool,
   showing: Rc<Cell<bool>>,
@@ -28,24 +30,15 @@ pub(crate) struct ProgressModalModel {
 pub(crate) struct ProgressModalInit {
   pub(crate) progress: ProgressUpdate,
   pub(crate) show_provider_state: bool,
-  pub(crate) heading: Option<String>,
-  pub(crate) body: Option<String>,
 }
 
 #[bon::bon]
 impl ProgressModalInit {
   #[builder]
-  pub(crate) fn new(
-    progress: ProgressUpdate,
-    show_provider_state: bool,
-    heading: Option<String>,
-    body: Option<String>,
-  ) -> Self {
+  pub(crate) fn new(progress: ProgressUpdate, show_provider_state: bool) -> Self {
     Self {
       progress,
       show_provider_state,
-      heading,
-      body,
     }
   }
 }
@@ -87,13 +80,14 @@ impl Component for ProgressModalModel {
           set_text: model.progress.step.as_ref().map_or("", |s| s.as_str()),
         },
 
-        #[name = "pb"]
         gtk::ProgressBar {
           set_expand: true,
           set_halign: gtk::Align::Fill,
           set_valign: gtk::Align::Center,
           #[watch]
           set_fraction: model.progress.progress,
+          #[watch]
+          set_tooltip: &format!("{:.0}%", model.progress.progress * 100.0),
         },
       },
 
@@ -129,7 +123,7 @@ impl Component for ProgressModalModel {
       .extra_child(&root)
       .default_response("cancel")
       .build();
-    alert_dialog.add_response("cancel", "Cancel");
+    alert_dialog.add_response("cancel", "_Cancel");
 
     let closing_programmatically = Rc::new(Cell::new(false));
     let showing = Rc::new(Cell::new(false));
@@ -154,6 +148,8 @@ impl Component for ProgressModalModel {
       alert_dialog,
       parent,
       progress: ProgressUpdate::default(),
+      heading: None,
+      body: None,
       provider_state_rows,
       show_provider_state: true,
       showing,
@@ -170,11 +166,15 @@ impl Component for ProgressModalModel {
   fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>, _root: &Self::Root) {
     match message {
       ProgressModalMsg::Show(init) => {
-        self.alert_dialog.set_heading(init.heading.as_deref());
         self
           .alert_dialog
-          .set_body(init.body.as_deref().unwrap_or_default());
+          .set_heading(init.progress.heading.as_deref());
+        self
+          .alert_dialog
+          .set_body(init.progress.body.as_deref().unwrap_or_default());
         self.show_provider_state = init.show_provider_state;
+        self.heading.clone_from(&init.progress.heading);
+        self.body.clone_from(&init.progress.body);
 
         sender.input(ProgressModalMsg::UpdateState(init.progress));
 
@@ -191,6 +191,17 @@ impl Component for ProgressModalModel {
       }
 
       ProgressModalMsg::UpdateState(pu) => {
+        if pu.heading.is_some() && self.heading != pu.heading {
+          self.alert_dialog.set_heading(pu.heading.as_deref());
+          self.heading = pu.heading.clone();
+        }
+        if pu.body.is_some() && self.body != pu.body {
+          self
+            .alert_dialog
+            .set_body(pu.body.as_deref().unwrap_or_default());
+          self.body = pu.body.clone();
+        }
+
         self.progress = pu;
 
         // Ensure Provider state updates

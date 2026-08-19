@@ -167,6 +167,8 @@ enum SelectionState {
 #[derive(Debug, Clone, Default)]
 pub(crate) struct ProgressUpdate {
   pub(crate) step: Option<String>,
+  pub(crate) heading: Option<String>,
+  pub(crate) body: Option<String>,
   pub(crate) progress: f64,
 }
 
@@ -558,45 +560,26 @@ impl AsyncComponent for AppModel {
                       set_margin_all: 6,
                       set_spacing: 12,
 
-                      // Progress bar
+                      // Current task
                       gtk::Box {
                         set_orientation: gtk::Orientation::Horizontal,
                         set_align: gtk::Align::Start,
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
-                        set_spacing: 6,
-
+                        set_spacing: 12,
                         #[watch]
                         set_visible: model.progress_task.is_some(),
 
-                        // Cancel button
-                        gtk::Button {
-                          set_tooltip_text: Some("Cancel"),
-                          set_icon_name: "window-close-symbolic",
-                          set_css_classes: &["flat", "circular", "mini-cancel"],
-                          #[watch]
-                          set_visible: model.is_fetching_lyrics,
-                          connect_clicked => AppMsg::CancelOperation,
-                        },
-
                         gtk::Label {
                           add_css_class: "caption",
-                          set_margin_end: 12, // added spacing
                           #[watch]
                           set_text: model.progress_task.as_deref().unwrap_or_default(),
                         },
 
-                        gtk::ProgressBar {
-                          set_halign: gtk::Align::Start,
-                          set_valign: gtk::Align::Center,
-                          set_show_text: false,
-                          set_margin_end: 6, // added spacing
-                          #[watch]
-                          set_fraction: model.progress,
-                        },
-
                         gtk::Label {
                           add_css_class: "caption",
+                          #[watch]
+                          set_visible: model.progress_step.is_some(),
                           #[watch]
                           set_text: model.progress_step.as_deref().unwrap_or_default(),
                         }
@@ -967,10 +950,11 @@ impl AsyncComponent for AppModel {
 
         // Display progress
         let progress_modal_init = ProgressModalInit::builder()
-          .heading(String::from("Getting lyrics…"))
           .show_provider_state(true)
           .progress(ProgressUpdate {
             step: Some(format!("0 / {total}")),
+            heading: Some(String::from("Getting lyrics…")),
+            body: None,
             progress: 0.0,
           })
           .build();
@@ -996,7 +980,7 @@ impl AsyncComponent for AppModel {
 
               async move {
                 let _ = track
-                  .fetch_lyrics_test()
+                  .fetch_lyrics()
                   .maybe_options(opts)
                   .cancel_token(token)
                   .call()
@@ -1010,6 +994,8 @@ impl AsyncComponent for AppModel {
                 sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
                   step: Some(format!("{completed} / {total}")),
                   progress: completed as f64 / total as f64,
+                  heading: None,
+                  body: None,
                 }));
               }
             })
@@ -1038,8 +1024,16 @@ impl AsyncComponent for AppModel {
         let tracks = self.tracks.clone();
 
         // Display progress
-        sender
-          .input(AppMsg::ShowSpinner(("Applying Manage Lyrics changes…".into(), String::new())));
+        let progress_modal_init = ProgressModalInit::builder()
+          .show_provider_state(false)
+          .progress(ProgressUpdate {
+            step: None,
+            progress: 0.0,
+            heading: Some(String::from("Applying changes…")),
+            body: Some(String::from("Calculating…")),
+          })
+          .build();
+        sender.input(AppMsg::ProgressStart(progress_modal_init));
 
         let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
         self.manage_lyrics_cancel_token = Some(cancel_tx);
@@ -1049,9 +1043,13 @@ impl AsyncComponent for AppModel {
         // Process tracks in background thread and update progress
         let jh = relm4::spawn_blocking(move || {
           let progress_sender = sender_handle.clone();
-          let progress_callback = move |msg| {
-            progress_sender
-              .input(AppMsg::ShowSpinner(("Applying Manage Lyrics changes…".to_string(), msg)));
+          let progress_callback = move |step, remaining, progress| {
+            progress_sender.input(AppMsg::ProgressUpdate(ProgressUpdate {
+              step: Some(step),
+              progress,
+              heading: None,
+              body: Some(remaining),
+            }));
           };
 
           let _ = opts
@@ -1071,8 +1069,8 @@ impl AsyncComponent for AppModel {
         self.manage_lyrics_cancel_token = None;
         self.manage_lyrics_task = None;
         self.is_applying_manage_lyrics = false;
+        sender.input(AppMsg::ProgressComplete);
         sender.input(AppMsg::LoadLibraries);
-        sender.input(AppMsg::HideSpinner);
       }
 
       // Cancel either fetching lyrics, apply manage lyrics changes, or refresh libraries operations
@@ -1598,6 +1596,7 @@ impl AsyncComponent for AppModel {
 
       AppMsg::ProgressStart(init) => {
         let task_name = init
+          .progress
           .heading
           .clone()
           .unwrap_or_else(|| String::from("Unknown"));

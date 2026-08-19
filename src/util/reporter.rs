@@ -75,6 +75,7 @@ where
   fn update_and_reset(&mut self) {
     // Recalculate stats
     self.stats.process_rate_per_sec = self.process_rate_per_sec();
+    self.stats.fraction_processed = self.fraction_processed();
     self.stats.percent_processed = self.percent_processed();
     self.stats.time_remaining = self.time_remaining();
     self.stats.human_time_remaining = self.human_time_remaining();
@@ -123,8 +124,13 @@ where
   }
 
   #[must_use]
+  pub(crate) fn fraction_processed(&self) -> f64 {
+    self.stats.processed.min(self.stats.target) as f64 / self.stats.target as f64
+  }
+
+  #[must_use]
   pub(crate) fn percent_processed(&self) -> f64 {
-    (self.stats.processed.min(self.stats.target) as f64 / self.stats.target as f64) * 100.0
+    self.fraction_processed() * 100.0
   }
 }
 
@@ -147,6 +153,7 @@ pub(crate) struct IntervalReporterStats {
   pub(crate) time_remaining: chrono::TimeDelta,
   pub(crate) process_rate_per_sec: f64,
   pub(crate) percent_processed: f64,
+  pub(crate) fraction_processed: f64,
 }
 
 impl IntervalReporterStats {
@@ -160,6 +167,7 @@ impl IntervalReporterStats {
       time_remaining: chrono::TimeDelta::default(),
       process_rate_per_sec: 0.,
       percent_processed: 0.,
+      fraction_processed: 0.,
     }
   }
 }

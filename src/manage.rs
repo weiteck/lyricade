@@ -71,7 +71,7 @@ impl ManageLyricsOptions {
     cancel_on_close: &mut oneshot::Receiver<()>,
   ) -> Result<()>
   where
-    F: Fn(String) + Send + 'static,
+    F: Fn(String, String, f64) + Send + 'static,
   {
     info!("ManageLyrics: Applying changes to {} tracks", tracks.len());
 
@@ -82,12 +82,13 @@ impl ManageLyricsOptions {
     let mut reporter = IntervalReporter::builder()
       .id("ManageLyrics")
       .target(tracks.len())
-      .report_interval(Duration::from_secs(2))
+      .report_interval(Duration::from_secs(1))
       .callback(|stats| {
-        on_progress(format!(
-          "Applying Manage Lyrics changes… {:.0} %\n(about {} remaining)",
-          stats.percent_processed, stats.human_time_remaining
-        ));
+        on_progress(
+          format!("{} / {}", stats.processed, stats.target),
+          format!("About {} remaining", stats.human_time_remaining),
+          stats.fraction_processed,
+        );
       })
       .build();
 
