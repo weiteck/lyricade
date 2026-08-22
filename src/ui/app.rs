@@ -8,7 +8,6 @@ use futures::stream::StreamExt;
 use num_format::ToFormattedString;
 use relm4::abstractions::Toaster;
 use relm4::adw::prelude::*;
-use relm4::tokio::sync::oneshot;
 use relm4::{JoinHandle, RelmContainerExt, prelude::*};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
@@ -85,10 +84,10 @@ struct AppModel {
   fetch_lyrics_cancel_token: Option<CancellationToken>,
 
   is_applying_manage_lyrics: bool,
-  manage_lyrics_cancel_token: Option<oneshot::Sender<()>>,
+  manage_lyrics_cancel_token: Option<CancellationToken>,
   manage_lyrics_task: Option<JoinHandle<()>>,
 
-  refresh_library_cancel_token: Option<oneshot::Sender<()>>,
+  refresh_library_cancel_token: Option<CancellationToken>,
 
   /// Name of the task being tracked.
   progress_task: Option<String>,
@@ -1035,8 +1034,8 @@ impl Component for AppModel {
           .build();
         sender.input(AppMsg::ProgressStart(progress_modal_init));
 
-        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        self.manage_lyrics_cancel_token = Some(cancel_tx);
+        let cancel_token = CancellationToken::new();
+        self.manage_lyrics_cancel_token = Some(cancel_token.clone());
 
         let sender_handle = sender.clone();
 
@@ -1053,7 +1052,7 @@ impl Component for AppModel {
           };
 
           let _ = opts
-            .apply(tracks, progress_callback, &mut cancel_rx)
+            .apply(tracks, progress_callback, &cancel_token)
             .inspect_err(|error| sender_handle.input(AppMsg::ShowToast(error.to_string())));
 
           // End display progress
@@ -1086,13 +1085,15 @@ impl Component for AppModel {
         }
 
         // Drop the sender to cancel the apply manage lyrics task
-        if self.manage_lyrics_cancel_token.take().is_some() {
+        if let Some(token) = self.manage_lyrics_cancel_token.take() {
+          token.cancel();
           debug!("ApplyManageLyricsChanges cancelled by user");
           sender.input(AppMsg::ProgressComplete);
         }
 
         // Drop the sender to cancel the refresh library task
-        if self.refresh_library_cancel_token.take().is_some() {
+        if let Some(token) = self.refresh_library_cancel_token.take() {
+          token.cancel();
           self.spinner_task = None;
           self.spinner_step = None;
           debug!("RefreshLibraries cancelled by user");
@@ -1154,16 +1155,13 @@ impl Component for AppModel {
         if !added_or_updated_path_libs.is_empty() {
           debug!("Libraries have been added; refreshing");
 
-          let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-          self.refresh_library_cancel_token = Some(cancel_tx);
+          let cancel_token = CancellationToken::new();
+          self.refresh_library_cancel_token = Some(cancel_token.clone());
 
           let sender_handle = sender.clone();
           relm4::spawn_blocking(move || {
             for lib in added_or_updated_path_libs {
-              if cancel_rx
-                .try_recv()
-                .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-              {
+              if cancel_token.is_cancelled() {
                 break;
               }
 
@@ -1177,7 +1175,7 @@ impl Component for AppModel {
               let _ = lib
                 .refresh()
                 .on_progress(progress_callback.clone())
-                .cancel_on_close(&mut cancel_rx)
+                .cancel_on_close(&cancel_token)
                 .call()
                 .inspect_err(|error| warn!("{error}"));
             }
@@ -1398,15 +1396,12 @@ impl Component for AppModel {
 
         let sender_handle = sender.clone();
 
-        let (cancel_tx, mut cancel_rx) = oneshot::channel::<()>();
-        self.refresh_library_cancel_token = Some(cancel_tx);
+        let cancel_token = CancellationToken::new();
+        self.refresh_library_cancel_token = Some(cancel_token.clone());
 
         relm4::spawn_blocking(move || {
           for lib in libs {
-            if cancel_rx
-              .try_recv()
-              .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-            {
+            if cancel_token.is_cancelled() {
               break;
             }
 
@@ -1420,7 +1415,7 @@ impl Component for AppModel {
             let _ = lib
               .refresh()
               .on_progress(progress_callback.clone())
-              .cancel_on_close(&mut cancel_rx)
+              .cancel_on_close(&cancel_token)
               .call()
               .inspect_err(|error| warn!("{error}"));
           }
@@ -1650,40 +1645,43 @@ impl Component for AppModel {
       }
 
       AppMsg::GracefulQuit => {
+        // Cancel any current tasks
+        debug!("Cancelling any running tasks for graceful quit...");
+        sender.input(AppMsg::CancelOperation);
+
+        let running_tasks = [
+          self.fetch_lyrics_task.take(),
+          self.manage_lyrics_task.take(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+        let running_task_count = running_tasks.len();
+
         // Make sure tasks that might write to files have finished aborting before quitting
-        if let Some(handle) = self.fetch_lyrics_task.take() {
-          debug!("Cancelling FetchLyrics for graceful quit...");
-          handle.abort();
+        if running_task_count > 0 {
+          for (idx, handle) in running_tasks.into_iter().enumerate() {
+            handle.abort();
 
-          // Wait for task to end before quitting
-          let sender = sender.clone();
-          relm4::spawn(async move {
-            let _ = handle.await;
-
-            sender.input(AppMsg::Quit);
-          });
-        } else if self.manage_lyrics_cancel_token.take().is_some()
-          && let Some(handle) = self.manage_lyrics_task.take()
-        {
-          debug!("Cancelling ApplyManageLyrics for graceful quit...");
-          handle.abort();
-
-          // Wait for task to end before quitting
-          let sender = sender.clone();
-          relm4::spawn(async move {
-            let _ = handle.await;
-
-            sender.input(AppMsg::Quit);
-          });
+            if idx + 1 == running_task_count {
+              // Wait for final task to end before quitting
+              let sender = sender.clone();
+              relm4::spawn(async move {
+                let _ = handle.await;
+                sender.input(AppMsg::Quit);
+              });
+            } else {
+              relm4::spawn(async move {
+                let _ = handle.await;
+              });
+            }
+          }
         } else {
           sender.input(AppMsg::Quit);
         }
       }
 
       AppMsg::Quit => {
-        // Cancel any current tasks
-        sender.input(AppMsg::CancelOperation);
-
         // Save window size
         let (width, height) = (root.default_width(), root.default_height());
         if let Ok(mut guard) = SETTINGS.write() {

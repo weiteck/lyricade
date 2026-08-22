@@ -11,7 +11,7 @@ use camino::{Utf8Path, Utf8PathBuf};
 use chrono::NaiveDateTime;
 use diesel::{dsl::insert_into, prelude::*};
 
-use relm4::tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 use walkdir::WalkDir;
 
@@ -137,7 +137,7 @@ impl Library {
   pub(crate) fn refresh<F>(
     &self,
     on_progress: F,
-    cancel_on_close: &mut oneshot::Receiver<()>,
+    cancel_on_close: &CancellationToken,
   ) -> Result<usize>
   where
     F: Fn(String) + Send + 'static,
@@ -243,10 +243,7 @@ impl Library {
 
         for track in existing_tracks {
           // Cancelled?
-          if cancel_on_close
-            .try_recv()
-            .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-          {
+          if cancel_on_close.is_cancelled() {
             return Err(
               anyhow!(diesel::result::Error::RollbackTransaction)
                 .context("User cancelled the library refresh operation"),
@@ -302,10 +299,7 @@ impl Library {
       // delete DB row where metadata read fails
       for mut track in new_tracks {
         // Task cancelled?
-        if cancel_on_close
-          .try_recv()
-          .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-        {
+        if cancel_on_close.is_cancelled() {
           return Err(
             anyhow!(diesel::result::Error::RollbackTransaction)
               .context("User cancelled the library refresh operation"),
@@ -325,10 +319,7 @@ impl Library {
       // Refresh existing tracks
       for mut track in existing_tracks_to_scan {
         // Task cancelled?
-        if cancel_on_close
-          .try_recv()
-          .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-        {
+        if cancel_on_close.is_cancelled() {
           return Err(
             anyhow!(diesel::result::Error::RollbackTransaction)
               .context("User cancelled the library refresh operation"),

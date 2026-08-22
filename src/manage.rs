@@ -1,6 +1,6 @@
 use std::{fs, time::Duration};
 
-use relm4::tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, trace, warn};
 
 use crate::{
@@ -68,7 +68,7 @@ impl ManageLyricsOptions {
     self,
     tracks: Vec<Track>,
     on_progress: F,
-    cancel_on_close: &mut oneshot::Receiver<()>,
+    cancel_on_close: &CancellationToken,
   ) -> Result<()>
   where
     F: Fn(String, String, f64) + Send + 'static,
@@ -97,10 +97,7 @@ impl ManageLyricsOptions {
     // Not done inside a transaction to keep database rows consistent with file changes
     for mut track in tracks {
       // Cancelled?
-      if cancel_on_close
-        .try_recv()
-        .is_err_and(|error| error == oneshot::error::TryRecvError::Closed)
-      {
+      if cancel_on_close.is_cancelled() {
         debug!("ManageLyrics: Cancelled");
         break;
       }

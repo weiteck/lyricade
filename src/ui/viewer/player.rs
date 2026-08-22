@@ -9,7 +9,7 @@ use relm4::gtk::{gio, glib};
 use relm4::prelude::*;
 use relm4::{adw::prelude::*, gtk::gdk};
 use rodio::Source;
-use tokio::sync::oneshot;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, trace, warn};
 
 use crate::{track::Track, util};
@@ -28,7 +28,7 @@ impl Debug for RodioPlayer {
 pub(super) struct PlayerModel {
   player: Option<RodioPlayer>,
   player_task_handle: Option<tokio::task::JoinHandle<()>>,
-  player_task_cancel: Option<oneshot::Sender<()>>,
+  player_task_cancel: Option<CancellationToken>,
   state: PlayerState,
   position_secs: f64,
   length_secs: f64,
@@ -255,7 +255,8 @@ impl SimpleComponent for PlayerModel {
       let player_handle = Arc::clone(&player);
       let sender_handle = sender.clone();
 
-      let (cancel_tx, mut cancel_rx) = oneshot::channel();
+      let cancel_token = CancellationToken::new();
+      let cancel_token_clone = cancel_token.clone();
 
       let mut lyric_line_windows = Vec::with_capacity(lyric_lines_timestamps.len());
       let mut iter = lyric_lines_timestamps.into_iter().peekable();
@@ -286,9 +287,8 @@ impl SimpleComponent for PlayerModel {
 
         loop {
           tokio::select! {
-            _ = &mut cancel_rx => {
-              trace!("Player task cancelling...");
-
+            () = cancel_token.cancelled() => {
+              trace!("Player task cancelled");
               break;
             }
 
@@ -362,7 +362,7 @@ impl SimpleComponent for PlayerModel {
 
       PlayerModel {
         player: Some(RodioPlayer(player)),
-        player_task_cancel: Some(cancel_tx),
+        player_task_cancel: Some(cancel_token_clone),
         player_task_handle: Some(task),
         state: PlayerState::Paused,
         position_secs: 0.0,
@@ -487,10 +487,8 @@ impl SimpleComponent for PlayerModel {
         }
 
         // Cancel the background player task
-        if let Some(cancel_tx) = self.player_task_cancel.take() {
-          let _ = cancel_tx.send(());
-
-          trace!("Player task cancelled");
+        if let Some(cancel_token) = self.player_task_cancel.take() {
+          cancel_token.cancel();
         }
       }
     }
@@ -511,8 +509,8 @@ impl PlayerModel {
 
 impl Drop for PlayerModel {
   fn drop(&mut self) {
-    if let Some(cancel_tx) = self.player_task_cancel.take() {
-      let _ = cancel_tx.send(());
+    if let Some(cancel_token) = self.player_task_cancel.take() {
+      cancel_token.cancel();
     } else if let Some(task) = self.player_task_handle.take() {
       task.abort();
     }
