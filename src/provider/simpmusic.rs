@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use reqwest::{Response, StatusCode, Url};
 use serde::Deserialize;
 use tokio::sync::Semaphore;
-use tracing::{debug, error, trace, warn};
+use tracing::{error, trace, warn};
 
 use crate::{
   lyrics::{Lyrics, LyricsType},
@@ -20,8 +20,9 @@ const API_SEARCH_URL: &str = "https://api-lyrics.simpmusic.org/v1/search";
 #[derive(Debug)]
 pub(crate) struct SimpMusicProvider {
   semaphore: Semaphore,
-  rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
   state: Arc<ProviderState>,
+  rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
+  req_delayed_until: ArcSwap<Option<DateTime<Utc>>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -80,12 +81,14 @@ impl SimpMusicProvider {
   pub(crate) fn new() -> Self {
     let semaphore = tokio::sync::Semaphore::new(2);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
+    let req_delayed_until = ArcSwap::new(Arc::new(None));
     let state = Arc::new(ProviderState::new(ProviderId::SimpMusic, &semaphore));
 
     Self {
       semaphore,
-      rate_limited_until,
       state,
+      rate_limited_until,
+      req_delayed_until,
     }
   }
 }
@@ -101,6 +104,9 @@ impl Provider for SimpMusicProvider {
     let video_id = self
       .find_video_id(&http_client, &req_counter, track)
       .await?;
+
+    // Sleep for the default request delay between multiple requests
+    self.sleep_for_default_req_delay();
 
     self
       .get_lyrics_for_video_id(&http_client, &req_counter, track, &video_id)
@@ -126,6 +132,14 @@ impl Provider for SimpMusicProvider {
   fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
     &self.rate_limited_until
   }
+
+  fn req_delayed_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
+    &self.req_delayed_until
+  }
+
+  fn default_req_delay_secs(&self) -> Option<f64> {
+    Some(0.2)
+  }
 }
 
 impl SimpMusicProvider {
@@ -144,7 +158,7 @@ impl SimpMusicProvider {
       ProviderError::Permanent
     })?;
 
-    debug!("SimpMusicProvider: {track}: Step 1/2: Finding matching videoId");
+    trace!("SimpMusicProvider: {track}: Step 1/2: Finding matching videoId");
     trace!("SimpMusicProvider: {track}: GET request to \"{}\"", &search_url);
 
     let response = http_client.get(search_url).send().await.map_err(|e| {
@@ -167,7 +181,7 @@ impl SimpMusicProvider {
       match api_response {
         ApiSearchResponse::Success { mut data, .. } => {
           if let Some(video_id) = find_best_match(&mut data, track) {
-            debug!(
+            trace!(
               "SimpMusicProvider: {track}: Found match with video ID {video_id} in {} search results",
               data.len()
             );
@@ -175,7 +189,7 @@ impl SimpMusicProvider {
             return Ok(video_id);
           }
 
-          debug!(
+          trace!(
             "SimpMusicProvider: {track}: No good match found in {} search results",
             data.len()
           );
@@ -205,7 +219,7 @@ impl SimpMusicProvider {
       ProviderError::Permanent
     })?;
 
-    debug!(
+    trace!(
       "SimpMusicProvider: {track}: Step 2/2: Getting lyrics for track with videoId {video_id}"
     );
     trace!("SimpMusicProvider: {track}: GET request to \"{}\"", &get_lyrics_url);
@@ -287,7 +301,7 @@ impl SimpMusicProvider {
   fn handle_error(&self, error: ApiError, track: &Track) -> ProviderError {
     match error {
       ApiError { code: 404, .. } => {
-        debug!("SimpMusicProvider: {track}: Could not find track");
+        trace!("SimpMusicProvider: {track}: Could not find track");
         ProviderError::NotFound
       }
 

@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc};
 use reqwest::{StatusCode, Url};
 use serde::Deserialize;
 use tokio::sync::Semaphore;
-use tracing::{debug, error, trace, warn};
+use tracing::{error, trace, warn};
 
 use crate::{
   lyrics::{Lyrics, LyricsType},
@@ -19,8 +19,9 @@ const API_URL: &str = "https://lrclib.net/api/get";
 #[derive(Debug)]
 pub(crate) struct LrcLibProvider {
   semaphore: Semaphore,
-  rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
   state: Arc<ProviderState>,
+  rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
+  req_delayed_until: ArcSwap<Option<DateTime<Utc>>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -54,13 +55,15 @@ impl LrcLibProvider {
     // https://lrclib.net/docs suggests making sequential requests only and honouring
     // the delay returned in 429 responses in the 'Retry-After' header
     let semaphore = tokio::sync::Semaphore::new(1);
-    let rate_limited_until = ArcSwap::new(Arc::new(None));
     let state = Arc::new(ProviderState::new(ProviderId::LrcLib, &semaphore));
+    let rate_limited_until = ArcSwap::new(Arc::new(None));
+    let req_delayed_until = ArcSwap::new(Arc::new(None));
 
     Self {
       semaphore,
-      rate_limited_until,
       state,
+      rate_limited_until,
+      req_delayed_until,
     }
   }
 }
@@ -127,7 +130,7 @@ impl Provider for LrcLibProvider {
           plain_lyrics,
           synced_lyrics,
         } => {
-          debug!("LrcLibProvider: {track}: Found track");
+          trace!("LrcLibProvider: {track}: Found track");
 
           return Ok(LyricsData {
             instrumental: if instrumental { Some(true) } else { None },
@@ -145,7 +148,7 @@ impl Provider for LrcLibProvider {
         ApiResponse::Error {
           status_code: 404, ..
         } => {
-          debug!("LrcLibProvider: {track}: Could not find track");
+          trace!("LrcLibProvider: {track}: Could not find track");
           return Err(ProviderError::NotFound);
         }
 
@@ -168,10 +171,6 @@ impl Provider for LrcLibProvider {
     ProviderId::LrcLib
   }
 
-  fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
-    &self.rate_limited_until
-  }
-
   fn state(&self) -> Arc<ProviderState> {
     Arc::clone(&self.state)
   }
@@ -182,5 +181,17 @@ impl Provider for LrcLibProvider {
 
   fn semaphore(&self) -> &Semaphore {
     &self.semaphore
+  }
+
+  fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
+    &self.rate_limited_until
+  }
+
+  fn req_delayed_until(&self) -> &ArcSwap<Option<DateTime<Utc>>> {
+    &self.req_delayed_until
+  }
+
+  fn default_req_delay_secs(&self) -> Option<f64> {
+    Some(0.2)
   }
 }

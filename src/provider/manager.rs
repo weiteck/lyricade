@@ -147,33 +147,47 @@ impl ProviderManager {
           continue;
         }
 
-        trace!("ProviderManager: {track}: Attempting to fetch lyrics from {}", provider.id());
-
         result = match provider
           .fetch(self.http_client.clone(), Arc::clone(&self.completed_requests), track)
           .await
         {
-          Ok(new_data) => {
+          Ok(data) => {
+            if data.instrumental == Some(true) {
+              debug!("ProviderManager: {track}: Got \"instrumental\" flag from {}", provider.id());
+            }
+            if data.plain_lyrics.is_some() {
+              debug!("ProviderManager: {track}: Got plain lyrics from {}", provider.id());
+            }
+            if data.sync_lyrics.is_some() {
+              debug!("ProviderManager: {track}: Got sync lyrics from {}", provider.id());
+            }
+
             primary_not_checked.remove(&id);
             secondary_not_checked.remove(&id);
+
             if let Some(ex_data) = result {
               Some(LyricsData {
-                instrumental: ex_data.instrumental.or(new_data.instrumental),
-                plain_lyrics: ex_data.plain_lyrics.or(new_data.plain_lyrics),
-                sync_lyrics: ex_data.sync_lyrics.or(new_data.sync_lyrics),
+                instrumental: ex_data.instrumental.or(data.instrumental),
+                plain_lyrics: ex_data.plain_lyrics.or(data.plain_lyrics),
+                sync_lyrics: ex_data.sync_lyrics.or(data.sync_lyrics),
               })
             } else {
-              Some(new_data)
+              Some(data)
             }
           }
 
           Err(e) => match e {
             ProviderError::NotFound | ProviderError::Permanent => {
+              debug!("ProviderManager: {track}: No lyrics found from {}", provider.id());
+
               primary_not_checked.remove(&id);
               secondary_not_checked.remove(&id);
+
               None
             }
-            ProviderError::RateLimited | ProviderError::NoConnections => None,
+            ProviderError::Delayed | ProviderError::RateLimited | ProviderError::NoConnections => {
+              None
+            }
           },
         };
 
@@ -181,7 +195,7 @@ impl ProviderManager {
         if result.as_ref().is_some_and(|data| {
           data.sync_lyrics.is_some()
             || preferred_lyrics_type.as_ref() == &LyricsType::Plain && data.plain_lyrics.is_some()
-            || data.instrumental.is_some_and(|inst| inst)
+            || data.instrumental == Some(true)
         }) {
           return result;
         }

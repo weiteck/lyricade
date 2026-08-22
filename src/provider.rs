@@ -24,12 +24,13 @@ use tracing::{debug, error, trace};
 
 use crate::{
   lyrics::Lyrics,
-  provider::{lrclib::LrcLibProvider, simpmusic::SimpMusicProvider},
+  provider::{genius::GeniusProvider, lrclib::LrcLibProvider, simpmusic::SimpMusicProvider},
   track::Track,
 };
 
 pub(crate) mod manager;
 
+mod genius;
 mod lrclib;
 mod simpmusic;
 
@@ -38,10 +39,15 @@ pub(crate) enum ProviderId {
   #[default]
   LrcLib,
   SimpMusic,
+  Genius,
 }
 
 impl ProviderId {
-  pub(crate) const ALL: [Self; 2] = [ProviderId::LrcLib, ProviderId::SimpMusic];
+  pub(crate) const ALL: [Self; 3] = [
+    ProviderId::LrcLib,
+    ProviderId::SimpMusic,
+    ProviderId::Genius,
+  ];
 }
 
 impl Display for ProviderId {
@@ -49,6 +55,7 @@ impl Display for ProviderId {
     match self {
       ProviderId::LrcLib => write!(f, "LRCLIB"),
       ProviderId::SimpMusic => write!(f, "SimpMusic"),
+      ProviderId::Genius => write!(f, "Genius"),
     }
   }
 }
@@ -58,6 +65,7 @@ impl From<&str> for ProviderId {
     match value {
       "LRCLIB" => ProviderId::LrcLib,
       "SimpMusic" => ProviderId::SimpMusic,
+      "Genius" => ProviderId::Genius,
       _ => ProviderId::default(),
     }
   }
@@ -74,6 +82,7 @@ impl ProviderId {
     match self {
       ProviderId::LrcLib => Arc::new(LrcLibProvider::new()),
       ProviderId::SimpMusic => Arc::new(SimpMusicProvider::new()),
+      ProviderId::Genius => Arc::new(GeniusProvider::new()),
     }
   }
 }
@@ -84,7 +93,11 @@ pub(crate) struct Providers(pub(crate) Vec<ProviderId>);
 
 impl Default for Providers {
   fn default() -> Self {
-    Self(vec![ProviderId::LrcLib, ProviderId::SimpMusic])
+    Self(vec![
+      ProviderId::LrcLib,
+      ProviderId::SimpMusic,
+      ProviderId::Genius,
+    ])
   }
 }
 
@@ -148,6 +161,8 @@ pub(crate) struct LyricsData {
 pub(crate) enum ProviderError {
   /// Connection semaphore permits exhausted.
   NoConnections,
+  /// Provider is not allowing new requests until the delay between requests has expired.
+  Delayed,
   /// Server has returned a 429 error, so the `Provider` is temporarily not allowing new connections.
   RateLimited,
   /// Server returned a 404 error, or otherwise that indicated lyrics were not found.
@@ -171,6 +186,8 @@ pub(crate) trait Provider: Debug + Send + Sync {
 
   fn rate_limited_until(&self) -> &ArcSwap<Option<DateTime<Utc>>>;
 
+  fn req_delayed_until(&self) -> &ArcSwap<Option<DateTime<Utc>>>;
+
   /// The internal fetch implementation.
   #[must_use]
   async fn api_fetch(
@@ -190,7 +207,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
   ) -> ProviderResult {
     let permit = self.fetch_begin()?;
 
-    debug!("{}: {track}: Requesting lyrics from Provider", self.id());
+    trace!("{}Provider: {track}: Requesting lyrics", self.id());
 
     let result = self.api_fetch(http_client, req_counter, track).await;
 
@@ -203,6 +220,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
     let permit = self.acquire_conn_permit()?;
 
     self.check_rate_limited()?;
+    self.check_delayed()?;
 
     let state = self.state_ref();
     state.total_requests.fetch_add(1, Ordering::Relaxed);
@@ -217,6 +235,8 @@ pub(crate) trait Provider: Debug + Send + Sync {
   fn fetch_end(&self, permit: SemaphorePermit) {
     drop(permit);
 
+    self.set_req_delay(self.default_req_delay_secs());
+
     let state = self.state_ref();
     state.current_requests.fetch_sub(1, Ordering::Relaxed);
     state
@@ -228,23 +248,13 @@ pub(crate) trait Provider: Debug + Send + Sync {
     let semaphore = self.semaphore();
 
     match semaphore.try_acquire() {
-      Ok(permit) => {
-        trace!(
-          "{}: Acquired connection permit ({} available)",
-          self.id(),
-          semaphore.available_permits()
-        );
-        Ok(permit)
-      }
+      Ok(permit) => Ok(permit),
       Err(e) => match e {
         TryAcquireError::Closed => {
-          error!("{}: Error encountered while acquiring connection permit: {e}", self.id());
+          error!("{}Provider: Error encountered while acquiring connection permit: {e}", self.id());
           Err(ProviderError::Permanent)
         }
-        TryAcquireError::NoPermits => {
-          trace!("{}: No connection permits available", self.id());
-          Err(ProviderError::NoConnections)
-        }
+        TryAcquireError::NoPermits => Err(ProviderError::NoConnections),
       },
     }
   }
@@ -256,7 +266,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
       if dt > &Utc::now() {
         Err(ProviderError::RateLimited)
       } else {
-        debug!("{}: Rate-limit expired", self.id());
+        debug!("{}Provider: Rate-limit expired", self.id());
         rate_limited_until.swap(Arc::new(None));
 
         Ok(())
@@ -276,11 +286,46 @@ pub(crate) trait Provider: Debug + Send + Sync {
     res
   }
 
+  fn check_delayed(&self) -> Result<(), ProviderError> {
+    let no_requests_until = self.req_delayed_until();
+
+    if let Some(dt) = no_requests_until.load().as_ref() {
+      if dt > &Utc::now() {
+        Err(ProviderError::Delayed)
+      } else {
+        trace!("{}Provider: Connection delay expired", self.id());
+        no_requests_until.swap(Arc::new(None));
+
+        Ok(())
+      }
+    } else {
+      Ok(())
+    }
+  }
+
   fn set_rate_limited(&self, secs: f64) {
     let expires_at = Utc::now() + Duration::from_secs_f64(secs);
     self.rate_limited_until().swap(Arc::new(Some(expires_at)));
 
     let state = self.state_ref();
     state.rate_limited.store(true, Ordering::Relaxed);
+  }
+
+  fn set_req_delay(&self, secs: Option<f64>) {
+    if let Some(secs) = secs {
+      let expires_at = Utc::now() + Duration::from_secs_f64(secs);
+      self.req_delayed_until().swap(Arc::new(Some(expires_at)));
+    }
+  }
+
+  fn default_req_delay_secs(&self) -> Option<f64> {
+    None
+  }
+
+  fn sleep_for_default_req_delay(&self) {
+    if let Some(secs) = self.default_req_delay_secs() {
+      std::thread::sleep(Duration::from_secs_f64(secs));
+      trace!("{}Provider: Connection delay expired (thread slept)", self.id());
+    }
   }
 }
