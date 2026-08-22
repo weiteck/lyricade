@@ -39,7 +39,7 @@ mod track_stats;
 
 #[expect(clippy::struct_excessive_bools)]
 struct AppModel {
-  sender: AsyncComponentSender<Self>,
+  sender: ComponentSender<Self>,
   libraries: Vec<Library>,
   tracks: Vec<Track>,
   track_stats: TrackStats,
@@ -172,8 +172,8 @@ pub(crate) struct ProgressUpdate {
   pub(crate) progress: f64,
 }
 
-#[relm4::component(async)]
-impl AsyncComponent for AppModel {
+#[relm4::component(pub)]
+impl Component for AppModel {
   type Input = AppMsg;
   type Output = ();
   type Init = ();
@@ -747,11 +747,11 @@ impl AsyncComponent for AppModel {
     },
   }
 
-  async fn init(
+  fn init(
     _init: Self::Init,
     root: Self::Root,
-    sender: relm4::AsyncComponentSender<Self>,
-  ) -> AsyncComponentParts<Self> {
+    sender: relm4::ComponentSender<Self>,
+  ) -> ComponentParts<Self> {
     let main_menu_button = MainMenuButtonModel::builder()
       .launch(root.clone())
       .forward(sender.input_sender(), |msg| msg);
@@ -892,14 +892,14 @@ impl AsyncComponent for AppModel {
     // Load libraries and tracks and populate table view
     sender.input(AppMsg::LoadLibraries);
 
-    AsyncComponentParts { model, widgets }
+    ComponentParts { model, widgets }
   }
 
-  async fn update_with_view(
+  fn update_with_view(
     &mut self,
     widgets: &mut Self::Widgets,
     message: Self::Input,
-    sender: AsyncComponentSender<Self>,
+    sender: ComponentSender<Self>,
     root: &Self::Root,
   ) {
     let sender_handle = sender.clone();
@@ -1705,10 +1705,10 @@ impl AsyncComponent for AppModel {
     self.update_view(widgets, sender_handle);
   }
 
-  async fn update_cmd(
+  fn update_cmd(
     &mut self,
     message: Self::CommandOutput,
-    _sender: AsyncComponentSender<Self>,
+    _sender: ComponentSender<Self>,
     _root: &Self::Root,
   ) {
     match message {
@@ -1778,7 +1778,7 @@ impl AppModel {
   fn refresh_from_settings(
     &mut self,
     _root: &adw::ApplicationWindow,
-    _sender: &AsyncComponentSender<AppModel>,
+    _sender: &ComponentSender<AppModel>,
   ) {
     if let Ok(guard) = SETTINGS.read() {
       self.get_lyrics_requires_confirmation = guard.update_lyrics_tag_on_fetch;
@@ -2055,7 +2055,7 @@ pub(crate) fn start() {
     ColourScheme::Dark => adw::ColorScheme::ForceDark,
   });
 
-  app.run_async::<AppModel>(());
+  app.run::<AppModel>(());
 }
 
 fn initialize_custom_icons() {

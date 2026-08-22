@@ -62,8 +62,8 @@ pub(crate) enum PlayerState {
   Stopped,
 }
 
-#[relm4::component(pub, async)]
-impl SimpleAsyncComponent for PlayerModel {
+#[relm4::component(pub)]
+impl SimpleComponent for PlayerModel {
   type Input = PlayerMsg;
   type Output = PlayerOutput;
   type Init = (Rc<Track>, Vec<f64>);
@@ -225,11 +225,11 @@ impl SimpleAsyncComponent for PlayerModel {
     },
   }
 
-  async fn init(
+  fn init(
     (track, lyric_lines_timestamps): Self::Init,
     root: Self::Root,
-    sender: AsyncComponentSender<Self>,
-  ) -> AsyncComponentParts<Self> {
+    sender: ComponentSender<Self>,
+  ) -> ComponentParts<Self> {
     let path = track.path();
 
     // Open audio file, create the decoder and open the default sound output device
@@ -392,10 +392,10 @@ impl SimpleAsyncComponent for PlayerModel {
 
     let widgets = view_output!();
 
-    AsyncComponentParts { model, widgets }
+    ComponentParts { model, widgets }
   }
 
-  async fn update(&mut self, message: Self::Input, sender: AsyncComponentSender<Self>) {
+  fn update(&mut self, message: Self::Input, sender: ComponentSender<Self>) {
     match message {
       PlayerMsg::TogglePlay => {
         if let Some(player) = self.player.as_ref() {
@@ -487,11 +487,8 @@ impl SimpleAsyncComponent for PlayerModel {
         }
 
         // Cancel the background player task
-        if let Some(cancel_tx) = self.player_task_cancel.take()
-          && let Some(task) = self.player_task_handle.take()
-        {
+        if let Some(cancel_tx) = self.player_task_cancel.take() {
           let _ = cancel_tx.send(());
-          let _ = task.await;
 
           trace!("Player task cancelled");
         }

@@ -44,7 +44,7 @@ pub(crate) struct ViewLyricsModel {
   is_highlighting_lyrics: bool,
   is_following_lyrics: bool,
 
-  player: AsyncController<PlayerModel>,
+  player: Controller<PlayerModel>,
   current_lyric_line: Option<usize>,
 }
 
