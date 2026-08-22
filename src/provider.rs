@@ -125,6 +125,7 @@ impl ToSql<Text, Sqlite> for Providers {
   }
 }
 
+#[allow(unused)]
 #[derive(Debug)]
 pub(crate) struct ProviderState {
   pub(crate) id: ProviderId,
