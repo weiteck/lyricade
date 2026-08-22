@@ -41,25 +41,4 @@
       alias="marker-symbolic.svg"
     >icons/symbolic/marker-symbolic.svg</file>
     </gresource>
-
-    <gresource prefix="io/github/weiteck/Lyricade/icons">
-        <file
-      preprocess="xml-stripblanks"
-      alias="speedometer-low-symbolic.svg"
-    >icons/symbolic/speedometer-low-symbolic.svg</file>
-    </gresource>
-
-    <gresource prefix="io/github/weiteck/Lyricade/icons">
-        <file
-      preprocess="xml-stripblanks"
-      alias="speedometer-medium-symbolic.svg"
-    >icons/symbolic/speedometer-medium-symbolic.svg</file>
-    </gresource>
-
-    <gresource prefix="io/github/weiteck/Lyricade/icons">
-        <file
-      preprocess="xml-stripblanks"
-      alias="speedometer-high-symbolic.svg"
-    >icons/symbolic/speedometer-high-symbolic.svg</file>
-    </gresource>
 </gresources>

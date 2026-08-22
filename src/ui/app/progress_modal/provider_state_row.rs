@@ -99,34 +99,6 @@ impl FactoryComponent for ProviderStateRow {
             set_margin_all: VALUE_MARGIN,
             gtk::Image {
               #[watch]
-              set_icon_name: {
-                let total = self.state.total_permits.load(Ordering::Relaxed);
-                let avail = self.state.available_permits.load(Ordering::Relaxed);
-                if avail == total { Some("speedometer-low-symbolic") }
-                else if avail == 0 { Some("speedometer-high-symbolic") }
-                else { Some("speedometer-medium-symbolic") }
-              },
-              set_tooltip: {
-                let total = self.state.total_permits.load(Ordering::Relaxed);
-                let avail = self.state.available_permits.load(Ordering::Relaxed);
-                if avail == total { "No Connections Used" }
-                else if avail == 0 { "No Free Connections" }
-                else { "Connections Available" }
-              },
-            },
-          },
-        },
-
-        // Value 4
-        gtk::Box {
-          set_orientation: gtk::Orientation::Vertical,
-          add_css_class: "card",
-
-          gtk::Box {
-            set_halign: gtk::Align::Center,
-            set_margin_all: VALUE_MARGIN,
-            gtk::Image {
-              #[watch]
               set_opacity: if self.state.rate_limited.load(Ordering::Relaxed) { 1.0 } else { 0.15 },
               set_icon_name: Some("media-playback-pause-symbolic"),
               set_tooltip: "Rate-Limited",
