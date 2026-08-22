@@ -383,7 +383,9 @@ impl Track {
         sync_lyrics,
       } = data;
 
-      if instrumental.is_some_and(|inst| inst) && self.instrumental.is_none_or(|inst| !inst) {
+      if instrumental == Some(true)
+        && (self.instrumental.is_none() || self.instrumental == Some(false))
+      {
         self.instrumental = Some(true);
       } else {
         // Extract the preferred lyrics type and update tags
