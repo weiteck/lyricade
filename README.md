@@ -19,9 +19,10 @@ A Linux desktop application for fetching and managing lyrics in your local music
 - Embed lyrics to the metadata tag, save as a sidecar file, or both
 - Lyrics viewer with audio playback and LRC lyric highlighting
 - Supports multiple local music libraries
-- Two lyrics providers supported with more to be come:
+- Three lyrics providers supported with more to be come:
   - [LRCLIB](https://lrclib.net)
   - [SimpMusic](https://lyrics-frontend-zeta.vercel.app)
+  - [Genius (plain lyrics only)](https://genius.com/)
 
 ### Lyric management
 
@@ -45,13 +46,15 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 ## Releases
 
-The latest release is available as a `flatpak` package via [Flathub](https://flathub.org/en/apps/io.github.weiteck.Lyricade), or can be downloaded as an `AppImage` package from the [Releases](https://github.com/weiteck/lyricade/releases) section.
+The latest release is available as a Flatpak package via [Flathub](https://flathub.org/en/apps/io.github.weiteck.Lyricade), which comes pre-configured in many distribution software centres.
 
 If you already have Flathub [configured](https://flathub.org/en/setup), you can install by running:
 
 ```bash
 flatpak install flathub io.github.weiteck.Lyricade
 ```
+
+An AppImage package is also provided for convenience, however Flatpak is the only recommended installation method. Because Lyricade utilises modern GTK4 features, you will likely not have the required up-to-date dependencies if you're not running the latest major release of your Linux distribution.
 
 ## Building
 
