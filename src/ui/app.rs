@@ -28,7 +28,7 @@ use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::{NUM_LOCALE, PROVIDER_MANAGER, SETTINGS, util};
+use crate::{NUM_LOCALE, SETTINGS, util};
 use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
@@ -1197,27 +1197,10 @@ impl Component for AppModel {
           sender.input(AppMsg::BuildTracksTable);
         }
 
-        // Providers may have changed
-        let mut current_providers = PROVIDER_MANAGER.primary_providers_order();
-        current_providers.extend_from_slice(&PROVIDER_MANAGER.secondary_providers_order());
-        if let Ok(guard) = SETTINGS.read() {
-          let providers_from_settings = guard
-            .primary_providers
-            .0
-            .iter()
-            .chain(guard.secondary_providers.0.iter())
-            .copied()
-            .collect::<Vec<_>>();
-
-          if current_providers != providers_from_settings {
-            PROVIDER_MANAGER.init_providers_from_settings();
-
-            // Update ProviderState rows in Get Lyrics progress window
-            self
-              .progress_modal_widget
-              .emit(ProgressModalMsg::RefreshProviders);
-          }
-        }
+        // Providers may have changed; update ProviderState rows in Get Lyrics progress window
+        self
+          .progress_modal_widget
+          .emit(ProgressModalMsg::RefreshProviders);
 
         self.refresh_from_settings(root, &sender);
       }
@@ -1616,7 +1599,7 @@ impl Component for AppModel {
       }
 
       AppMsg::ProgressUpdate(pu) => {
-        debug!(
+        trace!(
           "Progress task update: {:02} % of task \"{}\" at step \"{:?}\"",
           &pu.progress * 100.0,
           &self.progress_task.as_deref().unwrap_or_default(),
@@ -1634,14 +1617,19 @@ impl Component for AppModel {
       }
 
       AppMsg::ShowSpinner((task, step)) => {
-        debug!("Showing spinner: \"{task}\", \"{step}\"");
+        if self.spinner_task.is_none() {
+          debug!("Showing spinner: \"{task}\"");
+        } else {
+          trace!("Updating spinner: \"{task}\", \"{step}\"");
+        }
         self.spinner_task = Some(task);
         self.spinner_step = Some(step);
       }
 
       AppMsg::HideSpinner => {
-        debug!("Hiding spinner");
-        self.spinner_task = None;
+        if let Some(task) = self.spinner_task.take() {
+          debug!("Hiding spinner: \"{task}\"");
+        }
       }
 
       AppMsg::GracefulQuit => {

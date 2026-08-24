@@ -6,12 +6,12 @@ use relm4::{
 };
 use tracing::trace;
 
-use crate::provider::{ProviderId, ProviderTier};
+use crate::provider::ProviderSettings;
 
 pub(super) struct ProviderRow {
   pub(crate) index: DynamicIndex,
   pub(crate) name: String,
-  pub(crate) state: ProviderRowState,
+  pub(crate) state: ProviderSettings,
 
   menu: Menu,
   action_move_up: RelmAction<ActionMoveUp>,
@@ -22,27 +22,19 @@ pub(super) struct ProviderRow {
 
 #[derive(Debug)]
 pub(super) enum ProviderRowMsg {
-  ListChangedWithLength(usize),
+  ListChangedWithLength(usize, usize),
   MoveUp,
   MoveDown,
   SwapTier,
   Toggle,
-  Enable(bool),
 }
 
 #[derive(Debug)]
 pub(super) enum ProviderRowOutput {
-  MoveUp(ProviderRowState),
-  MoveDown(ProviderRowState),
-  SwapTier(ProviderRowState),
-  Toggle(ProviderRowState),
-}
-
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct ProviderRowState {
-  pub(crate) id: ProviderId,
-  pub(crate) enabled: bool,
-  pub(crate) tier: ProviderTier,
+  MoveUp(ProviderSettings),
+  MoveDown(ProviderSettings),
+  SwapTier(ProviderSettings),
+  UpdateAllProviderRows,
 }
 
 relm4::new_action_group!(ProviderRowActionGroup, "provider_row_menu");
@@ -53,7 +45,7 @@ relm4::new_stateless_action!(ActionMoveToggle, ProviderRowActionGroup, "toggle")
 
 #[relm4::factory(pub)]
 impl FactoryComponent for ProviderRow {
-  type Init = ProviderRowState;
+  type Init = ProviderSettings;
   type Input = ProviderRowMsg;
   type Output = ProviderRowOutput;
   type CommandOutput = ();
@@ -113,9 +105,10 @@ impl FactoryComponent for ProviderRow {
     menu.append(Some("Move _Down"), Some("provider_row_menu.move_down"));
 
     let section = gtk::gio::Menu::new();
-    let swap_text = match state.tier {
-      ProviderTier::Primary => "Move to _Fallback",
-      ProviderTier::Secondary => "Move to _Primary",
+    let swap_text = if state.secondary {
+      "Move to _Primary"
+    } else {
+      "Move to _Fallback"
     };
     section.append(Some(swap_text), Some("provider_row_menu.swap_tier"));
     menu.append_section(None, &section);
@@ -179,7 +172,7 @@ impl FactoryComponent for ProviderRow {
     sender: FactorySender<Self>,
   ) {
     match message {
-      ProviderRowMsg::ListChangedWithLength(len) => {
+      ProviderRowMsg::ListChangedWithLength(len, enabled_len) => {
         let idx = self.index.current_index();
 
         self.action_move_up.set_enabled(idx != 0);
@@ -188,12 +181,9 @@ impl FactoryComponent for ProviderRow {
           .set_enabled(idx != len.saturating_sub(1));
 
         // Must have at least one primary Provider
-        self
-          .action_swap_tier
-          .set_enabled(self.state.tier != ProviderTier::Primary || len > 1);
-        self
-          .action_toggle
-          .set_enabled(self.state.tier != ProviderTier::Primary || len > 1);
+        let not_last_primary = self.state.secondary || !self.state.enabled || enabled_len != 1;
+        self.action_swap_tier.set_enabled(not_last_primary);
+        self.action_toggle.set_enabled(not_last_primary);
       }
 
       ProviderRowMsg::MoveUp => {
@@ -215,17 +205,7 @@ impl FactoryComponent for ProviderRow {
       }
 
       ProviderRowMsg::Toggle => {
-        sender
-          .output(ProviderRowOutput::Toggle(self.state))
-          .expect("ProviderRowOut receiver dropped");
-      }
-
-      ProviderRowMsg::Enable(active) => {
-        if self.state.enabled == active {
-          return;
-        }
-
-        self.state.enabled = active;
+        self.state.enabled = !self.state.enabled;
 
         let section = gtk::gio::Menu::new();
         section.append(
@@ -241,6 +221,10 @@ impl FactoryComponent for ProviderRow {
 
         self.menu.remove(3);
         self.menu.append_section(None, &section);
+
+        sender
+          .output(ProviderRowOutput::UpdateAllProviderRows)
+          .expect("ProviderRowOut receiver dropped");
       }
     }
   }

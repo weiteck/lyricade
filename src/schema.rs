@@ -11,6 +11,17 @@ diesel::table! {
 }
 
 diesel::table! {
+    providers (id) {
+        id -> Text,
+        secondary -> Bool,
+        enabled -> Bool,
+        position -> Integer,
+        added_at -> Timestamp,
+        updated_at -> Timestamp,
+    }
+}
+
+diesel::table! {
     settings (id) {
         id -> Integer,
         prefer_accurate_timestamps -> Bool,
@@ -32,8 +43,6 @@ diesel::table! {
         sidebar_pinned -> Bool,
         added_at -> Timestamp,
         updated_at -> Timestamp,
-        primary_providers -> Text,
-        secondary_providers -> Text,
     }
 }
 
@@ -63,6 +72,7 @@ diesel::joinable!(tracks -> libraries (library_id));
 
 diesel::allow_tables_to_appear_in_same_query!(
     libraries,
+    providers,
     settings,
     tracks,
 );

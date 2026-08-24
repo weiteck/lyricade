@@ -13,13 +13,13 @@ use reqwest::Client as HttpClient;
 use tokio::{sync::Semaphore, task::JoinHandle, time::interval};
 use tokio_util::sync::CancellationToken;
 
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, trace, warn};
 
 use crate::{
-  SETTINGS, USER_AGENT,
+  PROVIDERS, SETTINGS, USER_AGENT,
   lyrics::LyricsType,
-  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderState},
-  settings::{CONNECTION_LIMIT, Settings},
+  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderState, Providers},
+  settings::CONNECTION_LIMIT,
   track::Track,
 };
 
@@ -38,15 +38,8 @@ pub(crate) struct ProviderManager {
 impl ProviderManager {
   #[must_use]
   pub(crate) fn new() -> Self {
-    let (primary_providers_order, secondary_providers_order) = SETTINGS
-      .read()
-      .inspect_err(|_| error!("Settings lock was poisoned while initialising lyrics providers"))
-      .map_or_else(
-        |_| (Settings::default().primary_providers, Settings::default().secondary_providers),
-        |g| (g.primary_providers.clone(), g.secondary_providers.clone()),
-      );
-
-    let providers = init_providers(&primary_providers_order.0, &secondary_providers_order.0);
+    let (primary_providers_order, secondary_providers_order) = get_provider_order();
+    let providers = init_providers(&primary_providers_order, &secondary_providers_order);
 
     // Spawn background worker to check for expired rate-limits, which is needed in case a
     // Provider is in a rate-limited state and not tried for a while, causing the UI showing
@@ -56,8 +49,8 @@ impl ProviderManager {
       ArcSwap::new(Arc::new(spawn_provider_maintenance_task(providers_cloned)));
 
     let providers = ArcSwap::new(Arc::new(providers));
-    let primary_providers_order = ArcSwap::new(Arc::new(primary_providers_order.0));
-    let secondary_providers_order = ArcSwap::new(Arc::new(secondary_providers_order.0));
+    let primary_providers_order = ArcSwap::new(Arc::new(primary_providers_order));
+    let secondary_providers_order = ArcSwap::new(Arc::new(secondary_providers_order));
 
     let http_client = match reqwest::Client::builder()
       .tls_backend_rustls()
@@ -224,21 +217,15 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) fn init_providers_from_settings(&self) {
-    let (primary_providers_order, secondary_providers_order) = SETTINGS
-      .read()
-      .inspect_err(|_| error!("Settings lock was poisoned while initialising lyrics providers"))
-      .map_or_else(
-        |_| (Settings::default().primary_providers, Settings::default().secondary_providers),
-        |g| (g.primary_providers.clone(), g.secondary_providers.clone()),
-      );
+  pub(crate) fn refresh_providers(&self) {
+    let (primary_providers_order, secondary_providers_order) = get_provider_order();
 
     self
       .primary_providers_order
-      .swap(Arc::new(primary_providers_order.0));
+      .swap(Arc::new(primary_providers_order));
     self
       .secondary_providers_order
-      .swap(Arc::new(secondary_providers_order.0));
+      .swap(Arc::new(secondary_providers_order));
 
     let providers =
       init_providers(&self.primary_providers_order(), &self.secondary_providers_order());
@@ -262,6 +249,46 @@ impl ProviderManager {
   pub(crate) fn provider_state(&self) -> Vec<Arc<ProviderState>> {
     self.providers.load().iter().map(|p| p.state()).collect()
   }
+}
+
+fn get_provider_order() -> (Vec<ProviderId>, Vec<ProviderId>) {
+  PROVIDERS
+    .read()
+    .inspect_err(|_| error!("Providers lock was poisoned while initialising lyrics providers"))
+    .map_or_else(
+      |_| {
+        warn!("Initialising default Providers");
+        let default = Providers::default();
+        (
+          default
+            .primary
+            .iter()
+            .filter(|ps| ps.enabled)
+            .map(|ps| ps.id)
+            .collect::<Vec<_>>(),
+          default
+            .secondary
+            .iter()
+            .filter(|ps| ps.enabled)
+            .map(|ps| ps.id)
+            .collect::<Vec<_>>(),
+        )
+      },
+      |g| {
+        (
+          g.primary
+            .iter()
+            .filter(|ps| ps.enabled)
+            .map(|ps| ps.id)
+            .collect::<Vec<_>>(),
+          g.secondary
+            .iter()
+            .filter(|ps| ps.enabled)
+            .map(|ps| ps.id)
+            .collect::<Vec<_>>(),
+        )
+      },
+    )
 }
 
 fn init_providers(

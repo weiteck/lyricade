@@ -25,7 +25,7 @@ use tracing_subscriber::{
 };
 
 use crate::{
-  provider::manager::ProviderManager,
+  provider::{Providers, manager::ProviderManager},
   settings::{APP_DATA_DIR, APP_DB_FILE_PATH, APP_NAME, Settings},
 };
 
@@ -66,6 +66,9 @@ pub static NUM_LOCALE: LazyLock<num_format::SystemLocale> = LazyLock::new(|| {
 
 pub(crate) static SETTINGS: LazyLock<RwLock<Settings>> =
   LazyLock::new(|| RwLock::new(Settings::load().expect("Failed to load settings from database")));
+
+pub(crate) static PROVIDERS: LazyLock<RwLock<Providers>> =
+  LazyLock::new(|| RwLock::new(Providers::load().expect("Failed to load Providers from database")));
 
 pub(crate) static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
   let manager = r2d2::ConnectionManager::<SqliteConnection>::new(APP_DB_FILE_PATH.to_string());

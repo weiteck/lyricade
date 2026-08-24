@@ -1,4 +1,4 @@
-use std::{collections::HashSet, env, fs, path::PathBuf, sync::LazyLock};
+use std::{env, fs, path::PathBuf, sync::LazyLock};
 
 use camino::Utf8PathBuf;
 use chrono::NaiveDateTime;
@@ -16,12 +16,7 @@ use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
 
 use crate::{
-  DB_POOL, Result,
-  lyrics::LyricsType,
-  provider::{ProviderId, Providers},
-  schema::settings,
-  ui::app::get_lyrics_menu,
-  util::now,
+  DB_POOL, Result, lyrics::LyricsType, schema::settings, ui::app::get_lyrics_menu, util::now,
 };
 
 static PROJECT_DIRS: LazyLock<Option<ProjectDirs>> =
@@ -84,9 +79,6 @@ pub(crate) struct Settings {
   pub(crate) get_lyrics_menu_target_visible: bool,
   pub(crate) get_lyrics_menu_target_selected: bool,
 
-  pub(crate) primary_providers: Providers,
-  pub(crate) secondary_providers: Providers,
-
   // Appearance
   pub(crate) colour_scheme: ColourScheme,
   pub(crate) tracks_table_col_separators: bool,
@@ -111,7 +103,7 @@ impl Settings {
       .find(1) // singleton table; `id` is always 1
       .first::<Settings>(&mut conn);
 
-    let mut settings = match res {
+    let settings = match res {
       Ok(settings) => {
         info!("Loaded settings");
         Ok(settings)
@@ -130,23 +122,6 @@ impl Settings {
         }
       }
     }?;
-
-    // Ensure at least one primary Provider
-    if settings.primary_providers.0.is_empty() {
-      settings.primary_providers = Self::default().primary_providers;
-    }
-
-    // Ensure no duplicate Providers
-    let mut primary_set = HashSet::with_capacity(settings.primary_providers.0.len());
-    let mut secondary_set = HashSet::with_capacity(settings.secondary_providers.0.len());
-    settings
-      .primary_providers
-      .0
-      .retain(|&id| primary_set.insert(id));
-    settings
-      .secondary_providers
-      .0
-      .retain(|&id| !settings.primary_providers.0.contains(&id) && secondary_set.insert(id));
 
     Ok(settings)
   }
@@ -199,9 +174,6 @@ impl Default for Settings {
       get_lyrics_menu_last_checked: get_lyrics_menu::Checked::default(),
       get_lyrics_menu_target_visible: false,
       get_lyrics_menu_target_selected: false,
-
-      primary_providers: Providers(vec![ProviderId::LrcLib]),
-      secondary_providers: Providers(vec![ProviderId::SimpMusic]),
 
       colour_scheme: ColourScheme::System,
       tracks_table_col_separators: true,

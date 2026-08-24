@@ -12,14 +12,14 @@ use relm4_components::open_dialog::{
 use tracing::{debug, error};
 
 use crate::{
-  SETTINGS,
+  PROVIDER_MANAGER, PROVIDERS, SETTINGS,
   library::Library,
   lyrics::LyricsType,
-  provider::{ProviderId, ProviderTier},
+  provider::{ProviderId, ProviderSettings, ProviderTier, Providers},
   settings::{ColourScheme, Settings},
   ui::prefs::{
     library_row::{LibraryRow, LibraryRowMsg, LibraryRowOutput},
-    provider_row::{ProviderRow, ProviderRowMsg, ProviderRowState},
+    provider_row::{ProviderRow, ProviderRowMsg},
   },
   util::{self, now},
 };
@@ -41,6 +41,10 @@ pub(crate) struct PrefsModel {
   settings_initial: Settings,
   settings_current: Settings,
   settings_default: Settings,
+
+  providers_initial: Providers,
+  providers_current: Providers,
+  providers_default: Providers,
 
   add_library_file_dialog: Controller<OpenDialog>,
   edit_library_file_dialog: Controller<OpenDialog>,
@@ -70,10 +74,9 @@ pub(crate) enum PrefsMsg {
     target_y: i32,
     id: ProviderId,
   },
-  ProviderRowMoveUp(ProviderRowState),
-  ProviderRowMoveDown(ProviderRowState),
-  ProviderRowSwapTier(ProviderRowState),
-  ProviderRowToggle(ProviderRowState),
+  ProviderRowMoveUp(ProviderSettings),
+  ProviderRowMoveDown(ProviderSettings),
+  ProviderRowSwapTier(ProviderSettings),
   ProvidersChanged,
 
   ShowToast(String, bool),
@@ -342,7 +345,7 @@ impl SimpleComponent for PrefsModel {
             set_title: "Advanced Settings",
 
             add_row = &adw::SwitchRow {
-              set_title: "Plain Lyrics in ID3v2 USLT Frame (MP3)",
+              set_title: "Plain Lyrics in ID3v_2 USLT Frame (MP3)",
               set_use_underline: true,
               set_subtitle: "Synchronous lyrics will be encoded in the SYLT synchronised text frame per the ID3v2 V3 spec, but a copy will also be inserted in the USLT unsynchronised text frame. Choose whether this copy is converted to plain text format or LRC sync format is retained. <b>It is recommended to keep this option disabled to increase player compatibility.</b>",
               #[watch]
@@ -361,15 +364,16 @@ impl SimpleComponent for PrefsModel {
             set_spacing: 12,
 
               gtk::Button {
-                set_label: "Revert Changes",
+                set_label: "Re_vert Changes",
+                set_use_underline: true,
                 #[watch]
-                set_sensitive: model.settings_current != model.settings_initial,
+                set_sensitive: model.settings_current != model.settings_initial
+                  || model.providers_current != model.providers_initial,
                 connect_clicked => PrefsMsg::RevertSettings,
               },
               gtk::Button {
-                set_label: "Use Defaults",
-                #[watch]
-                set_sensitive: model.settings_current != model.settings_default,
+                set_label: "Use _Defaults",
+                set_use_underline: true,
                 connect_clicked => PrefsMsg::DefaultSettings,
               },
           },
@@ -448,43 +452,10 @@ impl SimpleComponent for PrefsModel {
     let library_rows = build_library_rows(libraries.clone(), &sender);
 
     // Build provider rows
-    let primary_providers = settings
-      .primary_providers
-      .0
-      .iter()
-      .map(|&id| ProviderRowState {
-        id,
-        enabled: true,
-        tier: ProviderTier::Primary,
-      })
-      .collect::<Vec<_>>();
-
-    let secondary_providers = settings
-      .secondary_providers
-      .0
-      .iter()
-      .map(|&id| ProviderRowState {
-        id,
-        enabled: true,
-        tier: ProviderTier::Secondary,
-      })
-      .chain(
-        ProviderId::ALL
-          .iter()
-          .filter(|&id| {
-            !settings.primary_providers.0.contains(id)
-              && !settings.secondary_providers.0.contains(id)
-          })
-          .map(|&id| ProviderRowState {
-            id,
-            enabled: false,
-            tier: ProviderTier::Secondary,
-          }),
-      )
-      .collect::<Vec<_>>();
-
-    let primary_provider_rows = build_provider_rows(primary_providers, &sender);
-    let secondary_provider_rows = build_provider_rows(secondary_providers, &sender);
+    let providers_initial = PROVIDERS.read().map_or_default(|p| p.clone());
+    let providers_current = providers_initial.clone();
+    let (primary_provider_rows, secondary_provider_rows) =
+      build_provider_rows(&providers_initial, &sender);
 
     // Create file dialogs
     let file_dialog_settings = OpenDialogSettings {
@@ -518,6 +489,9 @@ impl SimpleComponent for PrefsModel {
       settings_initial: settings.clone(),
       settings_current: settings,
       settings_default: Settings::default(),
+      providers_initial,
+      providers_current,
+      providers_default: Providers::default(),
       add_library_file_dialog,
       edit_library_file_dialog,
       root: root.clone(),
@@ -640,30 +614,21 @@ impl SimpleComponent for PrefsModel {
       PrefsMsg::DefaultSettings => {
         debug!("Setting default settings");
         self.settings_current = self.settings_default.clone();
+
+        self.providers_current = self.providers_default.clone();
+        self.rebuild_provider_rows();
       }
 
       PrefsMsg::RevertSettings => {
         debug!("Restoring changed settings");
         self.settings_current = self.settings_initial.clone();
+
+        self.providers_current = self.providers_initial.clone();
+        self.rebuild_provider_rows();
       }
 
       PrefsMsg::SaveAndClose => {
-        // Update providers
-        let providers = self
-          .primary_provider_rows
-          .iter()
-          .filter(|pr| pr.state.enabled)
-          .map(|pr| pr.state.id)
-          .collect();
-        self.settings_current.primary_providers.0 = providers;
-        let providers = self
-          .secondary_provider_rows
-          .iter()
-          .filter(|pr| pr.state.enabled)
-          .map(|pr| pr.state.id)
-          .collect();
-        self.settings_current.secondary_providers.0 = providers;
-
+        // Save Settings to database if changed
         if self.settings_current != self.settings_initial {
           if let Ok(mut guard) = SETTINGS.write() {
             *guard = self.settings_current.clone();
@@ -671,6 +636,18 @@ impl SimpleComponent for PrefsModel {
           } else {
             error!("Settings lock was poisoned while closing Preferences");
           }
+        }
+
+        // Save Providers to database if changed
+        if self.providers_current != self.providers_initial {
+          if let Ok(mut guard) = PROVIDERS.write() {
+            *guard = self.providers_current.clone();
+            let _ = guard.save();
+          } else {
+            error!("Providers lock was poisoned while closing Preferences");
+          }
+
+          PROVIDER_MANAGER.refresh_providers();
         }
 
         let rebuild_required = (
@@ -838,12 +815,14 @@ impl SimpleComponent for PrefsModel {
           return;
         };
 
-        let source = match source_state.tier {
-          ProviderTier::Primary => &mut self.primary_provider_rows,
-          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        let source = if source_state.secondary {
+          &mut self.secondary_provider_rows
+        } else {
+          &mut self.primary_provider_rows
         };
 
-        if source_state.tier == ProviderTier::Primary
+        if !source_state.secondary
+          && source_state.enabled
           && target_tier == ProviderTier::Secondary
           && source.iter().filter(|pr| pr.state.enabled).count() == 1
         {
@@ -874,8 +853,11 @@ impl SimpleComponent for PrefsModel {
           target.len()
         };
 
-        let target_state = ProviderRowState {
-          tier: target_tier,
+        let target_state = ProviderSettings {
+          secondary: match target_tier {
+            ProviderTier::Primary => false,
+            ProviderTier::Secondary => true,
+          },
           ..source_state
         };
 
@@ -886,9 +868,10 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::ProviderRowMoveUp(state) => {
-        let factory = match state.tier {
-          ProviderTier::Primary => &mut self.primary_provider_rows,
-          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        let factory = if state.secondary {
+          &mut self.secondary_provider_rows
+        } else {
+          &mut self.primary_provider_rows
         };
 
         let Some(start_idx) = factory.iter().position(|pr| pr.state.id == state.id) else {
@@ -906,9 +889,10 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::ProviderRowMoveDown(state) => {
-        let factory = match state.tier {
-          ProviderTier::Primary => &mut self.primary_provider_rows,
-          ProviderTier::Secondary => &mut self.secondary_provider_rows,
+        let factory = if state.secondary {
+          &mut self.secondary_provider_rows
+        } else {
+          &mut self.primary_provider_rows
         };
 
         let Some(start_idx) = factory.iter().position(|pr| pr.state.id == state.id) else {
@@ -926,16 +910,14 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::ProviderRowSwapTier(state) => {
-        let (source, target) = match state.tier {
-          ProviderTier::Primary => {
-            (&mut self.primary_provider_rows, &mut self.secondary_provider_rows)
-          }
-          ProviderTier::Secondary => {
-            (&mut self.secondary_provider_rows, &mut self.primary_provider_rows)
-          }
+        let (source, target) = if state.secondary {
+          (&mut self.secondary_provider_rows, &mut self.primary_provider_rows)
+        } else {
+          (&mut self.primary_provider_rows, &mut self.secondary_provider_rows)
         };
 
-        if state.tier == ProviderTier::Primary
+        if !state.secondary
+          && state.enabled
           && source.iter().filter(|pr| pr.state.enabled).count() == 1
         {
           sender.input(PrefsMsg::ShowToast(
@@ -952,11 +934,8 @@ impl SimpleComponent for PrefsModel {
           return;
         }
 
-        let target_state = ProviderRowState {
-          tier: match state.tier {
-            ProviderTier::Primary => ProviderTier::Secondary,
-            ProviderTier::Secondary => ProviderTier::Primary,
-          },
+        let target_state = ProviderSettings {
+          secondary: !state.secondary,
           ..state
         };
 
@@ -967,33 +946,80 @@ impl SimpleComponent for PrefsModel {
         sender.input(PrefsMsg::ProvidersChanged);
       }
 
-      PrefsMsg::ProviderRowToggle(state) => {
-        let factory = match state.tier {
-          ProviderTier::Primary => &mut self.primary_provider_rows,
-          ProviderTier::Secondary => &mut self.secondary_provider_rows,
-        };
-
-        if let Some(idx) = factory.iter().position(|pr| pr.state.id == state.id) {
-          factory.send(idx, ProviderRowMsg::Enable(!state.enabled));
-
-          // Update settings and menu state
-          sender.input(PrefsMsg::ProvidersChanged);
-        }
-      }
-
+      #[expect(clippy::cast_possible_wrap, clippy::cast_possible_truncation)]
       PrefsMsg::ProvidersChanged => {
+        // Update `providers_current` so we know if they have changed for saving and undoing changes
+        let primary = self
+          .primary_provider_rows
+          .iter()
+          .enumerate()
+          .filter_map(|(idx, pr)| {
+            let prev = self
+              .providers_current
+              .primary
+              .iter()
+              .chain(self.providers_current.secondary.iter())
+              .find(|ps| ps.id == pr.state.id);
+
+            prev.map(|prev| ProviderSettings {
+              id: pr.state.id,
+              secondary: false,
+              enabled: pr.state.enabled,
+              position: idx as i32,
+              added_at: prev.added_at,
+              updated_at: prev.updated_at,
+            })
+          })
+          .collect();
+
+        let secondary = self
+          .secondary_provider_rows
+          .iter()
+          .enumerate()
+          .filter_map(|(idx, pr)| {
+            let prev = self
+              .providers_current
+              .secondary
+              .iter()
+              .chain(self.providers_current.primary.iter())
+              .find(|ps| ps.id == pr.state.id);
+
+            prev.map(|prev| ProviderSettings {
+              id: pr.state.id,
+              secondary: true,
+              enabled: pr.state.enabled,
+              position: idx as i32,
+              added_at: prev.added_at,
+              updated_at: prev.updated_at,
+            })
+          })
+          .collect();
+
+        self.providers_current = Providers { primary, secondary };
+
+        // Update ProviderRows to sync UI state
         let len = self.primary_provider_rows.len();
+        let enabled_len = self
+          .primary_provider_rows
+          .iter()
+          .filter(|pr| pr.state.enabled)
+          .count();
         for idx in 0..len {
           self
             .primary_provider_rows
-            .send(idx, ProviderRowMsg::ListChangedWithLength(len));
+            .send(idx, ProviderRowMsg::ListChangedWithLength(len, enabled_len));
         }
 
         let len = self.secondary_provider_rows.len();
+        let enabled_len = self
+          .secondary_provider_rows
+          .iter()
+          .filter(|pr| pr.state.enabled)
+          .count();
         for idx in 0..len {
           self
             .secondary_provider_rows
-            .send(idx, ProviderRowMsg::ListChangedWithLength(len));
+            .send(idx, ProviderRowMsg::ListChangedWithLength(len, enabled_len));
         }
       }
 
@@ -1013,6 +1039,22 @@ impl SimpleComponent for PrefsModel {
       }
 
       PrefsMsg::NoOp => {}
+    }
+  }
+}
+
+impl PrefsModel {
+  fn rebuild_provider_rows(&mut self) {
+    // Update ProviderRow factories
+    let mut guard = self.primary_provider_rows.guard();
+    guard.clear();
+    for state in &self.providers_current.primary {
+      guard.push_back(*state);
+    }
+    let mut guard = self.secondary_provider_rows.guard();
+    guard.clear();
+    for state in &self.providers_current.secondary {
+      guard.push_back(*state);
     }
   }
 }
@@ -1040,24 +1082,37 @@ fn build_library_rows(
 }
 
 fn build_provider_rows(
-  state: impl IntoIterator<Item = ProviderRowState>,
+  providers: &Providers,
   sender: &ComponentSender<PrefsModel>,
-) -> FactoryVecDeque<ProviderRow> {
-  let mut provider_rows = FactoryVecDeque::builder()
+) -> (FactoryVecDeque<ProviderRow>, FactoryVecDeque<ProviderRow>) {
+  let mut primary_provider_rows = FactoryVecDeque::builder()
     .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
     .forward(sender.input_sender(), |msg| match msg {
       provider_row::ProviderRowOutput::MoveUp(state) => PrefsMsg::ProviderRowMoveUp(state),
       provider_row::ProviderRowOutput::MoveDown(state) => PrefsMsg::ProviderRowMoveDown(state),
       provider_row::ProviderRowOutput::SwapTier(state) => PrefsMsg::ProviderRowSwapTier(state),
-      provider_row::ProviderRowOutput::Toggle(state) => PrefsMsg::ProviderRowToggle(state),
+      provider_row::ProviderRowOutput::UpdateAllProviderRows => PrefsMsg::ProvidersChanged,
+    });
+
+  let mut secondary_provider_rows = FactoryVecDeque::builder()
+    .launch(gtk::ListBox::builder().css_classes(["boxed-list"]).build())
+    .forward(sender.input_sender(), |msg| match msg {
+      provider_row::ProviderRowOutput::MoveUp(state) => PrefsMsg::ProviderRowMoveUp(state),
+      provider_row::ProviderRowOutput::MoveDown(state) => PrefsMsg::ProviderRowMoveDown(state),
+      provider_row::ProviderRowOutput::SwapTier(state) => PrefsMsg::ProviderRowSwapTier(state),
+      provider_row::ProviderRowOutput::UpdateAllProviderRows => PrefsMsg::ProvidersChanged,
     });
 
   {
-    let mut guard = provider_rows.guard();
-    state.into_iter().for_each(|state| {
-      guard.push_back(state);
-    });
+    let mut guard = primary_provider_rows.guard();
+    for state in &providers.primary {
+      guard.push_back(*state);
+    }
+    let mut guard = secondary_provider_rows.guard();
+    for state in &providers.secondary {
+      guard.push_back(*state);
+    }
   }
 
-  provider_rows
+  (primary_provider_rows, secondary_provider_rows)
 }
