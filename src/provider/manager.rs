@@ -217,9 +217,9 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) fn refresh_providers(&self) {
+  pub(crate) fn reinitialise(&self) {
+    // Replace Providers
     let (primary_providers_order, secondary_providers_order) = get_provider_order();
-
     self
       .primary_providers_order
       .swap(Arc::new(primary_providers_order));
@@ -236,6 +236,13 @@ impl ProviderManager {
     self.provider_maintenance_task.store(Arc::new(jh));
 
     self.providers.store(Arc::new(providers));
+
+    // Replace preferred lyrics
+    let preferred_lyrics = SETTINGS
+      .read()
+      .map(|settings| Arc::new(settings.prefer_lyrics_type))
+      .unwrap_or(self.preferred_lyrics.load().clone());
+    self.preferred_lyrics.store(preferred_lyrics);
   }
 
   pub(crate) fn primary_providers_order(&self) -> Vec<ProviderId> {

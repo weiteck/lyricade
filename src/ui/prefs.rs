@@ -646,8 +646,13 @@ impl SimpleComponent for PrefsModel {
           } else {
             error!("Providers lock was poisoned while closing Preferences");
           }
+        }
 
-          PROVIDER_MANAGER.refresh_providers();
+        // ProviderManager state must be updated
+        if self.providers_current != self.providers_initial
+          || self.settings_initial.prefer_lyrics_type != self.settings_current.prefer_lyrics_type
+        {
+          PROVIDER_MANAGER.reinitialise();
         }
 
         let rebuild_required = (
