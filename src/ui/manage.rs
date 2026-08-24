@@ -15,7 +15,6 @@ pub(crate) enum ManageLyricsMsg {
   UpdateState(ExposedSetting),
   ShowConfirmDialog,
   Confirm,
-  ResetState,
 }
 
 #[derive(Debug)]
@@ -269,9 +268,6 @@ impl Component for ManageLyricsModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let sender_handle = sender.clone();
-    root.connect_show(move |_| sender_handle.input(ManageLyricsMsg::ResetState));
-
     let alert_dialog = adw::AlertDialog::builder()
       .heading("Are you sure?")
       .body("This action cannot be undone.")
@@ -350,12 +346,6 @@ impl Component for ManageLyricsModel {
         sender
           .output(ManageLyricsOutput::Confirm(self.state))
           .expect("ManageLyricsOutput receiver dropped");
-      }
-
-      ManageLyricsMsg::ResetState => {
-        debug!("ManageLyrics: Resetting state");
-
-        self.state = self.default_state;
       }
     }
   }

@@ -51,7 +51,7 @@ struct AppModel {
   prefs_widget: Option<Controller<PrefsModel>>,
   about_widget: Controller<AboutModel>,
   view_lyrics_widget: Option<Controller<ViewLyricsModel>>,
-  manage_lyrics_widget: Controller<ManageLyricsModel>,
+  manage_lyrics_widget: Option<Controller<ManageLyricsModel>>,
 
   sidebar_widget: gtk::Box,
   progress_modal_widget: Controller<ProgressModalModel>,
@@ -772,14 +772,6 @@ impl Component for AppModel {
           TracksTableOutput::TrackIdsVisible(set) => AppMsg::UpdateFiltered(set),
         });
 
-    let manage_lyrics_widget =
-      ManageLyricsModel::builder()
-        .launch(())
-        .forward(sender.input_sender(), |msg| match msg {
-          ManageLyricsOutput::Close => AppMsg::CloseManageLyricsWindow,
-          ManageLyricsOutput::Confirm(opts) => AppMsg::ApplyManageLyricsChanges(opts),
-        });
-
     let progress_modal_widget =
       ProgressModalModel::builder()
         .launch(root.clone())
@@ -823,7 +815,7 @@ impl Component for AppModel {
       about_widget,
       sidebar_widget: gtk::Box::new(gtk::Orientation::Vertical, 0),
       view_lyrics_widget: None,
-      manage_lyrics_widget,
+      manage_lyrics_widget: None,
       confirm_get_lyrics_alert_dialog,
       progress_modal_widget,
       search_entry: gtk::SearchEntry::new(),
@@ -1018,7 +1010,8 @@ impl Component for AppModel {
 
       AppMsg::ApplyManageLyricsChanges(opts) => {
         self.is_applying_manage_lyrics = true;
-        self.manage_lyrics_widget.widget().close();
+
+        sender.input(AppMsg::CloseManageLyricsWindow);
 
         let tracks = self.tracks.clone();
 
@@ -1208,25 +1201,34 @@ impl Component for AppModel {
       AppMsg::ShowManageLyricsWindow => {
         debug!("Showing ManageLyrics window");
 
-        let window = self.manage_lyrics_widget.widget();
+        let controller =
+          ManageLyricsModel::builder()
+            .launch(())
+            .forward(sender.input_sender(), |msg| match msg {
+              ManageLyricsOutput::Close => AppMsg::CloseManageLyricsWindow,
+              ManageLyricsOutput::Confirm(opts) => AppMsg::ApplyManageLyricsChanges(opts),
+            });
+        let window = controller.widget();
         window.set_transient_for(Some(root));
         window.set_hide_on_close(true);
         window.present();
+
+        self.manage_lyrics_widget = Some(controller);
       }
 
       AppMsg::CloseManageLyricsWindow => {
-        debug!("Closing ManageLyrics window");
-
-        self.manage_lyrics_widget.widget().close();
+        if let Some(controller) = self.manage_lyrics_widget.take() {
+          debug!("Closing ManageLyrics window");
+          controller.widget().close();
+        }
       }
 
       AppMsg::ShowLyricsWindow(source) => {
         // Close any existing window
-        self
-          .view_lyrics_widget
-          .as_ref()
-          .inspect(|ctrl| ctrl.widget().close());
-        self.view_lyrics_widget = None;
+        if let Some(controller) = self.view_lyrics_widget.take() {
+          debug!("Closing existing ViewLyrics window");
+          controller.widget().close();
+        }
 
         if let Some(track) = self
           .selected_track_id
@@ -1251,12 +1253,10 @@ impl Component for AppModel {
       }
 
       AppMsg::CloseLyricsWindow => {
-        debug!("Closing ViewLyrics window");
-        self
-          .view_lyrics_widget
-          .as_ref()
-          .inspect(|ctrl| ctrl.widget().close());
-        self.view_lyrics_widget = None;
+        if let Some(controller) = self.view_lyrics_widget.take() {
+          debug!("Closing ViewLyrics window");
+          controller.widget().close();
+        }
       }
 
       // TODO: Use alert dialog to show errors
