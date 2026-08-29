@@ -28,7 +28,7 @@ use crate::ui::manage::{ManageLyricsModel, ManageLyricsOutput};
 use crate::ui::prefs::{PrefsModel, PrefsOutput, RebuildTracksTableRequired};
 use crate::ui::table::{TracksTableFilter, TracksTableModel, TracksTableMsg, TracksTableOutput};
 use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
-use crate::{NUM_LOCALE, SETTINGS, util};
+use crate::{NUM_LOCALE, PROVIDER_MANAGER, SETTINGS, util};
 use crate::{Result, library::Library, track::Track};
 
 pub(crate) mod get_lyrics_menu;
@@ -922,6 +922,9 @@ impl Component for AppModel {
       #[expect(clippy::cast_possible_truncation)]
       AppMsg::FetchLyrics => {
         self.is_fetching_lyrics = true;
+
+        // Zero-out request stats and rate-limits for Providers
+        PROVIDER_MANAGER.reset_provider_state();
 
         let filtered_tracks = self
           .tracks

@@ -193,6 +193,12 @@ pub(crate) trait Provider: Debug + Send + Sync {
       trace!("{}Provider: Connection delay expired (thread slept)", self.id());
     }
   }
+
+  fn reset_state(&self) {
+    let state = self.state();
+    state.rate_limited.store(false, Ordering::Relaxed);
+    state.total_requests.store(0, Ordering::Relaxed);
+  }
 }
 
 #[derive(Debug, Clone)]

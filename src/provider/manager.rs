@@ -110,7 +110,7 @@ impl ProviderManager {
       return None;
     }
 
-    let mut result: Option<LyricsData> = None;
+    let mut lyrics_data: Option<LyricsData> = None;
 
     // Limit concurrent connections
     let _permit = self
@@ -140,25 +140,27 @@ impl ProviderManager {
           continue;
         }
 
-        result = match provider
+        let result = provider
           .fetch(self.http_client.clone(), Arc::clone(&self.completed_requests), track)
-          .await
-        {
+          .await;
+
+        lyrics_data = match result {
           Ok(data) => {
             if data.instrumental == Some(true) {
               debug!("ProviderManager: {track}: Got \"instrumental\" flag from {}", provider.id());
-            }
-            if data.plain_lyrics.is_some() {
-              debug!("ProviderManager: {track}: Got plain lyrics from {}", provider.id());
-            }
-            if data.sync_lyrics.is_some() {
-              debug!("ProviderManager: {track}: Got sync lyrics from {}", provider.id());
+            } else {
+              if data.plain_lyrics.is_some() {
+                debug!("ProviderManager: {track}: Got plain lyrics from {}", provider.id());
+              }
+              if data.sync_lyrics.is_some() {
+                debug!("ProviderManager: {track}: Got sync lyrics from {}", provider.id());
+              }
             }
 
             primary_not_checked.remove(&id);
             secondary_not_checked.remove(&id);
 
-            if let Some(ex_data) = result {
+            let data = if let Some(ex_data) = lyrics_data {
               Some(LyricsData {
                 instrumental: ex_data.instrumental.or(data.instrumental),
                 plain_lyrics: ex_data.plain_lyrics.or(data.plain_lyrics),
@@ -166,10 +168,22 @@ impl ProviderManager {
               })
             } else {
               Some(data)
+            };
+
+            // Return the result if we have the lyrics type requested, or the track is instrumental
+            if data.as_ref().is_some_and(|data| {
+              data.sync_lyrics.is_some()
+                || preferred_lyrics_type.as_ref() == &LyricsType::Plain
+                  && data.plain_lyrics.is_some()
+                || data.instrumental == Some(true)
+            }) {
+              return data;
             }
+
+            data
           }
 
-          Err(e) => match e {
+          Err(ref e) => match e {
             ProviderError::NotFound | ProviderError::Permanent => {
               debug!("ProviderManager: {track}: No lyrics found from {}", provider.id());
 
@@ -184,24 +198,9 @@ impl ProviderManager {
           },
         };
 
-        // Return the result if we have the lyrics type requested, or the track is instrumental
-        if result.as_ref().is_some_and(|data| {
-          data.sync_lyrics.is_some()
-            || preferred_lyrics_type.as_ref() == &LyricsType::Plain && data.plain_lyrics.is_some()
-            || data.instrumental == Some(true)
-        }) {
-          return result;
-        }
-
         // Checked all primary Providers - return any lyrics we have, even if not preferred type
         if primary_not_checked.is_empty() {
-          if result.as_ref().is_some_and(|data| {
-            data.plain_lyrics.is_some() || data.sync_lyrics.is_some() || data.instrumental.is_some()
-          }) {
-            return result;
-          }
-
-          return None;
+          return lyrics_data;
         }
       }
 
@@ -255,6 +254,10 @@ impl ProviderManager {
 
   pub(crate) fn provider_state(&self) -> Vec<Arc<ProviderState>> {
     self.providers.load().iter().map(|p| p.state()).collect()
+  }
+
+  pub(crate) fn reset_provider_state(&self) {
+    self.providers.load().iter().for_each(|p| p.reset_state());
   }
 }
 
