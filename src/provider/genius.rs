@@ -72,12 +72,13 @@ impl Provider for GeniusProvider {
   async fn api_fetch(
     &self,
     http_client: reqwest::Client,
+    user_agent: &str,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {
     trace!("GeniusProvider: {track}: Step 1/2: Finding matching song URL");
     let url = self
-      .find_song_url(&http_client, &req_counter, track)
+      .find_song_url(&http_client, user_agent, &req_counter, track)
       .await?;
 
     // Sleep for the default request delay between multiple requests
@@ -85,7 +86,7 @@ impl Provider for GeniusProvider {
 
     trace!("GeniusProvider: {track}: Step 2/2: Getting lyrics for track with URL \"{url}\"");
     self
-      .get_lyrics_for_song_url(&http_client, &req_counter, track, &url)
+      .get_lyrics_for_song_url(&http_client, user_agent, &req_counter, track, &url)
       .await
   }
 
@@ -122,6 +123,7 @@ impl GeniusProvider {
   async fn find_song_url(
     &self,
     http_client: &reqwest::Client,
+    user_agent: &str,
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
   ) -> Result<String, ProviderError> {
@@ -139,10 +141,15 @@ impl GeniusProvider {
 
     trace!("GeniusProvider: {track}: GET request to \"{}\"", &search_url);
 
-    let response = http_client.get(search_url).send().await.map_err(|e| {
-      error!("GeniusProvider: {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(search_url)
+      .header(reqwest::header::USER_AGENT, user_agent)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("GeniusProvider: {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -185,16 +192,22 @@ impl GeniusProvider {
   async fn get_lyrics_for_song_url(
     &self,
     http_client: &reqwest::Client,
+    user_agent: &str,
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
     url: &str,
   ) -> ProviderResult {
     trace!("GeniusProvider: {track}: GET request to \"{}\"", &url);
 
-    let response = http_client.get(url).send().await.map_err(|e| {
-      error!("GeniusProvider: {track}: Error encountered while getting lyrics for {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(url)
+      .header(reqwest::header::USER_AGENT, user_agent)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("GeniusProvider: {track}: Error encountered while getting lyrics for {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

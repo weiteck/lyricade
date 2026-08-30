@@ -58,6 +58,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
   async fn api_fetch(
     &self,
     http_client: reqwest::Client,
+    user_agent: &str,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult;
@@ -67,6 +68,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
   async fn fetch(
     &self,
     http_client: reqwest::Client,
+    user_agent: &str,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {
@@ -74,7 +76,9 @@ pub(crate) trait Provider: Debug + Send + Sync {
 
     trace!("{}Provider: {track}: Requesting lyrics", self.id());
 
-    let result = self.api_fetch(http_client, req_counter, track).await;
+    let result = self
+      .api_fetch(http_client, user_agent, req_counter, track)
+      .await;
 
     self.fetch_end(permit);
 

@@ -73,6 +73,7 @@ impl Provider for LrcLibProvider {
   async fn api_fetch(
     &self,
     http_client: reqwest::Client,
+    _user_agent: &str,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {

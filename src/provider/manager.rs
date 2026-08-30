@@ -7,10 +7,17 @@ use std::{
   time::Duration,
 };
 
+use anyhow::Context;
 use arc_swap::ArcSwap;
-use chrono::Utc;
+use chrono::{TimeDelta, Utc};
+use rand::RngExt;
 use reqwest::Client as HttpClient;
-use tokio::{sync::Semaphore, task::JoinHandle, time::interval};
+use serde::{Deserialize, Serialize};
+use tokio::{
+  sync::{OnceCell, Semaphore},
+  task::JoinHandle,
+  time::interval,
+};
 use tokio_util::sync::CancellationToken;
 
 use tracing::{debug, error, info, trace, warn};
@@ -19,7 +26,7 @@ use crate::{
   PROVIDERS, SETTINGS, USER_AGENT,
   lyrics::LyricsType,
   provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderState, Providers},
-  settings::CONNECTION_LIMIT,
+  settings::{APP_DATA_DIR, CONNECTION_LIMIT},
   track::Track,
 };
 
@@ -33,6 +40,7 @@ pub(crate) struct ProviderManager {
   semaphore: Arc<Semaphore>,
   completed_requests: Arc<AtomicUsize>,
   preferred_lyrics: ArcSwap<LyricsType>,
+  user_agents: OnceCell<Vec<String>>,
 }
 
 impl ProviderManager {
@@ -73,6 +81,8 @@ impl ProviderManager {
       .unwrap_or_default();
     let preferred_lyrics = ArcSwap::new(Arc::new(preferred_lyrics));
 
+    let user_agents = OnceCell::new();
+
     Self {
       providers,
       primary_providers_order,
@@ -82,6 +92,7 @@ impl ProviderManager {
       semaphore,
       completed_requests,
       preferred_lyrics,
+      user_agents,
     }
   }
 
@@ -92,6 +103,8 @@ impl ProviderManager {
   ) -> Option<LyricsData> {
     let providers = self.providers.load();
     let preferred_lyrics_type = self.preferred_lyrics.load();
+
+    let user_agent = self.random_user_agent().await;
 
     let mut primary_not_checked = self
       .primary_providers_order()
@@ -141,7 +154,7 @@ impl ProviderManager {
         }
 
         let result = provider
-          .fetch(self.http_client.clone(), Arc::clone(&self.completed_requests), track)
+          .fetch(self.http_client.clone(), user_agent, Arc::clone(&self.completed_requests), track)
           .await;
 
         lyrics_data = match result {
@@ -259,6 +272,17 @@ impl ProviderManager {
   pub(crate) fn reset_provider_state(&self) {
     self.providers.load().iter().for_each(|p| p.reset_state());
   }
+
+  async fn random_user_agent(&self) -> &String {
+    let user_agents = self
+      .user_agents
+      .get_or_init(|| async { get_user_agents(&self.http_client).await })
+      .await;
+
+    user_agents
+      .get(rand::rng().random_range(..user_agents.len()))
+      .expect("checked range")
+  }
 }
 
 fn get_provider_order() -> (Vec<ProviderId>, Vec<ProviderId>) {
@@ -359,4 +383,79 @@ fn spawn_provider_maintenance_task(
       interval.tick().await;
     }
   })
+}
+
+const API_URL: &str = "https://microlink.io/user-agents.json";
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MicrolinkUserAgentList {
+  updated_at: i64,
+  user: Vec<String>,
+}
+
+async fn get_user_agents(http_client: &reqwest::Client) -> Vec<String> {
+  let mut disk_ua_path = APP_DATA_DIR.clone();
+  disk_ua_path.push("user_agents.json");
+
+  if let Ok(disk_ua) = std::fs::read_to_string(&disk_ua_path) {
+    if let Ok(disk_user_agents) = serde_json::from_str::<MicrolinkUserAgentList>(&disk_ua) {
+      let since_update =
+        TimeDelta::milliseconds(Utc::now().timestamp_millis() - disk_user_agents.updated_at);
+
+      // Update user agent list of > 1 week old
+      if since_update.num_weeks() > 0 {
+        debug!("User agent list on disk is stale ({} days old)", since_update.num_days());
+
+        if let Ok(remote_user_agents) = fetch_and_save_remote_user_agents(http_client)
+          .await
+          .inspect_err(|e| error!("Failed to retrieve or write remote user agent list: {e}"))
+        {
+          return remote_user_agents.user;
+        }
+
+        warn!("Using stale user agent list from disk");
+      } else {
+        debug!("User agent data on disk is current ({} days old)", since_update.num_days());
+      }
+
+      return disk_user_agents.user;
+    }
+  } else if let Ok(remote_user_agents) = fetch_and_save_remote_user_agents(http_client)
+    .await
+    .inspect_err(|e| error!("Failed to retrieve or write remote user agent list: {e}"))
+  {
+    warn!("No user agent list found on disk - retrieved remote list");
+    return remote_user_agents.user;
+  }
+
+  warn!("Could not read or update user agent list on disk - using built-in list (may be stale)");
+
+  let build_ua = include_str!("../../data/user_agents.json");
+  let build_user_agents = serde_json::from_str::<MicrolinkUserAgentList>(build_ua).expect("msg");
+
+  build_user_agents.user
+}
+
+async fn fetch_and_save_remote_user_agents(
+  http_client: &reqwest::Client,
+) -> Result<MicrolinkUserAgentList, anyhow::Error> {
+  let mut disk_ua_path = APP_DATA_DIR.clone();
+  disk_ua_path.push("user_agents.json");
+
+  trace!("GET request to \"{}\"", API_URL);
+
+  let response = http_client.get(API_URL).send().await?;
+  let current_user_agents = response.json::<MicrolinkUserAgentList>().await?;
+  let since_update =
+    TimeDelta::milliseconds(Utc::now().timestamp_millis() - current_user_agents.updated_at);
+
+  debug!("Saving updated user agent list ({} days old)...", since_update.num_days());
+
+  let s = serde_json::to_string_pretty(&current_user_agents)?;
+  std::fs::write(&disk_ua_path, s).context("Saving updated user agent list to {disk_ua_path}")?;
+
+  debug!("Updated user agent list saved to: {}", &disk_ua_path);
+
+  Ok(current_user_agents)
 }
