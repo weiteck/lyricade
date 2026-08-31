@@ -10,7 +10,7 @@ use std::{
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use chrono::{TimeDelta, Utc};
-use rand::RngExt;
+use rand::{RngExt, seq::IndexedRandom};
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -280,8 +280,8 @@ impl ProviderManager {
       .await;
 
     user_agents
-      .get(rand::rng().random_range(..user_agents.len()))
-      .expect("checked range")
+      .choose(&mut rand::rng())
+      .expect("user agent list should not be empty")
   }
 }
 
