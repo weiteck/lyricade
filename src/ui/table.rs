@@ -1,18 +1,24 @@
+use std::cell::RefCell;
 use std::collections::HashSet;
+use std::rc::Rc;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use bstr::ByteSlice;
 use relm4::gtk::prelude::*;
 use relm4::gtk::{Bitset, BitsetIter, EventControllerKey, SortType};
-use relm4::prelude::*;
 use relm4::typed_view::column::{RelmColumn, TypedColumnView};
+use relm4::{Sender, prelude::*};
 use tracing::{debug, error, trace};
 
 use crate::SETTINGS;
 use crate::lyrics::LyricsType;
 use crate::settings::Settings;
 use crate::track::Track;
+use crate::ui::viewer::ViewLyricsSource;
 use crate::util::{self};
+
+static SENDER: OnceLock<Sender<TracksTableOutput>> = OnceLock::new();
 
 pub(crate) struct TracksTableModel {
   table: TypedColumnView<Track, gtk::MultiSelection>,
@@ -48,6 +54,7 @@ pub(crate) enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
   TrackIdsVisible(HashSet<i32>),
   RowActivated,
+  LyricsClicked(i32, ViewLyricsSource),
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
@@ -102,6 +109,8 @@ impl SimpleComponent for TracksTableModel {
     root: Self::Root,
     sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
+    let _ = SENDER.set(sender.output_sender().clone());
+
     let (prefer_accurate_timestamps, prefer_lyrics_type, col_separators, row_separators) = SETTINGS
       .read()
       .inspect_err(|_| error!("Settings lock is poisoned while initialising TracksTable"))
@@ -635,7 +644,7 @@ impl RelmColumn for TracksTableColumnTrack {
 struct TracksTableColumnLyricsTag;
 impl RelmColumn for TracksTableColumnLyricsTag {
   type Root = gtk::Box;
-  type Widgets = (gtk::Image, gtk::Label);
+  type Widgets = (gtk::Image, gtk::Label, Rc<RefCell<Option<i32>>>);
   type Item = Track;
 
   const COLUMN_NAME: &'static str = "Tag";
@@ -654,32 +663,53 @@ impl RelmColumn for TracksTableColumnLyricsTag {
 
     bx.set_css_classes(&["table-cell", "lyrics"]);
 
-    (bx, (icon, label))
+    let id = Rc::new(RefCell::new(None));
+    let id_clone = Rc::clone(&id);
+    let sender = SENDER.get().expect("sender should be init").clone();
+    let gesture = gtk::GestureClick::default();
+    gesture.connect_released(move |_, btn, _, _| {
+      if btn == 1
+        && let Some(id) = id_clone.borrow().as_ref()
+      {
+        sender.emit(TracksTableOutput::LyricsClicked(*id, ViewLyricsSource::Tag));
+      }
+    });
+    bx.add_controller(gesture);
+
+    (bx, (icon, label, id))
   }
 
-  fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
-    if item.lyrics.is_some() && item.lyrics_synchronised {
-      label.set_label("Sync");
-      root.set_tooltip("Sync Lyrics Tag");
-      icon.set_icon_name(Some("audio-x-generic-symbolic"));
-      if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
-        root.add_css_class("preferred");
-      }
-    } else if item.lyrics.is_some() && !item.lyrics_synchronised {
-      label.set_label("Plain");
-      root.set_tooltip("Plain Lyrics Tag");
-      icon.set_icon_name(Some("audio-x-generic-symbolic"));
-      if !PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
-        root.add_css_class("preferred");
+  fn bind(item: &mut Self::Item, (icon, label, id): &mut Self::Widgets, root: &mut Self::Root) {
+    if item.lyrics.is_some() {
+      root.set_cursor_from_name(Some("pointer"));
+      id.replace(Some(item.id));
+
+      if item.lyrics_synchronised {
+        label.set_label("Sync");
+        root.set_tooltip("Sync Lyrics Tag");
+        icon.set_icon_name(Some("audio-x-generic-symbolic"));
+        if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+          root.add_css_class("preferred");
+        }
+      } else {
+        label.set_label("Plain");
+        root.set_tooltip("Plain Lyrics Tag");
+        icon.set_icon_name(Some("audio-x-generic-symbolic"));
+        if !PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
+          root.add_css_class("preferred");
+        }
       }
     }
   }
 
-  fn unbind(_item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+  fn unbind(_item: &mut Self::Item, (icon, label, id): &mut Self::Widgets, root: &mut Self::Root) {
     icon.set_icon_name(None);
     label.set_label("");
     root.set_tooltip("");
     root.remove_css_class("preferred");
+
+    root.set_cursor_from_name(None);
+    id.replace(None);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {
@@ -695,7 +725,8 @@ impl RelmColumn for TracksTableColumnLyricsTag {
 struct TracksTableColumnSidecar;
 impl RelmColumn for TracksTableColumnSidecar {
   type Root = gtk::Box;
-  type Widgets = (gtk::Image, gtk::Label);
+  type Widgets =
+    (gtk::Image, gtk::Label, Rc<RefCell<Option<i32>>>, Rc<RefCell<Option<ViewLyricsSource>>>);
   type Item = Track;
 
   const COLUMN_NAME: &'static str = COLUMN_TITLE_SIDECAR;
@@ -714,21 +745,48 @@ impl RelmColumn for TracksTableColumnSidecar {
 
     bx.set_css_classes(&["table-cell", "lyrics"]);
 
-    (bx, (icon, label))
+    let id = Rc::new(RefCell::new(None));
+    let src = Rc::new(RefCell::new(None));
+    let id_clone = Rc::clone(&id);
+    let src_clone = Rc::clone(&src);
+    let sender = SENDER.get().expect("sender should be init").clone();
+    let gesture = gtk::GestureClick::default();
+    gesture.connect_released(move |_, btn, _, _| {
+      if btn == 1
+        && let Some(id) = id_clone.borrow().as_ref()
+        && let Some(src) = src_clone.borrow().as_ref()
+      {
+        sender.emit(TracksTableOutput::LyricsClicked(*id, *src));
+      }
+    });
+    bx.add_controller(gesture);
+
+    (bx, (icon, label, id, src))
   }
 
-  fn bind(item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+  fn bind(
+    item: &mut Self::Item,
+    (icon, label, id, src): &mut Self::Widgets,
+    root: &mut Self::Root,
+  ) {
+    if item.lyrics_sidecar_lrc_file.is_some() || item.lyrics_sidecar_txt_file.is_some() {
+      root.set_cursor_from_name(Some("pointer"));
+      id.replace(Some(item.id));
+    }
+
     if item.lyrics_sidecar_lrc_file.is_some() && item.lyrics_sidecar_txt_file.is_some() {
       if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
         label.set_label("Sync+");
         root.set_tooltip("Multiple Sidecar Files");
         root.add_css_class("preferred");
         icon.set_icon_name(Some("text-x-generic-symbolic"));
+        src.replace(Some(ViewLyricsSource::Lrc));
       } else {
         label.set_label("Plain+");
         root.set_tooltip("Multiple Sidecar Files");
         root.add_css_class("preferred");
         icon.set_icon_name(Some("text-x-generic-symbolic"));
+        src.replace(Some(ViewLyricsSource::Txt));
       }
     } else if item.lyrics_sidecar_lrc_file.is_some() {
       label.set_label("Sync");
@@ -737,6 +795,7 @@ impl RelmColumn for TracksTableColumnSidecar {
       if PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
         root.add_css_class("preferred");
       }
+      src.replace(Some(ViewLyricsSource::Lrc));
     } else if item.lyrics_sidecar_txt_file.is_some() {
       label.set_label("Plain");
       root.set_tooltip("Plain Sidecar File");
@@ -744,14 +803,23 @@ impl RelmColumn for TracksTableColumnSidecar {
       if !PREFER_SYNC_LYRICS.load(Ordering::Relaxed) {
         root.add_css_class("preferred");
       }
+      src.replace(Some(ViewLyricsSource::Txt));
     }
   }
 
-  fn unbind(_item: &mut Self::Item, (icon, label): &mut Self::Widgets, root: &mut Self::Root) {
+  fn unbind(
+    _item: &mut Self::Item,
+    (icon, label, id, src): &mut Self::Widgets,
+    root: &mut Self::Root,
+  ) {
     icon.set_icon_name(None);
     label.set_label("");
     root.set_tooltip("");
     root.remove_css_class("preferred");
+
+    root.set_cursor_from_name(None);
+    id.replace(None);
+    src.replace(None);
   }
 
   fn sort_fn() -> relm4::typed_view::OrdFn<Self::Item> {

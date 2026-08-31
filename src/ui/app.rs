@@ -120,6 +120,7 @@ enum AppMsg {
 
   ShowAboutWindow,
   ShowLyricsWindow(ViewLyricsSource),
+  HandleLyricsCellClick(i32, ViewLyricsSource),
   CloseLyricsWindow,
   ShowPrefsWindow,
   ClosePrefsWindow(RebuildTracksTableRequired),
@@ -770,6 +771,7 @@ impl Component for AppModel {
           TracksTableOutput::RowActivated => AppMsg::ShowTrackDetailsSidebar(true),
           TracksTableOutput::TrackIdsSelected(set) => AppMsg::UpdateSelection(set),
           TracksTableOutput::TrackIdsVisible(set) => AppMsg::UpdateFiltered(set),
+          TracksTableOutput::LyricsClicked(id, src) => AppMsg::HandleLyricsCellClick(id, src),
         });
 
     let progress_modal_widget =
@@ -1224,6 +1226,12 @@ impl Component for AppModel {
           debug!("Closing ManageLyrics window");
           controller.widget().close();
         }
+      }
+
+      AppMsg::HandleLyricsCellClick(id, src) => {
+        self.change_selection_state(SelectionState::Single);
+        self.selected_track_id = Some(id);
+        sender.input(AppMsg::ShowLyricsWindow(src));
       }
 
       AppMsg::ShowLyricsWindow(source) => {
