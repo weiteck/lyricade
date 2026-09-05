@@ -31,7 +31,6 @@ diesel = { version = "2.3", features = [
 diesel_migrations = { version = "2.3", features = ["sqlite"] }
 directories = "6.0"
 futures = "0.3"
-leaky-bucket = { version = "1.1", features = ["tracing"] }
 libsqlite3-sys = { version = "0.38", features = ["bundled"] }
 lofty = "0.25"
 mimalloc = "0.1"
@@ -41,7 +40,6 @@ regex = "1.13"
 relm4 = { version = "0.11", features = ["gnome_49", "libadwaita"] }
 relm4-components = { version = "0.11", features = ["libadwaita"] }
 reqwest = { version = "0.13", features = ["json", "rustls"] }
-rfd = "0.17"
 rodio = { version = "0.22", features = ["symphonia-all"] }
 ron = "0.12"
 scraper = "0.27.0"
@@ -59,9 +57,21 @@ glib-build-tools = "0.22"
 
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
 cast_precision_loss = "allow"
 cast_sign_loss = "allow"
 missing_errors_doc = "allow"
 missing_panics_doc = "allow"
 too_many_lines = "allow"
 uninlined_format_args = "allow"
+
+unimplemented = "warn"
+todo = "warn"
+
+unwrap_used = "deny"
+indexing_slicing = "deny"
+unchecked_time_subtraction = "deny"
+string_slice = "deny"
+panic_in_result_fn = "deny"
+exit = "deny"
+unnecessary_cast = "deny"
