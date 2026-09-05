@@ -20,7 +20,7 @@ use crate::util::{self};
 
 static SENDER: OnceLock<Sender<TracksTableOutput>> = OnceLock::new();
 
-pub(crate) struct TracksTableModel {
+pub struct TracksTableModel {
   table: TypedColumnView<Track, gtk::MultiSelection>,
   preset_filters_len: usize,
   total_rows: u32,
@@ -35,7 +35,7 @@ static COLUMN_TITLE_MODIFIED: &str = "Modified";
 static PREFER_SYNC_LYRICS: AtomicBool = AtomicBool::new(true);
 
 #[derive(Debug)]
-pub(crate) enum TracksTableMsg {
+pub enum TracksTableMsg {
   Reset,
   Append(Vec<Track>),
   RefreshState,
@@ -50,7 +50,7 @@ pub(crate) enum TracksTableMsg {
 }
 
 #[derive(Debug)]
-pub(crate) enum TracksTableOutput {
+pub enum TracksTableOutput {
   TrackIdsSelected(HashSet<i32>),
   TrackIdsVisible(HashSet<i32>),
   RowActivated,
@@ -58,7 +58,7 @@ pub(crate) enum TracksTableOutput {
 }
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
-pub(crate) enum TracksTableFilter {
+pub enum TracksTableFilter {
   NeverChecked = 0,
   NoLyrics = 1,
   NoLyricsTag = 2,
@@ -138,7 +138,7 @@ impl SimpleComponent for TracksTableModel {
 
     let table = create_table(&sender, prefer_accurate_timestamps, col_separators, row_separators);
 
-    let model = TracksTableModel {
+    let model = Self {
       preset_filters_len: table.filters_len(),
       total_rows: 0,
       is_row_visible: false,
@@ -876,13 +876,14 @@ impl RelmColumn for TracksTableColumnCheckedSimpleFormat {
   }
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    let (label, tooltip) = if let Some(ndt) = item.last_api_check_at {
-      let iso = util::ndt_utc_to_ui_string(ndt);
-      let label = util::ndt_utc_to_humanised_string(ndt);
-      (label, iso)
-    } else {
-      ("Never".into(), "Never Checked for Lyrics".into())
-    };
+    let (label, tooltip) = item.last_api_check_at.map_or_else(
+      || (String::from("Never"), String::from("Never Checked for Lyrics")),
+      |ndt| {
+        let iso = util::ndt_utc_to_ui_string(ndt);
+        let label = util::ndt_utc_to_humanised_string(ndt);
+        (label, iso)
+      },
+    );
 
     root.set_label(&label);
     root.set_tooltip(&tooltip);
@@ -941,12 +942,13 @@ impl RelmColumn for TracksTableColumnCheckedAccurateFormat {
   }
 
   fn bind(item: &mut Self::Item, _widgets: &mut Self::Widgets, root: &mut Self::Root) {
-    let (label, tooltip) = if let Some(ndt) = item.last_api_check_at {
-      let iso = util::ndt_utc_to_ui_string(ndt);
-      (iso, None)
-    } else {
-      ("Never".to_string(), Some("Never Checked for Lyrics".to_string()))
-    };
+    let (label, tooltip) = item.last_api_check_at.map_or_else(
+      || (String::from("Never"), Some(String::from("Never Checked for Lyrics"))),
+      |ndt| {
+        let iso = util::ndt_utc_to_ui_string(ndt);
+        (iso, None)
+      },
+    );
 
     root.set_label(&label);
 

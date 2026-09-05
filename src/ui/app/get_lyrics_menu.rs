@@ -102,7 +102,7 @@ impl SimpleComponent for GetLyricsButtonModel {
       let guard = SETTINGS.read();
       lyrics_type_from_settings = guard
         .as_ref()
-        .map_or(Type::default(), |settings| settings.get_lyrics_menu_lyrics_type);
+        .map_or_else(|_| Type::default(), |settings| settings.get_lyrics_menu_lyrics_type);
       lyrics_type_from_settings_str =
         ron::to_string(&lyrics_type_from_settings).unwrap_or_else(|_| {
           ron::to_string(&Type::default()).unwrap_or_else(|_| "NotPreferred".to_string())
@@ -110,7 +110,7 @@ impl SimpleComponent for GetLyricsButtonModel {
 
       last_checked_from_settings = guard
         .as_ref()
-        .map_or(Checked::default(), |settings| settings.get_lyrics_menu_last_checked);
+        .map_or_else(|_| Checked::default(), |settings| settings.get_lyrics_menu_last_checked);
       last_checked_from_settings_str =
         ron::to_string(&last_checked_from_settings).unwrap_or_else(|_| {
           ron::to_string(&Checked::default()).unwrap_or_else(|_| "Any".to_string())
@@ -199,12 +199,11 @@ impl SimpleComponent for GetLyricsButtonModel {
     menu_action_group.add_action(action_set_target_visible.clone());
 
     // Selected option
-    let sender_handle = sender.clone();
     let action_set_target_selected: RelmAction<ActionGetLyricsMenuTargetSelected> =
       RelmAction::new_stateful(&selected_from_settings, move |_action, state: &mut bool| {
         *state = !*state;
 
-        sender_handle.input(GetLyricsButtonModelMsg::SetTargetSelected(*state));
+        sender.input(GetLyricsButtonModelMsg::SetTargetSelected(*state));
       });
     menu_action_group.add_action(action_set_target_selected.clone());
 
@@ -219,7 +218,7 @@ impl SimpleComponent for GetLyricsButtonModel {
 
     menu_action_group.register_for_widget(&root);
 
-    let model = GetLyricsButtonModel {
+    let model = Self {
       state: GetLyricsMenuState {
         lyrics_type: lyrics_type_from_settings,
         last_checked: last_checked_from_settings,
@@ -307,7 +306,7 @@ impl SimpleComponent for GetLyricsButtonModel {
 }
 
 impl GetLyricsButtonModel {
-  pub(super) fn state(&self) -> GetLyricsMenuState {
+  pub(super) const fn state(&self) -> GetLyricsMenuState {
     self.state
   }
 }
@@ -369,7 +368,7 @@ impl GetLyricsMenuState {
   Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub(crate) enum Type {
+pub enum Type {
   NoLyrics,
   #[default]
   NotSync,
@@ -379,7 +378,7 @@ pub(crate) enum Type {
   Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub(crate) enum Checked {
+pub enum Checked {
   Never,
   Months(u32),
   Year,

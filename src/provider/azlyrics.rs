@@ -28,7 +28,7 @@ static X_PARAM_REGEX: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 #[derive(Debug)]
-pub(crate) struct AzLyricsProvider {
+pub struct AzLyricsProvider {
   semaphore: Semaphore,
   state: Arc<ProviderState>,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
@@ -37,7 +37,7 @@ pub(crate) struct AzLyricsProvider {
 }
 
 impl AzLyricsProvider {
-  pub(crate) fn new() -> Self {
+  pub fn new() -> Self {
     let semaphore = tokio::sync::Semaphore::new(1);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
     let req_delayed_until = ArcSwap::new(Arc::new(None));

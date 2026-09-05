@@ -18,7 +18,7 @@ const API_BASE_URL: &str = "https://api-lyrics.simpmusic.org/v1";
 const API_SEARCH_URL: &str = "https://api-lyrics.simpmusic.org/v1/search";
 
 #[derive(Debug)]
-pub(crate) struct SimpMusicProvider {
+pub struct SimpMusicProvider {
   semaphore: Semaphore,
   state: Arc<ProviderState>,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
@@ -78,7 +78,7 @@ struct ApiError {
 }
 
 impl SimpMusicProvider {
-  pub(crate) fn new() -> Self {
+  pub fn new() -> Self {
     let semaphore = tokio::sync::Semaphore::new(2);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
     let req_delayed_until = ArcSwap::new(Arc::new(None));

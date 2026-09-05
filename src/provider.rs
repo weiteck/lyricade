@@ -32,14 +32,14 @@ use crate::{
   util::now,
 };
 
-pub(crate) mod manager;
+pub mod manager;
 
 mod genius;
 mod lrclib;
 mod simpmusic;
 
 #[async_trait]
-pub(crate) trait Provider: Debug + Send + Sync {
+pub trait Provider: Debug + Send + Sync {
   #[must_use]
   fn id(&self) -> ProviderId;
 
@@ -54,7 +54,6 @@ pub(crate) trait Provider: Debug + Send + Sync {
   fn req_delayed_until(&self) -> &ArcSwap<Option<DateTime<Utc>>>;
 
   /// The internal fetch implementation.
-  #[must_use]
   async fn api_fetch(
     &self,
     http_client: reqwest::Client,
@@ -64,7 +63,6 @@ pub(crate) trait Provider: Debug + Send + Sync {
   ) -> ProviderResult;
 
   /// Get lyrics from the API. Wraps the actual implementation.
-  #[must_use]
   async fn fetch(
     &self,
     http_client: reqwest::Client,
@@ -131,8 +129,8 @@ pub(crate) trait Provider: Debug + Send + Sync {
   fn check_rate_limited(&self) -> Result<(), ProviderError> {
     let rate_limited_until = self.rate_limited_until();
 
-    let res = if let Some(dt) = rate_limited_until.load().as_ref() {
-      if dt > &Utc::now() {
+    let res = rate_limited_until.load().as_ref().map_or(Ok(()), |dt| {
+      if dt > Utc::now() {
         Err(ProviderError::RateLimited)
       } else {
         debug!("{}Provider: Rate-limit expired", self.id());
@@ -140,9 +138,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
 
         Ok(())
       }
-    } else {
-      Ok(())
-    };
+    });
 
     let state = self.state_ref();
     let rate_limited = state.rate_limited.load(Ordering::Relaxed);
@@ -158,8 +154,8 @@ pub(crate) trait Provider: Debug + Send + Sync {
   fn check_delayed(&self) -> Result<(), ProviderError> {
     let no_requests_until = self.req_delayed_until();
 
-    if let Some(dt) = no_requests_until.load().as_ref() {
-      if dt > &Utc::now() {
+    no_requests_until.load().as_ref().map_or(Ok(()), |dt| {
+      if dt > Utc::now() {
         Err(ProviderError::Delayed)
       } else {
         trace!("{}Provider: Connection delay expired", self.id());
@@ -167,9 +163,7 @@ pub(crate) trait Provider: Debug + Send + Sync {
 
         Ok(())
       }
-    } else {
-      Ok(())
-    }
+    })
   }
 
   fn set_rate_limited(&self, secs: f64) {
@@ -206,14 +200,14 @@ pub(crate) trait Provider: Debug + Send + Sync {
 }
 
 #[derive(Debug, Clone)]
-pub(crate) struct LyricsData {
-  pub(crate) instrumental: Option<bool>,
-  pub(crate) plain_lyrics: Option<Lyrics>,
-  pub(crate) sync_lyrics: Option<Lyrics>,
+pub struct LyricsData {
+  pub instrumental: Option<bool>,
+  pub plain_lyrics: Option<Lyrics>,
+  pub sync_lyrics: Option<Lyrics>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) enum ProviderError {
+pub enum ProviderError {
   /// Connection semaphore permits exhausted.
   NoConnections,
   /// Provider is not allowing new requests until the delay between requests has expired.
@@ -226,13 +220,13 @@ pub(crate) enum ProviderError {
   Permanent,
 }
 
-pub(crate) type ProviderResult = Result<LyricsData, ProviderError>;
+pub type ProviderResult = Result<LyricsData, ProviderError>;
 
 #[derive(
   Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, AsExpression, FromSqlRow,
 )]
 #[diesel(sql_type = Text)]
-pub(crate) enum ProviderId {
+pub enum ProviderId {
   #[default]
   LrcLib,
   SimpMusic,
@@ -240,17 +234,14 @@ pub(crate) enum ProviderId {
 }
 
 impl ProviderId {
-  pub(crate) const ALL: [Self; 3] = [
-    ProviderId::LrcLib,
-    ProviderId::SimpMusic,
-    ProviderId::Genius,
-  ];
+  pub const ALL: [Self; 3] = [Self::LrcLib, Self::SimpMusic, Self::Genius];
 
-  pub(crate) fn init_provider(self) -> Arc<dyn Provider> {
+  #[must_use]
+  pub fn init_provider(self) -> Arc<dyn Provider> {
     match self {
-      ProviderId::LrcLib => Arc::new(LrcLibProvider::new()),
-      ProviderId::SimpMusic => Arc::new(SimpMusicProvider::new()),
-      ProviderId::Genius => Arc::new(GeniusProvider::new()),
+      Self::LrcLib => Arc::new(LrcLibProvider::new()),
+      Self::SimpMusic => Arc::new(SimpMusicProvider::new()),
+      Self::Genius => Arc::new(GeniusProvider::new()),
     }
   }
 }
@@ -258,9 +249,9 @@ impl ProviderId {
 impl Display for ProviderId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
-      ProviderId::LrcLib => write!(f, "LRCLIB"),
-      ProviderId::SimpMusic => write!(f, "SimpMusic"),
-      ProviderId::Genius => write!(f, "Genius"),
+      Self::LrcLib => write!(f, "LRCLIB"),
+      Self::SimpMusic => write!(f, "SimpMusic"),
+      Self::Genius => write!(f, "Genius"),
     }
   }
 }
@@ -268,10 +259,10 @@ impl Display for ProviderId {
 impl From<&str> for ProviderId {
   fn from(value: &str) -> Self {
     match value {
-      "LRCLIB" => ProviderId::LrcLib,
-      "SimpMusic" => ProviderId::SimpMusic,
-      "Genius" => ProviderId::Genius,
-      _ => ProviderId::default(),
+      "LRCLIB" => Self::LrcLib,
+      "SimpMusic" => Self::SimpMusic,
+      "Genius" => Self::Genius,
+      _ => Self::default(),
     }
   }
 }
@@ -280,7 +271,7 @@ impl FromSql<Text, Sqlite> for ProviderId {
   fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
     let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
     Ok(
-      ron::from_str::<ProviderId>(&s)
+      ron::from_str::<Self>(&s)
         .inspect_err(|error| {
           error!("Error deserialising `Providers` from database value \"{s}\"; using default value: {error}");
         })
@@ -302,15 +293,15 @@ impl ToSql<Text, Sqlite> for ProviderId {
 #[derive(Debug, Clone, Copy, Eq, Selectable, Queryable, Identifiable, Insertable, AsChangeset)]
 #[diesel(table_name = crate::schema::providers)]
 #[diesel(check_for_backend(Sqlite))]
-pub(crate) struct ProviderSettings {
-  pub(crate) id: ProviderId,
-  pub(crate) secondary: bool,
-  pub(crate) enabled: bool,
-  pub(crate) position: i32,
+pub struct ProviderSettings {
+  pub id: ProviderId,
+  pub secondary: bool,
+  pub enabled: bool,
+  pub position: i32,
 
   #[diesel(skip_update)]
-  pub(crate) added_at: NaiveDateTime,
-  pub(crate) updated_at: NaiveDateTime,
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
 }
 
 // Ignore timestamps
@@ -324,13 +315,13 @@ impl PartialEq for ProviderSettings {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct Providers {
-  pub(crate) primary: Vec<ProviderSettings>,
-  pub(crate) secondary: Vec<ProviderSettings>,
+pub struct Providers {
+  pub primary: Vec<ProviderSettings>,
+  pub secondary: Vec<ProviderSettings>,
 }
 
 impl Providers {
-  pub(crate) fn load() -> Result<Self, anyhow::Error> {
+  pub fn load() -> Result<Self, anyhow::Error> {
     let mut conn = DB_POOL.get()?;
     let now = now();
 
@@ -370,23 +361,26 @@ impl Providers {
     if primary.is_empty() {
       if secondary.is_empty() {
         unreachable!("there should always be secondary Providers if primary Providers is empty");
-      } else {
-        let mut provider = secondary.remove(0);
-        provider.secondary = false;
-        provider.enabled = true;
-        provider.position = 0;
-        provider.updated_at = now;
-        primary.push(provider);
       }
 
-      warn!("No primary Provider set in database; made {} the primary Provider", &primary[0].id);
+      let mut provider = secondary.remove(0);
+      provider.secondary = false;
+      provider.enabled = true;
+      provider.position = 0;
+      provider.updated_at = now;
+      primary.push(provider);
+
+      warn!(
+        "No primary Provider set in database; made {} the primary Provider",
+        &primary.first().expect("should have 1 Provider in Vec").id
+      );
     }
 
     Ok(Self { primary, secondary })
   }
 
   #[expect(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
-  pub(crate) fn save(&mut self) -> Result<(), anyhow::Error> {
+  pub fn save(&mut self) -> Result<(), anyhow::Error> {
     let mut conn = DB_POOL.get()?;
     let now = now();
 
@@ -464,20 +458,20 @@ impl Default for Providers {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ProviderTier {
+pub enum ProviderTier {
   Primary,
   Secondary,
 }
 
 #[allow(unused)]
 #[derive(Debug)]
-pub(crate) struct ProviderState {
-  pub(crate) id: ProviderId,
-  pub(crate) total_requests: AtomicUsize,
-  pub(crate) current_requests: AtomicUsize,
-  pub(crate) total_permits: AtomicUsize,
-  pub(crate) available_permits: AtomicUsize,
-  pub(crate) rate_limited: AtomicBool,
+pub struct ProviderState {
+  pub id: ProviderId,
+  pub total_requests: AtomicUsize,
+  pub current_requests: AtomicUsize,
+  pub total_permits: AtomicUsize,
+  pub available_permits: AtomicUsize,
+  pub rate_limited: AtomicBool,
 }
 
 impl ProviderState {

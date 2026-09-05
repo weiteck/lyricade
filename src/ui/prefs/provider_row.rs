@@ -9,9 +9,9 @@ use tracing::trace;
 use crate::provider::ProviderSettings;
 
 pub(super) struct ProviderRow {
-  pub(crate) index: DynamicIndex,
-  pub(crate) name: String,
-  pub(crate) state: ProviderSettings,
+  pub index: DynamicIndex,
+  pub name: String,
+  pub state: ProviderSettings,
 
   menu: Menu,
   action_move_up: RelmAction<ActionMoveUp>,
@@ -95,9 +95,8 @@ impl FactoryComponent for ProviderRow {
       sender_handle.input(ProviderRowMsg::Toggle);
     });
 
-    let sender_handle = sender.clone();
     let action_swap_tier: RelmAction<ActionMoveSwapTier> = RelmAction::new_stateless(move |_| {
-      sender_handle.input(ProviderRowMsg::SwapTier);
+      sender.input(ProviderRowMsg::SwapTier);
     });
 
     let menu = gtk::gio::Menu::new();

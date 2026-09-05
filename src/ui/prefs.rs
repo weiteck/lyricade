@@ -27,7 +27,7 @@ use crate::{
 mod library_row;
 mod provider_row;
 
-pub(crate) struct PrefsModel {
+pub struct PrefsModel {
   root: PreferencesDialog,
 
   libraries: HashSet<Library>,
@@ -51,7 +51,7 @@ pub(crate) struct PrefsModel {
 }
 
 #[derive(Debug)]
-pub(crate) enum PrefsMsg {
+pub enum PrefsMsg {
   DefaultSettings,
   RevertSettings,
   SaveAndClose,
@@ -85,15 +85,15 @@ pub(crate) enum PrefsMsg {
 }
 
 #[derive(Debug)]
-pub(crate) enum PrefsOutput {
+pub enum PrefsOutput {
   Close(RebuildTracksTableRequired), // request parent window to close Prefs window
 }
 
 #[derive(Debug)]
-pub(crate) struct RebuildTracksTableRequired(pub(crate) bool);
+pub struct RebuildTracksTableRequired(pub bool);
 
 #[derive(Debug)]
-pub(crate) enum ExposedSetting {
+pub enum ExposedSetting {
   PreferLyricsType(LyricsType),
 
   ScanNewFilesOnly(bool),
@@ -480,7 +480,7 @@ impl SimpleComponent for PrefsModel {
         OpenDialogResponse::Cancel => PrefsMsg::NoOp,
       });
 
-    let model = PrefsModel {
+    let model = Self {
       libraries,
       library_rows,
       editing_library_row: None,
@@ -844,19 +844,20 @@ impl SimpleComponent for PrefsModel {
           ProviderTier::Secondary => &mut self.secondary_provider_rows,
         };
 
-        #[allow(deprecated)]
-        let target_idx = if let Some(row) = target.widget().row_at_y(target_y) {
-          let row_y = row.allocation().y();
-          let row_height = row.allocation().height();
+        #[expect(deprecated)]
+        let target_idx = target.widget().row_at_y(target_y).map_or_else(
+          || target.len(),
+          |row| {
+            let row_y = row.allocation().y();
+            let row_height = row.allocation().height();
 
-          if (target_y) < row_y + row_height {
-            row.index() as usize
-          } else {
-            (row.index() + 1) as usize
-          }
-        } else {
-          target.len()
-        };
+            if (target_y) < row_y + row_height {
+              row.index() as usize
+            } else {
+              (row.index() + 1) as usize
+            }
+          },
+        );
 
         let target_state = ProviderSettings {
           secondary: match target_tier {

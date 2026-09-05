@@ -17,7 +17,7 @@ use crate::{
 const API_SEARCH_URL: &str = "https://genius.com/api/search/song";
 
 #[derive(Debug)]
-pub(crate) struct GeniusProvider {
+pub struct GeniusProvider {
   semaphore: Semaphore,
   state: Arc<ProviderState>,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
@@ -52,7 +52,7 @@ struct ApiSearchResponseSong {
 }
 
 impl GeniusProvider {
-  pub(crate) fn new() -> Self {
+  pub fn new() -> Self {
     let semaphore = tokio::sync::Semaphore::new(1);
     let rate_limited_until = ArcSwap::new(Arc::new(None));
     let req_delayed_until = ArcSwap::new(Arc::new(None));

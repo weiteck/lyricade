@@ -10,7 +10,7 @@ use std::{
 use anyhow::Context;
 use arc_swap::ArcSwap;
 use chrono::{TimeDelta, Utc};
-use rand::{RngExt, seq::IndexedRandom};
+use rand::seq::IndexedRandom;
 use reqwest::Client as HttpClient;
 use serde::{Deserialize, Serialize};
 use tokio::{
@@ -31,7 +31,7 @@ use crate::{
 };
 
 #[derive(Debug)]
-pub(crate) struct ProviderManager {
+pub struct ProviderManager {
   providers: ArcSwap<Vec<Arc<dyn Provider>>>,
   primary_providers_order: ArcSwap<Vec<ProviderId>>,
   secondary_providers_order: ArcSwap<Vec<ProviderId>>,
@@ -45,7 +45,7 @@ pub(crate) struct ProviderManager {
 
 impl ProviderManager {
   #[must_use]
-  pub(crate) fn new() -> Self {
+  pub fn new() -> Self {
     let (primary_providers_order, secondary_providers_order) = get_provider_order();
     let providers = init_providers(&primary_providers_order, &secondary_providers_order);
 
@@ -96,11 +96,7 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) async fn fetch(
-    &self,
-    track: &Track,
-    cancel_token: CancellationToken,
-  ) -> Option<LyricsData> {
+  pub async fn fetch(&self, track: &Track, cancel_token: CancellationToken) -> Option<LyricsData> {
     let providers = self.providers.load();
     let preferred_lyrics_type = self.preferred_lyrics.load();
 
@@ -229,7 +225,7 @@ impl ProviderManager {
     }
   }
 
-  pub(crate) fn reinitialise(&self) {
+  pub fn reinitialise(&self) {
     // Replace Providers
     let (primary_providers_order, secondary_providers_order) = get_provider_order();
     self
@@ -250,26 +246,26 @@ impl ProviderManager {
     self.providers.store(Arc::new(providers));
 
     // Replace preferred lyrics
-    let preferred_lyrics = SETTINGS
-      .read()
-      .map(|settings| Arc::new(settings.prefer_lyrics_type))
-      .unwrap_or(self.preferred_lyrics.load().clone());
+    let preferred_lyrics = SETTINGS.read().map_or_else(
+      |_| self.preferred_lyrics.load().clone(),
+      |settings| Arc::new(settings.prefer_lyrics_type),
+    );
     self.preferred_lyrics.store(preferred_lyrics);
   }
 
-  pub(crate) fn primary_providers_order(&self) -> Vec<ProviderId> {
+  pub fn primary_providers_order(&self) -> Vec<ProviderId> {
     self.primary_providers_order.load().to_vec()
   }
 
-  pub(crate) fn secondary_providers_order(&self) -> Vec<ProviderId> {
+  pub fn secondary_providers_order(&self) -> Vec<ProviderId> {
     self.secondary_providers_order.load().to_vec()
   }
 
-  pub(crate) fn provider_state(&self) -> Vec<Arc<ProviderState>> {
+  pub fn provider_state(&self) -> Vec<Arc<ProviderState>> {
     self.providers.load().iter().map(|p| p.state()).collect()
   }
 
-  pub(crate) fn reset_provider_state(&self) {
+  pub fn reset_provider_state(&self) {
     self.providers.load().iter().for_each(|p| p.reset_state());
   }
 
@@ -282,6 +278,12 @@ impl ProviderManager {
     user_agents
       .choose(&mut rand::rng())
       .expect("user agent list should not be empty")
+  }
+}
+
+impl Default for ProviderManager {
+  fn default() -> Self {
+    Self::new()
   }
 }
 
@@ -453,7 +455,8 @@ async fn fetch_and_save_remote_user_agents(
   debug!("Saving updated user agent list ({} days old)...", since_update.num_days());
 
   let s = serde_json::to_string_pretty(&current_user_agents)?;
-  std::fs::write(&disk_ua_path, s).context("Saving updated user agent list to {disk_ua_path}")?;
+  std::fs::write(&disk_ua_path, s)
+    .context(format!("Saving updated user agent list to {disk_ua_path}"))?;
 
   debug!("Updated user agent list saved to: {}", &disk_ua_path);
 

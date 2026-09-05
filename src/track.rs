@@ -65,29 +65,29 @@ static TAG_WRITE_OPTIONS: LazyLock<WriteOptions> = LazyLock::new(|| {
 #[diesel(table_name = crate::schema::tracks)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub(crate) struct Track {
+pub struct Track {
   #[diesel(skip_update)]
-  pub(crate) id: i32,
+  pub id: i32,
   #[diesel(skip_update)]
-  pub(crate) library_id: i32,
+  pub library_id: i32,
   #[diesel(skip_update)]
-  pub(crate) path: String,
+  pub path: String,
   #[allow(clippy::struct_field_names)]
-  pub(crate) track_name: String,
-  pub(crate) artist_name: String,
-  pub(crate) album_name: String,
-  pub(crate) duration: f32,
-  pub(crate) instrumental: Option<bool>,
-  pub(crate) lyrics: Option<String>,
-  pub(crate) lyrics_synchronised: bool,
-  pub(crate) lyrics_sidecar_lrc_file: Option<String>,
-  pub(crate) lyrics_sidecar_txt_file: Option<String>,
+  pub track_name: String,
+  pub artist_name: String,
+  pub album_name: String,
+  pub duration: f32,
+  pub instrumental: Option<bool>,
+  pub lyrics: Option<String>,
+  pub lyrics_synchronised: bool,
+  pub lyrics_sidecar_lrc_file: Option<String>,
+  pub lyrics_sidecar_txt_file: Option<String>,
   #[diesel(skip_update)]
-  pub(crate) added_at: NaiveDateTime,
-  pub(crate) updated_at: NaiveDateTime,
-  pub(crate) refreshed_at: NaiveDateTime,
-  pub(crate) last_api_check_at: Option<NaiveDateTime>,
-  pub(crate) file_modified_at: NaiveDateTime,
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
+  pub refreshed_at: NaiveDateTime,
+  pub last_api_check_at: Option<NaiveDateTime>,
+  pub file_modified_at: NaiveDateTime,
 }
 
 impl Hash for Track {
@@ -113,34 +113,34 @@ impl Display for Track {
 #[derive(Debug, Default, Clone, Insertable)]
 #[diesel(table_name = crate::schema::tracks)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub(crate) struct NewTrack {
-  pub(crate) library_id: i32,
-  pub(crate) path: String,
-  pub(crate) track_name: String,
-  pub(crate) artist_name: String,
-  pub(crate) album_name: String,
-  pub(crate) duration: f32,
-  pub(crate) instrumental: Option<bool>,
-  pub(crate) lyrics: Option<String>,
-  pub(crate) lyrics_synchronised: bool,
-  pub(crate) lyrics_sidecar_lrc_file: Option<String>,
-  pub(crate) lyrics_sidecar_txt_file: Option<String>,
-  pub(crate) added_at: NaiveDateTime,
-  pub(crate) updated_at: NaiveDateTime,
-  pub(crate) refreshed_at: NaiveDateTime,
-  pub(crate) last_api_check_at: Option<NaiveDateTime>,
-  pub(crate) file_modified_at: NaiveDateTime,
+pub struct NewTrack {
+  pub library_id: i32,
+  pub path: String,
+  pub track_name: String,
+  pub artist_name: String,
+  pub album_name: String,
+  pub duration: f32,
+  pub instrumental: Option<bool>,
+  pub lyrics: Option<String>,
+  pub lyrics_synchronised: bool,
+  pub lyrics_sidecar_lrc_file: Option<String>,
+  pub lyrics_sidecar_txt_file: Option<String>,
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
+  pub refreshed_at: NaiveDateTime,
+  pub last_api_check_at: Option<NaiveDateTime>,
+  pub file_modified_at: NaiveDateTime,
 }
 
 #[bon]
 impl Track {
   #[must_use]
-  pub(crate) fn path(&self) -> Utf8PathBuf {
+  pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
 
   #[must_use]
-  pub(crate) fn lrc_file_path(&self) -> Option<Utf8PathBuf> {
+  pub fn lrc_file_path(&self) -> Option<Utf8PathBuf> {
     if self.lyrics_sidecar_lrc_file.is_some() {
       let mut path = self.path();
       path.set_extension("lrc");
@@ -151,7 +151,7 @@ impl Track {
   }
 
   #[must_use]
-  pub(crate) fn txt_file_path(&self) -> Option<Utf8PathBuf> {
+  pub fn txt_file_path(&self) -> Option<Utf8PathBuf> {
     if self.lyrics_sidecar_txt_file.is_some() {
       let mut path = self.path();
       path.set_extension("txt");
@@ -162,7 +162,7 @@ impl Track {
   }
 
   #[builder]
-  pub(crate) fn scan_and_update(
+  pub fn scan_and_update(
     &mut self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -192,13 +192,13 @@ impl Track {
 
       self.lyrics = lrc_lyrics_from_id3v2(tag, mpeg_sample_rate)
         .map(|l| l.contents)
-        .or(
+        .or_else(|| {
           tag
             .unsync_text()
             .filter(|frame| !frame.content.is_empty())
             .map(|frame| frame.content.to_string())
-            .next(),
-        )
+            .next()
+        })
         .filter(|s| !s.is_empty());
     };
 
@@ -251,9 +251,9 @@ impl Track {
             .ok()
             .and_then(|tf| {
               self.duration = tf.properties().duration().as_secs_f32();
-              tf.primary_tag().or(tf.first_tag()).cloned()
+              tf.primary_tag().or_else(|| tf.first_tag()).cloned()
             })
-            .ok_or(anyhow!("{self} scan: Failed to read metadata tag"))?;
+            .ok_or_else(|| anyhow!("{self} scan: Failed to read metadata tag"))?;
 
           tag_read = true;
 
@@ -263,7 +263,7 @@ impl Track {
 
           self.lyrics = tag
             .get_string(tag::ItemKey::Lyrics)
-            .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
+            .or_else(|| tag.get_string(tag::ItemKey::UnsyncLyrics))
             .map(ToString::to_string)
             .filter(|s| !s.is_empty());
         }
@@ -286,9 +286,9 @@ impl Track {
         .ok()
         .and_then(|tf| {
           self.duration = tf.properties().duration().as_secs_f32();
-          tf.primary_tag().or(tf.first_tag()).cloned()
+          tf.primary_tag().or_else(|| tf.first_tag()).cloned()
         })
-        .ok_or(anyhow!("{self} scan: Failed to read metadata tag"))?;
+        .ok_or_else(|| anyhow!("{self} scan: Failed to read metadata tag"))?;
 
       self.artist_name = tag.artist().map(String::from).unwrap_or_default();
       self.album_name = tag.album().map(String::from).unwrap_or_default();
@@ -296,7 +296,7 @@ impl Track {
 
       self.lyrics = tag
         .get_string(tag::ItemKey::Lyrics)
-        .or(tag.get_string(tag::ItemKey::UnsyncLyrics))
+        .or_else(|| tag.get_string(tag::ItemKey::UnsyncLyrics))
         .map(ToString::to_string)
         .filter(|s| !s.is_empty());
     }
@@ -346,7 +346,7 @@ impl Track {
   /// Does nothing but sleeps for 500ms.
   #[builder]
   #[allow(unused)]
-  pub(crate) async fn fetch_lyrics_test(
+  pub async fn fetch_lyrics_test(
     &mut self,
     options: Option<FetchLyricsOptions>,
     _cancel_token: CancellationToken,
@@ -360,7 +360,7 @@ impl Track {
   /// Get lyrics from lrclib.net API and optionally embed in lyrics tag and/or save to sidecar file.
   /// Returns `true` if tag was written or sidecar file was saved.
   #[builder]
-  pub(crate) async fn fetch_lyrics(
+  pub async fn fetch_lyrics(
     &mut self,
     options: Option<FetchLyricsOptions>,
     cancel_token: CancellationToken,
@@ -395,7 +395,7 @@ impl Track {
           } else {
             plain_lyrics
           }),
-          LyricsType::Plain => plain_lyrics.or(sync_lyrics.map(Lyrics::into_plain)),
+          LyricsType::Plain => plain_lyrics.or_else(|| sync_lyrics.map(Lyrics::into_plain)),
         };
 
         // Generate sidecar file
@@ -461,7 +461,7 @@ impl Track {
     }
   }
 
-  pub(crate) fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {
+  pub fn save_sidecar_file(&self, lyrics: &Lyrics) -> Result<()> {
     let file_type = LyricsFileType::from(lyrics.lyrics_type);
     let path = self.path().with_extension(file_type.file_extension());
     let sidecar_file = LyricsFile {
@@ -474,13 +474,13 @@ impl Track {
     Ok(())
   }
 
-  pub(crate) fn get_cover_art_bytes(&self) -> Result<Vec<u8>> {
+  pub fn get_cover_art_bytes(&self) -> Result<Vec<u8>> {
     let file = std::fs::File::open(self.path())?;
     Self::get_cover_art_bytes_for_file(file)
       .inspect_err(|error| warn!("{self} get cover art: {error}"))
   }
 
-  pub(crate) fn get_cover_art_bytes_for_file(mut file: fs::File) -> Result<Vec<u8>> {
+  pub fn get_cover_art_bytes_for_file(mut file: fs::File) -> Result<Vec<u8>> {
     file.rewind()?;
 
     let mut reader = io::BufReader::new(file);
@@ -516,7 +516,7 @@ impl Track {
 
   /// Insert or update track in database.
   #[builder]
-  pub(crate) fn write_to_db(
+  pub fn write_to_db(
     &mut self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -549,7 +549,7 @@ impl Track {
 
   /// Write lyrics tag to file.
   #[builder]
-  pub(crate) fn write_to_file_and_db(
+  pub fn write_to_file_and_db(
     &mut self,
     plain_lyrics_in_id3v2_uslt_frame: bool,
     /// Database connection. Intended for use as part of a transaction.
@@ -566,7 +566,7 @@ impl Track {
 
     // First check if MP3 w/ ID3v2 tag and try to extract synchronised lyrics
     // (ID3v2 has a specific 'SYLT' frame for this, unlike other tag formats)
-    if let Some("mp3") = &self.path().extension()
+    if matches!(&self.path().extension(), Some("mp3"))
       && let Ok(mut mpeg_file) =
         mpeg::MpegFile::read_from(&mut reader, *TAG_PARSE_OPTIONS_FOR_WRITING)
       && mpeg_file.contains_tag_type(tag::TagType::Id3v2)
@@ -678,7 +678,7 @@ impl Track {
 
   /// Delete track row in database.
   #[builder]
-  pub(crate) fn delete_from_db(
+  pub fn delete_from_db(
     &self,
     /// Database connection. Intended for use as part of a transaction.
     /// Will obtain a connection from the pool if none passed.
@@ -705,12 +705,12 @@ impl Track {
 
 #[allow(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct FetchLyricsOptions {
-  pub(crate) prefer_lyrics_type: lyrics::LyricsType,
-  pub(crate) ignore_plain_lyrics: bool,
-  pub(crate) save_sidecar_file: bool,
-  pub(crate) update_lyrics_tag: bool,
-  pub(crate) plain_lyrics_in_id3v2_uslt_frame: bool,
+pub struct FetchLyricsOptions {
+  pub prefer_lyrics_type: lyrics::LyricsType,
+  pub ignore_plain_lyrics: bool,
+  pub save_sidecar_file: bool,
+  pub update_lyrics_tag: bool,
+  pub plain_lyrics_in_id3v2_uslt_frame: bool,
 }
 
 impl Default for FetchLyricsOptions {
@@ -727,7 +727,7 @@ impl Default for FetchLyricsOptions {
 
 impl From<&Settings> for FetchLyricsOptions {
   fn from(settings: &Settings) -> Self {
-    FetchLyricsOptions {
+    Self {
       prefer_lyrics_type: settings.prefer_lyrics_type,
       ignore_plain_lyrics: settings.ignore_plain_lyrics_on_fetch,
       save_sidecar_file: settings.save_sidecar_file_on_fetch,

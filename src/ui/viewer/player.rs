@@ -56,7 +56,7 @@ pub(super) enum PlayerOutput {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum PlayerState {
+pub enum PlayerState {
   Paused,
   Playing,
   Stopped,
@@ -112,11 +112,11 @@ impl SimpleComponent for PlayerModel {
           gtk::Button {
             inline_css: "border-radius: 1000px;",
             #[watch]
-            set_icon_name: if let PlayerState::Playing = model.state
+            set_icon_name: if  model.state==PlayerState::Playing
               { "media-playback-pause-symbolic" }
               else { "media-playback-start-symbolic"},
             #[watch]
-            set_tooltip: if let PlayerState::Playing = model.state
+            set_tooltip: if  model.state== PlayerState::Playing
               { "Pause" }
               else { "Play"},
 
@@ -360,7 +360,7 @@ impl SimpleComponent for PlayerModel {
         Some(texture)
       };
 
-      PlayerModel {
+      Self {
         player: Some(RodioPlayer(player)),
         player_task_cancel: Some(cancel_token_clone),
         player_task_handle: Some(task),
@@ -377,7 +377,7 @@ impl SimpleComponent for PlayerModel {
       // Hide the player if we fail to decode the file or open the sound output device
       root.set_visible(false);
 
-      PlayerModel {
+      Self {
         player: None,
         player_task_cancel: None,
         player_task_handle: None,
@@ -404,18 +404,16 @@ impl SimpleComponent for PlayerModel {
 
             player.0.play();
             self.state = PlayerState::Playing;
-            sender
-              .output(PlayerOutput::StateChanged(self.state))
-              .expect("PlayerOutput receiver dropped");
           } else {
             debug!("Stopping playback");
 
             player.0.pause();
             self.state = PlayerState::Paused;
-            sender
-              .output(PlayerOutput::StateChanged(self.state))
-              .expect("PlayerOutput receiver dropped");
           }
+
+          sender
+            .output(PlayerOutput::StateChanged(self.state))
+            .expect("PlayerOutput receiver dropped");
         }
       }
 

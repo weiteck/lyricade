@@ -14,7 +14,7 @@ use crate::{
 
 mod provider_state_row;
 
-pub(crate) struct ProgressModalModel {
+pub struct ProgressModalModel {
   alert_dialog: AlertDialog,
   parent: adw::ApplicationWindow,
   progress: ProgressUpdate,
@@ -27,15 +27,15 @@ pub(crate) struct ProgressModalModel {
 }
 
 #[derive(Debug)]
-pub(crate) struct ProgressModalInit {
-  pub(crate) progress: ProgressUpdate,
-  pub(crate) show_provider_state: bool,
+pub struct ProgressModalInit {
+  pub progress: ProgressUpdate,
+  pub show_provider_state: bool,
 }
 
 #[bon::bon]
 impl ProgressModalInit {
   #[builder]
-  pub(crate) fn new(progress: ProgressUpdate, show_provider_state: bool) -> Self {
+  pub const fn new(progress: ProgressUpdate, show_provider_state: bool) -> Self {
     Self {
       progress,
       show_provider_state,
@@ -44,7 +44,7 @@ impl ProgressModalInit {
 }
 
 #[derive(Debug)]
-pub(crate) enum ProgressModalMsg {
+pub enum ProgressModalMsg {
   Show(ProgressModalInit),
   Hide,
   UpdateState(ProgressUpdate),
@@ -52,7 +52,7 @@ pub(crate) enum ProgressModalMsg {
 }
 
 #[derive(Debug)]
-pub(crate) enum ProgressModalOutput {
+pub enum ProgressModalOutput {
   Cancel,
 }
 
@@ -128,7 +128,6 @@ impl Component for ProgressModalModel {
     let closing_programmatically = Rc::new(Cell::new(false));
     let showing = Rc::new(Cell::new(false));
 
-    let sender_handle = sender.clone();
     let closing_programmatically_clone = Rc::clone(&closing_programmatically);
     let showing_clone = Rc::clone(&showing);
     alert_dialog.connect_response(None, move |_, _resp| {
@@ -136,7 +135,7 @@ impl Component for ProgressModalModel {
         trace!("Close requested programmatically");
       } else {
         debug!("User cancelled process");
-        let _ = sender_handle
+        let _ = sender
           .output(ProgressModalOutput::Cancel)
           .inspect_err(|_| error!("ProgressModalOutput receiver dropped"));
       }
@@ -144,7 +143,7 @@ impl Component for ProgressModalModel {
       showing_clone.set(false);
     });
 
-    let model = ProgressModalModel {
+    let model = Self {
       alert_dialog,
       parent,
       progress: ProgressUpdate::default(),

@@ -11,31 +11,31 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct ManageLyricsOptions {
-  pub(crate) tags: TagOptions,
-  pub(crate) sidecars: SidecarOptions,
+pub struct ManageLyricsOptions {
+  pub tags: TagOptions,
+  pub sidecars: SidecarOptions,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct TagOptions {
-  pub(crate) delete: ManageLyricsTarget,
+pub struct TagOptions {
+  pub delete: ManageLyricsTarget,
   /// If `Some`, only delete tags if sidecar file matches `ManageLyricsTarget` variant.
-  pub(crate) delete_on_sidecar_condition: Option<ManageLyricsTarget>,
-  pub(crate) copy: ManageLyricsTarget,
-  pub(crate) convert_to_plain: bool,
+  pub delete_on_sidecar_condition: Option<ManageLyricsTarget>,
+  pub copy: ManageLyricsTarget,
+  pub convert_to_plain: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) struct SidecarOptions {
-  pub(crate) delete: ManageLyricsTarget,
+pub struct SidecarOptions {
+  pub delete: ManageLyricsTarget,
   /// If `Some`, only delete sidecar files if lyrics tag matches `ManageLyricsTarget` variant.
-  pub(crate) delete_on_tag_condition: Option<ManageLyricsTarget>,
-  pub(crate) copy: ManageLyricsTarget,
-  pub(crate) convert_to_plain: bool,
+  pub delete_on_tag_condition: Option<ManageLyricsTarget>,
+  pub copy: ManageLyricsTarget,
+  pub convert_to_plain: bool,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub(crate) enum ManageLyricsTarget {
+pub enum ManageLyricsTarget {
   #[default]
   None = 0,
   Plain = 1,
@@ -64,7 +64,7 @@ enum ManageLyricsResult {
 }
 
 impl ManageLyricsOptions {
-  pub(crate) fn apply<F>(
+  pub fn apply<F>(
     self,
     tracks: Vec<Track>,
     on_progress: F,

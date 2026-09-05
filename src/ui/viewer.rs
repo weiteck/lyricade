@@ -18,19 +18,19 @@ use crate::{
   },
 };
 
-pub(crate) mod line;
-pub(crate) mod player;
-pub(crate) mod tag;
+pub mod line;
+pub mod player;
+pub mod tag;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum ViewLyricsSource {
+pub enum ViewLyricsSource {
   Tag,
   Lrc,
   Txt,
 }
 
 #[allow(clippy::struct_excessive_bools)]
-pub(crate) struct ViewLyricsModel {
+pub struct ViewLyricsModel {
   track: Rc<Track>,
   lyrics: String,
   lyrics_sync: bool,
@@ -49,7 +49,7 @@ pub(crate) struct ViewLyricsModel {
 }
 
 #[derive(Debug)]
-pub(crate) enum ViewLyricsMsg {
+pub enum ViewLyricsMsg {
   SetViewingRaw(bool),
   SetHighlightingLyrics(bool),
   SetFollowingLyrics(bool),
@@ -61,7 +61,7 @@ pub(crate) enum ViewLyricsMsg {
 }
 
 #[derive(Debug)]
-pub(crate) enum ViewLyricsOutput {
+pub enum ViewLyricsOutput {
   Close,
 }
 
@@ -288,7 +288,7 @@ impl SimpleComponent for ViewLyricsModel {
 
     let stylised_scrolled_window = gtk::ScrolledWindow::new();
 
-    let model = ViewLyricsModel {
+    let model = Self {
       player,
       track,
       lyrics,
@@ -312,20 +312,19 @@ impl SimpleComponent for ViewLyricsModel {
     let widgets = view_output!();
 
     // Handle key presses
-    let sender_handle = sender.clone();
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("ViewLyrics key event: key {key} + {:?}", modifier);
 
       match key {
-        gdk::Key::Escape => sender_handle.input(ViewLyricsMsg::CloseRequested),
-        gdk::Key::space => sender_handle.input(ViewLyricsMsg::PlayerTogglePlay),
+        gdk::Key::Escape => sender.input(ViewLyricsMsg::CloseRequested),
+        gdk::Key::space => sender.input(ViewLyricsMsg::PlayerTogglePlay),
         gdk::Key::Left if modifier == gdk::ModifierType::CONTROL_MASK => {
           // Skip to start
-          sender_handle.input(ViewLyricsMsg::PlayerSkipTime(f64::MIN));
+          sender.input(ViewLyricsMsg::PlayerSkipTime(f64::MIN));
         }
-        gdk::Key::Left => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(-5.0)),
-        gdk::Key::Right => sender_handle.input(ViewLyricsMsg::PlayerSkipTime(5.0)),
+        gdk::Key::Left => sender.input(ViewLyricsMsg::PlayerSkipTime(-5.0)),
+        gdk::Key::Right => sender.input(ViewLyricsMsg::PlayerSkipTime(5.0)),
         _ => {}
       }
 

@@ -4,22 +4,22 @@ use anyhow::anyhow;
 use regex::Regex;
 
 /// Regex to match "\[00:00.000]\" or "\[0:00.0]\", indicating synchronised lyrics.
-pub(crate) static LRC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub static LRC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\]").expect("should be valid regex")
 });
 
 /// Regex to match "\[00:00.000]\" or "\[0:00.0]\" followed by 0 or more whitespace chars ("[ \t]*").
-pub(crate) static LRC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub static LRC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*").expect("should be valid regex")
 });
 
 /// Regex to match "\[xx:xxx...xxx]\".
-pub(crate) static LRC_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+pub static LRC_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[([a-zA-Z]+):(.+)\][ \t]*$").expect("should be valid regex")
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-pub(crate) enum LrcTag {
+pub enum LrcTag {
   /// `[ar:Artist Name]` - Song artist
   ArtistName(String),
   /// `[ti:Song Title]` - Song title
@@ -91,35 +91,35 @@ impl Display for LrcTag {
 
 impl LrcTag {
   #[must_use]
-  pub(crate) fn tag(&self) -> String {
+  pub fn tag(&self) -> String {
     match self {
-      LrcTag::ArtistName(_) => "Artist",
-      LrcTag::SongTitle(_) => "Track",
-      LrcTag::AlbumName(_) => "Album",
-      LrcTag::Author(_) => "Author",
-      LrcTag::Lyricist(_) => "Lyricist",
-      LrcTag::Length(_) => "Length",
-      LrcTag::Creator(_) => "Creator",
-      LrcTag::Offset(_) => "Offset",
-      LrcTag::Editor(_) => "Editor",
-      LrcTag::Version(_) => "Version",
+      Self::ArtistName(_) => "Artist",
+      Self::SongTitle(_) => "Track",
+      Self::AlbumName(_) => "Album",
+      Self::Author(_) => "Author",
+      Self::Lyricist(_) => "Lyricist",
+      Self::Length(_) => "Length",
+      Self::Creator(_) => "Creator",
+      Self::Offset(_) => "Offset",
+      Self::Editor(_) => "Editor",
+      Self::Version(_) => "Version",
     }
     .to_string()
   }
 
   #[must_use]
-  pub(crate) fn value(&self) -> String {
+  pub fn value(&self) -> String {
     match self {
-      LrcTag::ArtistName(value)
-      | LrcTag::SongTitle(value)
-      | LrcTag::AlbumName(value)
-      | LrcTag::Author(value)
-      | LrcTag::Lyricist(value)
-      | LrcTag::Length(value)
-      | LrcTag::Creator(value)
-      | LrcTag::Editor(value)
-      | LrcTag::Version(value) => value.clone(),
-      LrcTag::Offset(value) => {
+      Self::ArtistName(value)
+      | Self::SongTitle(value)
+      | Self::AlbumName(value)
+      | Self::Author(value)
+      | Self::Lyricist(value)
+      | Self::Length(value)
+      | Self::Creator(value)
+      | Self::Editor(value)
+      | Self::Version(value) => value.clone(),
+      Self::Offset(value) => {
         format!("{}{} ms", if value.is_positive() { "+" } else { "" }, value)
       }
     }

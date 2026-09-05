@@ -17,7 +17,7 @@ use crate::{
 const API_URL: &str = "https://lrclib.net/api/get";
 
 #[derive(Debug)]
-pub(crate) struct LrcLibProvider {
+pub struct LrcLibProvider {
   semaphore: Semaphore,
   state: Arc<ProviderState>,
   rate_limited_until: ArcSwap<Option<DateTime<Utc>>>,
@@ -50,7 +50,7 @@ enum ApiResponse {
 }
 
 impl LrcLibProvider {
-  pub(crate) fn new() -> Self {
+  pub fn new() -> Self {
     // Implementation Note:
     // https://lrclib.net/docs suggests making sequential requests only and honouring
     // the delay returned in 429 responses in the 'Retry-After' header
@@ -79,7 +79,7 @@ impl Provider for LrcLibProvider {
   ) -> ProviderResult {
     let url = Url::parse_with_params(
       API_URL,
-      &[
+      [
         ("track_name", &track.track_name),
         ("artist_name", &track.artist_name),
         ("album_name", &track.album_name),

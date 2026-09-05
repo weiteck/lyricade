@@ -2,7 +2,7 @@ use relm4::prelude::*;
 
 use crate::settings::{APP_NAME, APP_NAME_PRETTY};
 
-pub(crate) struct AboutModel;
+pub struct AboutModel;
 
 #[relm4::component(pub)]
 impl SimpleComponent for AboutModel {
@@ -33,7 +33,7 @@ impl SimpleComponent for AboutModel {
     root: Self::Root,
     _sender: ComponentSender<Self>,
   ) -> ComponentParts<Self> {
-    let model = AboutModel;
+    let model = Self;
     let widgets = view_output!();
 
     ComponentParts { model, widgets }

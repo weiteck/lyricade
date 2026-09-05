@@ -11,7 +11,7 @@ const VALUES_SPACING: i32 = 6;
 const VALUE_MARGIN: i32 = 4;
 
 pub(super) struct ProviderStateRow {
-  pub(crate) state: Arc<ProviderState>,
+  pub state: Arc<ProviderState>,
 }
 
 #[derive(Debug, Clone, Copy)]

@@ -16,7 +16,7 @@ use diesel::{
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use libsqlite3_sys::SQLITE_VERSION;
 use mimalloc::MiMalloc;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
   EnvFilter,
@@ -29,19 +29,19 @@ use crate::{
   settings::{APP_DATA_DIR, APP_DB_FILE_PATH, APP_NAME, Settings},
 };
 
-pub(crate) mod library;
-pub(crate) mod lyrics;
-pub(crate) mod manage;
-pub(crate) mod provider;
-pub(crate) mod schema;
-pub(crate) mod settings;
-pub(crate) mod tags;
-pub(crate) mod track;
-pub(crate) mod ui;
-pub(crate) mod util;
+pub mod library;
+pub mod lyrics;
+pub mod manage;
+pub mod provider;
+pub mod schema;
+pub mod settings;
+pub mod tags;
+pub mod track;
+pub mod ui;
+pub mod util;
 
-pub(crate) type Result<T> = anyhow::Result<T>;
-pub(crate) type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
+pub type Result<T> = anyhow::Result<T>;
+pub type DbPool = r2d2::Pool<ConnectionManager<SqliteConnection>>;
 
 const MIGRATIONS: EmbeddedMigrations = embed_migrations!();
 
@@ -64,24 +64,24 @@ pub static NUM_LOCALE: LazyLock<num_format::SystemLocale> = LazyLock::new(|| {
   })
 });
 
-pub(crate) static SETTINGS: LazyLock<RwLock<Settings>> =
+pub static SETTINGS: LazyLock<RwLock<Settings>> =
   LazyLock::new(|| RwLock::new(Settings::load().expect("Failed to load settings from database")));
 
-pub(crate) static PROVIDERS: LazyLock<RwLock<Providers>> =
+pub static PROVIDERS: LazyLock<RwLock<Providers>> =
   LazyLock::new(|| RwLock::new(Providers::load().expect("Failed to load Providers from database")));
 
-pub(crate) static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
+pub static DB_POOL: LazyLock<DbPool> = LazyLock::new(|| {
   let manager = r2d2::ConnectionManager::<SqliteConnection>::new(APP_DB_FILE_PATH.to_string());
   r2d2::Pool::builder()
     .build(manager)
     .expect("error creating database connection pool")
 });
 
-pub(crate) static PROVIDER_MANAGER: LazyLock<ProviderManager> = LazyLock::new(ProviderManager::new);
+pub static PROVIDER_MANAGER: LazyLock<ProviderManager> = LazyLock::new(ProviderManager::new);
 
 /// Supported audio file types.
 #[rustfmt::skip]
-pub(crate) static AUDIO_FILE_EXTENSIONS: &[&str] = &[
+pub static AUDIO_FILE_EXTENSIONS: &[&str] = &[
     "aac",
     "ape",
     "aif", "aiff",
@@ -97,9 +97,9 @@ pub(crate) static AUDIO_FILE_EXTENSIONS: &[&str] = &[
 ];
 
 /// Supported sidecar lyrics file types.
-pub(crate) static LYRICS_FILE_EXTENSIONS: &[&str] = &["lrc", "txt"];
+pub static LYRICS_FILE_EXTENSIONS: &[&str] = &["lrc", "txt"];
 
-pub(crate) fn init_app() -> Result<()> {
+pub fn init_app() -> Result<()> {
   // Trigger `LazyLock` to run `init_logging` function. `WorkerGuard` of the log file appender
   // is stored in a static so it is not dropped for the duration of the program
   let _guard = &*LOG_WORKER_GUARD;
@@ -134,7 +134,8 @@ Settings:
     SQLITE_VERSION.to_string_lossy(),
     &*APP_DB_FILE_PATH
       .canonicalize_utf8()
-      .unwrap_or("(error while getting full path)".into()),
+      .inspect_err(|e| error!("Error getting database path: {e}"))
+      .unwrap_or_else(|_| "(error getting database path - see log)".into()),
     settings
   );
 

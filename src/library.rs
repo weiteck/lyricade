@@ -30,12 +30,12 @@ use crate::{
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(treat_none_as_null = true)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub(crate) struct Library {
-  pub(crate) id: i32,
-  pub(crate) path: String,
-  pub(crate) name: Option<String>,
-  pub(crate) added_at: NaiveDateTime,
-  pub(crate) updated_at: NaiveDateTime,
+pub struct Library {
+  pub id: i32,
+  pub path: String,
+  pub name: Option<String>,
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
 }
 
 impl PartialEq for Library {
@@ -54,16 +54,16 @@ impl Hash for Library {
 #[derive(Debug, Default, Clone, Insertable)]
 #[diesel(table_name = crate::schema::libraries)]
 #[diesel(check_for_backend(diesel::sqlite::Sqlite))]
-pub(crate) struct NewLibrary {
-  pub(crate) path: String,
-  pub(crate) name: Option<String>,
-  pub(crate) added_at: NaiveDateTime,
-  pub(crate) updated_at: NaiveDateTime,
+pub struct NewLibrary {
+  pub path: String,
+  pub name: Option<String>,
+  pub added_at: NaiveDateTime,
+  pub updated_at: NaiveDateTime,
 }
 
 #[bon]
 impl Library {
-  pub(crate) fn add(path: &Utf8Path) -> Result<Library> {
+  pub fn add(path: &Utf8Path) -> Result<Self> {
     let mut conn = DB_POOL.get()?;
 
     // Check if path is a directory
@@ -72,7 +72,7 @@ impl Library {
       return Err(anyhow!("Invalid path"));
     }
 
-    let existing_libraries = libraries::table.load::<Library>(&mut conn)?;
+    let existing_libraries = libraries::table.load::<Self>(&mut conn)?;
 
     // Check for existing `Library` with this path
     if let Some(existing_library) = existing_libraries
@@ -115,7 +115,7 @@ impl Library {
         added_at: now,
         updated_at: now,
       })
-      .get_result::<Library>(&mut conn)?;
+      .get_result::<Self>(&mut conn)?;
 
     info!("Inserted {}", &inserted_library);
 
@@ -123,22 +123,18 @@ impl Library {
   }
 
   /// Get all libraries.
-  pub(crate) fn get_all() -> Result<Vec<Library>> {
+  pub fn get_all() -> Result<Vec<Self>> {
     let mut conn = DB_POOL.get()?;
 
     let libs = libraries::table
-      .load::<Library>(&mut conn)
+      .load::<Self>(&mut conn)
       .inspect_err(|error| error!("Database error while trying to get all Libraries: {error}"))?;
     Ok(libs)
   }
 
   #[builder]
   /// Read metadata for new and (optionally) existing files in `Library` path and update database.
-  pub(crate) fn refresh<F>(
-    &self,
-    on_progress: F,
-    cancel_on_close: &CancellationToken,
-  ) -> Result<usize>
+  pub fn refresh<F>(&self, on_progress: F, cancel_on_close: &CancellationToken) -> Result<usize>
   where
     F: Fn(String) + Send + 'static,
   {
@@ -364,7 +360,7 @@ impl Library {
 
   /// Get all `Track`s.
   #[builder]
-  pub(crate) fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
+  pub fn tracks(&self, conn: Option<&mut SqliteConnection>) -> Result<Vec<Track>> {
     let query = tracks::table.filter(tracks::library_id.eq(&self.id));
 
     if let Some(conn) = conn {
@@ -376,7 +372,7 @@ impl Library {
   }
 
   /// Remove a library path and all `Track`s belonging to it.
-  pub(crate) fn remove(&self) -> Result<()> {
+  pub fn remove(&self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     // Delete the library
@@ -389,27 +385,27 @@ impl Library {
 
   /// Get the `Library`'s name. Returns the `default_name` if none is set.
   #[must_use]
-  pub(crate) fn name(&self) -> String {
+  pub fn name(&self) -> String {
     self.name.clone().unwrap_or_else(|| self.default_name())
   }
 
   /// The `Library`'s directory name.
   #[must_use]
-  pub(crate) fn default_name(&self) -> String {
+  pub fn default_name(&self) -> String {
     self.path().file_name().unwrap_or("(invalid)").into()
   }
 
   /// Get the `Library`'s path.
   #[must_use]
-  pub(crate) fn path(&self) -> Utf8PathBuf {
+  pub fn path(&self) -> Utf8PathBuf {
     Utf8PathBuf::from(&self.path)
   }
 
   /// Set the `Library`'s path.
-  pub(crate) fn set_path(&mut self, new_path: &Utf8Path) -> Result<()> {
+  pub fn set_path(&mut self, new_path: &Utf8Path) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
-    let existing_libraries = libraries::table.load::<Library>(&mut conn)?;
+    let existing_libraries = libraries::table.load::<Self>(&mut conn)?;
 
     // Check for existing `Library` with this path
     if let Some(existing_library) = existing_libraries
@@ -453,7 +449,7 @@ impl Library {
 
   /// All audio file and sidecar lyrics file paths within this `Library`'s path.
   /// Sidecar lyrics file path map is keyed by file extension.
-  pub(crate) fn file_paths(&self) -> (HashSet<Utf8PathBuf>, HashMap<&str, HashSet<Utf8PathBuf>>) {
+  pub fn file_paths(&self) -> (HashSet<Utf8PathBuf>, HashMap<&str, HashSet<Utf8PathBuf>>) {
     let set = WalkDir::new(&self.path)
       .into_iter()
       .filter_map(core::result::Result::ok)
@@ -494,7 +490,7 @@ impl Library {
 
   /// Insert or update library in database.
   #[builder]
-  pub(crate) fn write_to_db(&mut self) -> Result<()> {
+  pub fn write_to_db(&mut self) -> Result<()> {
     let mut conn = DB_POOL.get()?;
 
     self.updated_at = now();

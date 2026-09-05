@@ -6,16 +6,16 @@ use tracing::{debug, trace};
 use crate::library::Library;
 
 pub(super) struct LibraryRow {
-  pub(crate) index: DynamicIndex,
-  pub(crate) library: Library,
+  pub index: DynamicIndex,
+  pub library: Library,
 
-  pub(crate) name_initial: Option<String>,
-  pub(crate) path_initial: String,
+  pub name_initial: Option<String>,
+  pub path_initial: String,
 
-  pub(crate) is_modified: bool,
-  pub(crate) name_too_long: bool,
+  pub is_modified: bool,
+  pub name_too_long: bool,
 
-  pub(crate) sender: FactorySender<LibraryRow>,
+  pub sender: FactorySender<Self>,
 }
 
 #[derive(Debug)]

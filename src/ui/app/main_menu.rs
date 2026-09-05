@@ -139,9 +139,8 @@ impl SimpleComponent for MainMenuButtonModel {
     });
     window_actions_group.add_action(action_search);
 
-    let sender_handle = sender.clone();
     let pin_sidebar: RelmAction<ActionPinSidebar> = RelmAction::new_stateless(move |_| {
-      sender_handle
+      sender
         .output(AppMsg::TogglePinTrackDetailsSidebar)
         .expect("MainMenuButtonModel output receiver dropped");
     });
@@ -159,7 +158,7 @@ impl SimpleComponent for MainMenuButtonModel {
     menu_actions_group.register_for_widget(&app_window);
     window_actions_group.register_for_widget(&app_window);
 
-    let model = MainMenuButtonModel {
+    let model = Self {
       refresh_action: action_refresh_libraries,
       manage_action: action_manage_lyrics,
     };

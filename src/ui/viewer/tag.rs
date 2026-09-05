@@ -4,7 +4,7 @@ use relm4::prelude::*;
 use crate::lyrics::lrc::LrcTag;
 
 pub(super) struct ViewLyricsLrcTag {
-  pub(crate) inner: LrcTag,
+  pub inner: LrcTag,
 }
 
 #[relm4::factory(pub)]

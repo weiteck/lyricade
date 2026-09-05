@@ -4,27 +4,27 @@ use tracing::{debug, trace};
 
 use crate::manage::{ManageLyricsOptions, ManageLyricsTarget};
 
-pub(crate) struct ManageLyricsModel {
+pub struct ManageLyricsModel {
   state: ManageLyricsOptions,
   default_state: ManageLyricsOptions,
   alert_dialog: adw::AlertDialog,
 }
 
 #[derive(Debug)]
-pub(crate) enum ManageLyricsMsg {
+pub enum ManageLyricsMsg {
   UpdateState(ExposedSetting),
   ShowConfirmDialog,
   Confirm,
 }
 
 #[derive(Debug)]
-pub(crate) enum ManageLyricsOutput {
+pub enum ManageLyricsOutput {
   Close,
   Confirm(ManageLyricsOptions),
 }
 
 #[derive(Debug)]
-pub(crate) enum ExposedSetting {
+pub enum ExposedSetting {
   TagsDelete(ManageLyricsTarget),
   TagsDeleteCondition(Option<ManageLyricsTarget>),
   TagsCopy(ManageLyricsTarget),
@@ -285,7 +285,7 @@ impl Component for ManageLyricsModel {
       }
     });
 
-    let model = ManageLyricsModel {
+    let model = Self {
       state: ManageLyricsOptions::default(),
       default_state: ManageLyricsOptions::default(),
       alert_dialog,
@@ -294,12 +294,11 @@ impl Component for ManageLyricsModel {
     let widgets = view_output!();
 
     // Handle key presses
-    let sender_handle = sender.clone();
     let controller = EventControllerKey::new();
     controller.connect_key_pressed(move |_con, key, _idx, modifier| {
       trace!("ViewLyrics key event: key {key} + {:?}", modifier);
       if key == gtk::gdk::Key::Escape {
-        sender_handle
+        sender
           .output(ManageLyricsOutput::Close)
           .expect("ManageLyricsOutput receiver dropped");
       }

@@ -31,7 +31,7 @@ use crate::ui::viewer::{ViewLyricsModel, ViewLyricsOutput, ViewLyricsSource};
 use crate::{NUM_LOCALE, PROVIDER_MANAGER, SETTINGS, util};
 use crate::{Result, library::Library, track::Track};
 
-pub(crate) mod get_lyrics_menu;
+pub mod get_lyrics_menu;
 mod main_menu;
 mod progress_modal;
 mod track_stats;
@@ -165,11 +165,11 @@ enum SelectionState {
 }
 
 #[derive(Debug, Clone, Default)]
-pub(crate) struct ProgressUpdate {
-  pub(crate) step: Option<String>,
-  pub(crate) heading: Option<String>,
-  pub(crate) body: Option<String>,
-  pub(crate) progress: f64,
+pub struct ProgressUpdate {
+  pub step: Option<String>,
+  pub heading: Option<String>,
+  pub body: Option<String>,
+  pub progress: f64,
 }
 
 #[relm4::component(pub)]
@@ -804,7 +804,7 @@ impl Component for AppModel {
       }
     });
 
-    let mut model = AppModel {
+    let mut model = Self {
       sender: sender.clone(),
       libraries: vec![],
       tracks: vec![],
@@ -865,15 +865,13 @@ impl Component for AppModel {
     widgets.main_window.set_title(Some(APP_NAME_PRETTY));
 
     // Restore previous window configuration
-    let (width, height, is_sidebar_pinned) = if let Ok(guard) = SETTINGS.read() {
+    let (width, height, is_sidebar_pinned) = SETTINGS.read().map_or((800, 600, false), |guard| {
       (
         guard.window_width.clamp(400, 3840),
         guard.window_height.clamp(400, 3840),
         guard.sidebar_pinned,
       )
-    } else {
-      (800, 600, false)
-    };
+    });
     widgets.main_window.set_default_size(width, height);
 
     if is_sidebar_pinned {
@@ -1172,7 +1170,7 @@ impl Component for AppModel {
 
               let _ = lib
                 .refresh()
-                .on_progress(progress_callback.clone())
+                .on_progress(progress_callback)
                 .cancel_on_close(&cancel_token)
                 .call()
                 .inspect_err(|error| warn!("{error}"));
@@ -1408,7 +1406,7 @@ impl Component for AppModel {
 
             let _ = lib
               .refresh()
-              .on_progress(progress_callback.clone())
+              .on_progress(progress_callback)
               .cancel_on_close(&cancel_token)
               .call()
               .inspect_err(|error| warn!("{error}"));
@@ -1775,7 +1773,7 @@ impl AppModel {
   fn refresh_from_settings(
     &mut self,
     _root: &adw::ApplicationWindow,
-    _sender: &ComponentSender<AppModel>,
+    _sender: &ComponentSender<Self>,
   ) {
     if let Ok(guard) = SETTINGS.read() {
       self.get_lyrics_requires_confirmation = guard.update_lyrics_tag_on_fetch;
@@ -2026,7 +2024,7 @@ impl AppModel {
   }
 }
 
-pub(crate) fn start() {
+pub fn start() {
   let app = RelmApp::new(APP_ID);
 
   // Custom icons
@@ -2045,7 +2043,7 @@ pub(crate) fn start() {
   // Restore colour scheme
   let colour_scheme = SETTINGS
     .read()
-    .map_or(ColourScheme::default(), |settings| settings.colour_scheme);
+    .map_or_else(|_| ColourScheme::default(), |settings| settings.colour_scheme);
   adw::StyleManager::default().set_color_scheme(match colour_scheme {
     ColourScheme::System => adw::ColorScheme::Default,
     ColourScheme::Light => adw::ColorScheme::ForceLight,
