@@ -6,11 +6,16 @@ use chrono::{DateTime, Utc};
 use reqwest::{Response, StatusCode, Url};
 use serde::Deserialize;
 use tokio::sync::Semaphore;
-use tracing::{error, trace, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, trace, warn};
 
 use crate::{
+  PROVIDER_MANAGER,
   lyrics::{Lyrics, LyricsType},
-  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState},
+  provider::{
+    LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState,
+    ProviderTestResult, manager::PROVIDER_TEST_TRACKS,
+  },
   track::Track,
 };
 
@@ -116,6 +121,75 @@ impl Provider for GeniusProvider {
 
   fn default_req_delay_secs(&self) -> Option<f64> {
     Some(0.2)
+  }
+
+  async fn test(&self) -> ProviderTestResult {
+    let id = ProviderId::Genius;
+
+    assert!(
+      PROVIDER_MANAGER
+        .primary_providers_order()
+        .iter()
+        .chain(PROVIDER_MANAGER.secondary_providers_order().iter())
+        .any(|&pid| pid == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    // Results as of 2026-09-06
+    let expected = [
+      Some(String::from(
+        "Slow down, you crazy childYou're so ambitious for a juvenileBut then if you're so smartTell me why are you still so afraid? MmWhere's the fire, what's the hurry about?You'd better cool it off before you burn it outYou've got so much to doAnd only so many hours in a day, heyBut you know that when the truth is toldThat you can get what you want or you can just get oldYou're gonna kick off before you even get halfway through, oohWhen will you realize Vienna waits for you?Slow down, you're doin' fineYou can't be everything you wanna be before your timeAlthough it's so romantic on the borderline tonight, tonightToo bad, but it's the life you leadYou're so ahead of yourself, that you forgot what you needThough you can see when you're wrongYou know you can't always see when you're rightYou're rightYou've got your passion, you've got your prideBut don't you know that only fools are satisfied?Dream on, but don't imagine they'll all come true, oohWhen will you realize Vienna waits for you?Slow down, you crazy childAnd take the phone off the hook and disappear for a whileIt's all right, you can afford to lose a day or two, oohWhen will you realize Vienna waits for you?And you know that when the truth is toldThat you can get what you want or you could just get oldYou're gonna kick off before you even get halfway through, oohWhy don't you realize Vienna waits for you?When will you realize Vienna waits for you?",
+      )),
+      Some(String::from(
+        "If I should stay\nI would only be in your way\nSo I'll go, but I know\nI'll think of you every step of the way\n\nAnd I will always love you\nI will always love you\n\nYou\nMy darling, you\nMm hmm\n\nBittersweet memories\nThat is all I'm taking with me\nSo goodbye, please don't cry\nWe both know I'm not what you, you need\n\nAnd I will always love you\nI will always love you\nYou\n\nI hope life treats you kind\nAnd I hope you have all you dreamed of\nAnd I wish to you joy and happiness\nBut above all this, I wish you love\n\nAnd I will always love you\nI will always love you\nI will always love you\nI will always love you\nI will always love you\nI, I will always love you, you\nDarling, I love you\nOoh, I'll always, I'll always love you",
+      )),
+      Some(String::from(
+        "Seasons change\nAnd I've tried hard just to soften you\nWell, seasons change\nBut I've grown tired trying to change for you\n'Cause I've been waiting on you\nI've been waiting on you\n'Cause I've been waiting on you, ooh-ooh, ooh\nI've been weighing on you\n\nAs it breaks\nThe summer will wake\nBut the winter will wash what is left of the taste\nAs it breaks\nThe summer will warm\nBut the winter will crave what has gone\nWill crave what has all gone away\n\nPeople change\nBut you know some people never do\nYou know when people change\nThey gain a peace, but they lose one too\n'Cause I've been hanging on you, ooh-ooh, ooh\nI've been weighing on you\n'Cause I've been waiting on you, ooh-ooh, ooh\nI've been hanging on you\nAs it breaks\nThe summer will wake\nBut the winter will wash what is left of the taste\nAs it breaks\nThe summer will warm\nBut the winter will crave what has gone\nWill crave what has gone\nWill crave what has all gone away\n\n'Cause I've been waiting on you",
+      )),
+    ];
+
+    assert_eq!(
+      expected.len(),
+      PROVIDER_TEST_TRACKS.len(),
+      "test tracks and expected results must be equal length"
+    );
+
+    let mut passed = 0;
+
+    // Linebreaks can vary for scrapers each page render so they're removed
+    let expected = expected.map(|s| s.map(|s| s.lines().collect()));
+
+    for (idx, track) in PROVIDER_TEST_TRACKS.iter().enumerate() {
+      let token = CancellationToken::new();
+      let _guard = token.drop_guard_ref();
+
+      let lyrics = PROVIDER_MANAGER
+        .fetch()
+        .track(track)
+        .with_provider(id)
+        .cancel_token(token.clone())
+        .call()
+        .await
+        .inspect(|l| trace!("{id}Provider: Test: Returned lyrics for {track}:\n{l:#?}"))
+        .and_then(|l| l.plain_lyrics)
+        .map(|l| l.contents.lines().collect::<String>());
+
+      if let Some(expected) = expected.get(idx)
+        && expected == &lyrics
+      {
+        passed += 1;
+      }
+    }
+
+    let pass_rate = f64::from(passed) / PROVIDER_TEST_TRACKS.len() as f64;
+
+    info!("{id}Provider: Test: Passed {passed}/{} tests", PROVIDER_TEST_TRACKS.len());
+
+    match pass_rate {
+      ..0.0 => ProviderTestResult::Failed,
+      1.0.. => ProviderTestResult::Success,
+      _ => ProviderTestResult::Degraded,
+    }
   }
 }
 

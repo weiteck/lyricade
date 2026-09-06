@@ -11,6 +11,7 @@ words = [
     "lyricade",
     "ndt",
     "seekbar",
+    "simpmusic",
     "unsync",
 ]
 ignore_patterns = ['".*\w.*_.*"']

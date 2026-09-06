@@ -4851,6 +4851,32 @@
     {
         "type": "archive",
         "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tracing-test/tracing-test-0.2.6.crate",
+        "sha256": "19a4c448db514d4f24c5ddb9f73f2ee71bfb24c526cf0c570ba142d1119e0051",
+        "dest": "cargo/vendor/tracing-test-0.2.6"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"19a4c448db514d4f24c5ddb9f73f2ee71bfb24c526cf0c570ba142d1119e0051\", \"files\": {}}",
+        "dest": "cargo/vendor/tracing-test-0.2.6",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
+        "url": "https://static.crates.io/crates/tracing-test-macro/tracing-test-macro-0.2.6.crate",
+        "sha256": "ad06847b7afb65c7866a36664b75c40b895e318cea4f71299f013fb22965329d",
+        "dest": "cargo/vendor/tracing-test-macro-0.2.6"
+    },
+    {
+        "type": "inline",
+        "contents": "{\"package\": \"ad06847b7afb65c7866a36664b75c40b895e318cea4f71299f013fb22965329d\", \"files\": {}}",
+        "dest": "cargo/vendor/tracing-test-macro-0.2.6",
+        "dest-filename": ".cargo-checksum.json"
+    },
+    {
+        "type": "archive",
+        "archive-type": "tar-gzip",
         "url": "https://static.crates.io/crates/tracker/tracker-0.2.2.crate",
         "sha256": "ce5c98457ff700aaeefcd4a4a492096e78a2af1dd8523c66e94a3adb0fdbd415",
         "dest": "cargo/vendor/tracker-0.2.2"

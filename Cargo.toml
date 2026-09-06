@@ -52,6 +52,9 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 walkdir = "2.5"
 
+[dev-dependencies]
+tracing-test = "0.2"
+
 [build-dependencies]
 glib-build-tools = "0.22"
 

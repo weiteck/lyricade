@@ -374,7 +374,13 @@ impl Track {
     let mut update_db = true; // default to true to record API check timestamp
     self.last_api_check_at = Some(now());
 
-    if let Some(data) = PROVIDER_MANAGER.fetch(self, cancel_token.clone()).await {
+    if let Some(data) = PROVIDER_MANAGER
+      .fetch()
+      .track(self)
+      .cancel_token(cancel_token.clone())
+      .call()
+      .await
+    {
       trace!("Got lyrics for {self}:\n{data:#?}");
 
       let LyricsData {

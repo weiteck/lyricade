@@ -53,6 +53,8 @@ pub trait Provider: Debug + Send + Sync {
 
   fn req_delayed_until(&self) -> &ArcSwap<Option<DateTime<Utc>>>;
 
+  async fn test(&self) -> ProviderTestResult;
+
   /// The internal fetch implementation.
   async fn api_fetch(
     &self,
@@ -218,6 +220,16 @@ pub enum ProviderError {
   NotFound,
   /// Server returned an error other than 404 or 429.
   Permanent,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ProviderTestResult {
+  /// All of the expected lyrics were returned.
+  Success,
+  /// Some of the expected lyrics were returned.
+  Degraded,
+  /// None of the expected lyrics were returned.
+  Failed,
 }
 
 pub type ProviderResult = Result<LyricsData, ProviderError>;

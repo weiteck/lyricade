@@ -1,7 +1,7 @@
 use std::{
   collections::HashSet,
   sync::{
-    Arc,
+    Arc, LazyLock,
     atomic::{AtomicUsize, Ordering},
   },
   time::Duration,
@@ -9,6 +9,7 @@ use std::{
 
 use anyhow::Context;
 use arc_swap::ArcSwap;
+use bon::bon;
 use chrono::{TimeDelta, Utc};
 use rand::seq::IndexedRandom;
 use reqwest::Client as HttpClient;
@@ -30,6 +31,32 @@ use crate::{
   track::Track,
 };
 
+pub static PROVIDER_TEST_TRACKS: LazyLock<Vec<Track>> = LazyLock::new(|| {
+  vec![
+    Track {
+      track_name: String::from("Vienna"),
+      artist_name: String::from("Billy Joel"),
+      album_name: String::from("The Stranger"),
+      duration: 214.0,
+      ..Default::default()
+    },
+    Track {
+      track_name: String::from("I Will Always Love You"),
+      artist_name: String::from("Whitney Houston"),
+      album_name: String::from("The Bodyguard: Original Soundtrack Album"),
+      duration: 271.0,
+      ..Default::default()
+    },
+    Track {
+      track_name: String::from("Seasons (Waiting on You)"),
+      artist_name: String::from("Future Islands"),
+      album_name: String::from("Singles"),
+      duration: 226.0,
+      ..Default::default()
+    },
+  ]
+});
+
 #[derive(Debug)]
 pub struct ProviderManager {
   providers: ArcSwap<Vec<Arc<dyn Provider>>>,
@@ -43,6 +70,7 @@ pub struct ProviderManager {
   user_agents: OnceCell<Vec<String>>,
 }
 
+#[bon]
 impl ProviderManager {
   #[must_use]
   pub fn new() -> Self {
@@ -96,22 +124,36 @@ impl ProviderManager {
     }
   }
 
-  pub async fn fetch(&self, track: &Track, cancel_token: CancellationToken) -> Option<LyricsData> {
+  #[builder]
+  pub async fn fetch(
+    &self,
+    track: &Track,
+    cancel_token: CancellationToken,
+    with_provider: Option<ProviderId>,
+  ) -> Option<LyricsData> {
     let providers = self.providers.load();
     let preferred_lyrics_type = self.preferred_lyrics.load();
 
     let user_agent = self.random_user_agent().await;
 
-    let mut primary_not_checked = self
-      .primary_providers_order()
-      .iter()
-      .copied()
-      .collect::<HashSet<_>>();
-    let mut secondary_not_checked = self
-      .secondary_providers_order()
-      .iter()
-      .copied()
-      .collect::<HashSet<_>>();
+    // Limit Providers used to `with_provider` value, if provided
+    let (mut primary_not_checked, mut secondary_not_checked) = with_provider.map_or_else(
+      || {
+        (
+          self
+            .primary_providers_order()
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>(),
+          self
+            .secondary_providers_order()
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>(),
+        )
+      },
+      |id| (HashSet::from([id]), HashSet::new()),
+    );
 
     if primary_not_checked.is_empty() {
       // This should never happen
@@ -461,4 +503,92 @@ async fn fetch_and_save_remote_user_agents(
   debug!("Updated user agent list saved to: {}", &disk_ua_path);
 
   Ok(current_user_agents)
+}
+
+#[cfg(test)]
+mod tests {
+
+  use tracing_test::traced_test;
+
+  use crate::{PROVIDER_MANAGER, provider::ProviderTestResult};
+
+  use super::*;
+
+  #[tokio::test]
+  #[traced_test]
+  async fn lrclib_lyrics() {
+    let id = ProviderId::LrcLib;
+
+    assert!(
+      PROVIDER_MANAGER
+        .providers
+        .load()
+        .iter()
+        .any(|p| p.id() == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    let res = PROVIDER_MANAGER
+      .providers
+      .load()
+      .iter()
+      .find(|p| p.id() == id)
+      .map(async |p| p.test().await)
+      .expect("should have Provider")
+      .await;
+
+    assert_eq!(res, ProviderTestResult::Success);
+  }
+
+  #[tokio::test]
+  #[traced_test]
+  async fn genius_lyrics() {
+    let id = ProviderId::Genius;
+
+    assert!(
+      PROVIDER_MANAGER
+        .providers
+        .load()
+        .iter()
+        .any(|p| p.id() == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    let res = PROVIDER_MANAGER
+      .providers
+      .load()
+      .iter()
+      .find(|p| p.id() == id)
+      .map(async |p| p.test().await)
+      .expect("should have Provider")
+      .await;
+
+    assert_eq!(res, ProviderTestResult::Success);
+  }
+
+  #[tokio::test]
+  #[traced_test]
+  async fn simpmusic_lyrics() {
+    let id = ProviderId::SimpMusic;
+
+    assert!(
+      PROVIDER_MANAGER
+        .providers
+        .load()
+        .iter()
+        .any(|p| p.id() == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    let res = PROVIDER_MANAGER
+      .providers
+      .load()
+      .iter()
+      .find(|p| p.id() == id)
+      .map(async |p| p.test().await)
+      .expect("should have Provider")
+      .await;
+
+    assert_eq!(res, ProviderTestResult::Success);
+  }
 }
