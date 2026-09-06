@@ -91,7 +91,6 @@ impl LyricsLine {
       let lyrics_lines = lyrics
         .lines()
         .map(str::trim)
-        .filter(|line| !line.is_empty())
         .map(|line| Self {
           lyrics_type: LyricsType::Plain,
           contents: line.to_string(),

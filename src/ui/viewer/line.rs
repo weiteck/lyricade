@@ -2,7 +2,10 @@ use adw::prelude::*;
 use relm4::prelude::*;
 use tracing::trace;
 
-use crate::{lyrics::lyrics_line::LyricsLine, util};
+use crate::{
+  lyrics::{LyricsType, lyrics_line::LyricsLine},
+  util,
+};
 
 const MIN_SPACING: i32 = 24;
 const MAX_SPACING: i32 = 96;
@@ -25,7 +28,6 @@ impl FactoryComponent for ViewLyricsLine {
   type Output = ();
   type CommandOutput = ();
   type ParentWidget = gtk::Box;
-  // type Widgets = ;
 
   view! {
     gtk::Box {
@@ -33,20 +35,18 @@ impl FactoryComponent for ViewLyricsLine {
       set_hexpand: true,
       set_spacing: 24,
       // Set top margin based on time gap from last lyric line
-      // unless this is the first lyric line
-      set_margin_top: if self.index == 0 { 0 } else {
-        util::scale()
-        .value(self.inner.gap_to_prev.unwrap_or_default())
-        .min(MIN_SPACING)
-        .max(MAX_SPACING)
-        .call()
+      // unless this is the first lyric line (0),
+      // or a blank line in plain lyrics (half the minimum)
+      set_margin_top:
+        if self.index == 0 || self.inner.lyrics_type == LyricsType::Plain && self.inner.contents.is_empty() {
+          0
+        } else {
+          util::scale()
+          .value(self.inner.gap_to_prev.unwrap_or_default())
+          .min(MIN_SPACING)
+          .max(MAX_SPACING)
+          .call()
       },
-
-      // add_tick_callback => |bx, _| {
-      //   let y = bx.allocation().y();
-      //   error!("LAYOUT MGR NOTIFY FIRED WITH Y = {y}");
-      //   gtk::glib::ControlFlow::Break
-      // },
 
       gtk::Box {
         set_visible: self.inner.timestamp.is_some(),
@@ -91,17 +91,6 @@ impl FactoryComponent for ViewLyricsLine {
       dimmed: false,
     }
   }
-
-  // fn init_widgets(
-  //     &mut self,
-  //     index: &Self::Index,
-  //     root: Self::Root,
-  //     returned_widget: &<Self::ParentWidget as relm4::factory::FactoryView>::ReturnedWidget,
-  //     sender: FactorySender<Self>,
-  // ) -> Self::Widgets
-  // {
-
-  // }
 
   fn update(&mut self, message: Self::Input, _sender: FactorySender<Self>) {
     match message {
