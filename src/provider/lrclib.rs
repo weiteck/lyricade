@@ -202,7 +202,7 @@ impl Provider for LrcLibProvider {
   }
 
   async fn test(&self) -> ProviderTestResult {
-    let id = ProviderId::LrcLib;
+    let id = Self::id(&self);
 
     assert!(
       PROVIDER_MANAGER

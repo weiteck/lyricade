@@ -148,7 +148,7 @@ impl Provider for SimpMusicProvider {
   }
 
   async fn test(&self) -> ProviderTestResult {
-    let id = ProviderId::SimpMusic;
+    let id = Self::id(&self);
 
     assert!(
       PROVIDER_MANAGER

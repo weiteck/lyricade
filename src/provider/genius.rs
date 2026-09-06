@@ -124,7 +124,7 @@ impl Provider for GeniusProvider {
   }
 
   async fn test(&self) -> ProviderTestResult {
-    let id = ProviderId::Genius;
+    let id = Self::id(&self);
 
     assert!(
       PROVIDER_MANAGER
