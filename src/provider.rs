@@ -26,7 +26,10 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
   DB_POOL,
   lyrics::Lyrics,
-  provider::{genius::GeniusProvider, lrclib::LrcLibProvider, simpmusic::SimpMusicProvider},
+  provider::{
+    azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider,
+    simpmusic::SimpMusicProvider,
+  },
   schema::providers,
   track::Track,
   util::now,
@@ -34,6 +37,7 @@ use crate::{
 
 pub mod manager;
 
+mod azlyrics;
 mod genius;
 mod lrclib;
 mod simpmusic;
@@ -243,10 +247,11 @@ pub enum ProviderId {
   LrcLib,
   SimpMusic,
   Genius,
+  AzLyrics,
 }
 
 impl ProviderId {
-  pub const ALL: [Self; 3] = [Self::LrcLib, Self::SimpMusic, Self::Genius];
+  pub const ALL: [Self; 4] = [Self::LrcLib, Self::SimpMusic, Self::Genius, Self::AzLyrics];
 
   #[must_use]
   pub fn init_provider(self) -> Arc<dyn Provider> {
@@ -254,6 +259,7 @@ impl ProviderId {
       Self::LrcLib => Arc::new(LrcLibProvider::new()),
       Self::SimpMusic => Arc::new(SimpMusicProvider::new()),
       Self::Genius => Arc::new(GeniusProvider::new()),
+      Self::AzLyrics => Arc::new(AzLyricsProvider::new()),
     }
   }
 }
@@ -264,6 +270,7 @@ impl Display for ProviderId {
       Self::LrcLib => write!(f, "LRCLIB"),
       Self::SimpMusic => write!(f, "SimpMusic"),
       Self::Genius => write!(f, "Genius"),
+      Self::AzLyrics => write!(f, "AZLyrics"),
     }
   }
 }
@@ -274,6 +281,7 @@ impl From<&str> for ProviderId {
       "LRCLIB" => Self::LrcLib,
       "SimpMusic" => Self::SimpMusic,
       "Genius" => Self::Genius,
+      "AZLyrics" => Self::AzLyrics,
       _ => Self::default(),
     }
   }

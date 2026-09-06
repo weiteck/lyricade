@@ -1,20 +1,21 @@
-use std::{
-  ops::Deref,
-  sync::{Arc, LazyLock, atomic::AtomicUsize},
-};
+use std::sync::{Arc, LazyLock, atomic::AtomicUsize};
 
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use regex::Regex;
 use reqwest::{Response, StatusCode, Url};
-use scraper::Element;
 use tokio::sync::Semaphore;
-use tracing::{error, trace, warn};
+use tokio_util::sync::CancellationToken;
+use tracing::{error, info, trace, warn};
 
 use crate::{
+  PROVIDER_MANAGER,
   lyrics::{Lyrics, LyricsType},
-  provider::{LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState},
+  provider::{
+    LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState,
+    ProviderTestResult, manager::PROVIDER_TEST_TRACKS,
+  },
   track::Track,
 };
 
@@ -59,28 +60,37 @@ impl Provider for AzLyricsProvider {
   async fn api_fetch(
     &self,
     http_client: reqwest::Client,
+    user_agent: &str,
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {
     if self.x_param.load().is_empty() {
       self
-        .refresh_x_param(&http_client, &req_counter, track)
+        .refresh_x_param(&http_client, user_agent, &req_counter, track)
         .await?;
-
-      self.sleep_for_default_req_delay();
     }
 
     trace!("AzLyricsProvider: {track}: Step 1/2: Finding matching track");
 
-    let url = match self.search(&http_client, &req_counter, track).await {
-      // Retry once if new 'x' param is provided
-      Err(ProviderError::Permanent)
+    let url = match self
+      .search(&http_client, user_agent, &req_counter, track)
+      .await
+    {
+      // Retry once if 'x' param dynamic token has changed
+      res if res == Err(ProviderError::Permanent) => {
+        self.sleep_for_default_req_delay();
+
         if self
-          .refresh_x_param(&http_client, &req_counter, track)
+          .refresh_x_param(&http_client, user_agent, &req_counter, track)
           .await
-          == Ok(true) =>
-      {
-        self.search(&http_client, &req_counter, track).await
+          == Ok(true)
+        {
+          self
+            .search(&http_client, user_agent, &req_counter, track)
+            .await
+        } else {
+          res
+        }
       }
       res => res,
     }?;
@@ -91,7 +101,7 @@ impl Provider for AzLyricsProvider {
     trace!("AzLyricsProvider: {track}: Step 2/2:  Getting lyrics for track with URL \"{url}\"");
 
     self
-      .get_lyrics_for_song_url(&http_client, &req_counter, track, &url)
+      .get_lyrics_for_song_url(&http_client, user_agent, &req_counter, track, &url)
       .await
   }
 
@@ -122,22 +132,97 @@ impl Provider for AzLyricsProvider {
   fn default_req_delay_secs(&self) -> Option<f64> {
     Some(0.2)
   }
+
+  async fn test(&self) -> ProviderTestResult {
+    let id = Self::id(&self);
+
+    assert!(
+      PROVIDER_MANAGER
+        .primary_providers_order()
+        .iter()
+        .chain(PROVIDER_MANAGER.secondary_providers_order().iter())
+        .any(|&pid| pid == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    // Results as of 2026-09-06
+    let expected = [
+      Some(String::from(
+        "Slow down, you crazy child\nYou're so ambitious for a juvenile\nBut then if you're so smart\nTell me why are you still so afraid? Mm\nWhere's the fire, what's the hurry about?\nYou'd better cool it off before you burn it out\nYou've got so much to do\nAnd only so many hours in a day, hey\n\nBut you know that when the truth is told\nThat you can get what you want or you can just get old\nYou're gonna kick off before you even get halfway through, ooh\nWhen will you realize Vienna waits for you?\n\nSlow down, you're doing fine\nYou can't be everything you wanna be before your time\nAlthough it's so romantic on the borderline tonight, tonight\nToo bad, but it's the life you lead\nYou're so ahead of yourself, that you forgot what you need\nThough you can see when you're wrong\nYou know you can't always see when you're right\nYou're right\n\nYou've got your passion, you've got your pride\nBut don't you know that only fools are satisfied?\nDream on, but don't imagine they'll all come true, ooh\nWhen will you realize Vienna waits for you?\n\nSlow down, you crazy child\nAnd take the phone off the hook and disappear for a while\nIt's alright, you can afford to lose a day or two, ooh\nWhen will you realize Vienna waits for you?\n\nAnd you know that when the truth is told\nThat you can get what you want or you could just get old\nYou're gonna kick off before you even get halfway through, ooh\nWhy don't you realize Vienna waits for you?\nWhen will you realize Vienna waits for you?",
+      )),
+      Some(String::from(
+        "If I should stay\nI would only be in your way\nSo I'll go but I know\nI'll think of you every step of the way\n\nAnd I will always love you\nI will always love you\nYou\nMy darling, you\nMmm-mm\n\nBittersweet memories –\nThat is all I'm taking with me\nSo good-bye\nPlease don't cry:\nWe both know I'm not what you, you need\n\nAnd I... will always love you\nI... will always love you\nYou, ooh\n\nI hope life treats you kind\nAnd I hope you have all you've dreamed of\nAnd I'm wishing you joy and happiness\nBut above all this, I wish you love\n\nAnd I... will always love you\nI will always love you\nI will always love you\nI will always love you\n\nI will always love you\nI, I will always love you\n\nYou\nDarling, I love you\nI'll always\nI'll always love you\nOoh\nOoh",
+      )),
+      Some(String::from(
+        "Seasons change,\nAnd I tried hard just to soften you\nSeasons change,\nBut I've grown tired of trying to change for you\n\nCause I've been waiting on you\nI've been waiting on you\nCause I've been waiting on you\nI've been waiting on you\n\nAs it breaks, the summer will wake\nBut the winter will wash what is left of the taste\nAs it breaks, the summer will warm\nBut the winter will crave what is gone\nWill crave what has all... gone away\n\nPeople change,\nYou know but some people never do\nYou know when people change\nThey gain a peace but they lose one too\n\nCause I've been hanging on you\nI've been waiting on you\nCause I've been waiting on you\nI've been hanging on you\n\nAs it breaks, the summer will wake\nBut the winter will wash what is left of the taste\nAs it breaks, the summer will warm\nBut the winter will crave what is gone\nWill crave what is gone\nWill crave what has all... gone away\n\nCause I've been waiting on you",
+      )),
+    ];
+
+    assert_eq!(
+      expected.len(),
+      PROVIDER_TEST_TRACKS.len(),
+      "test tracks and expected results must be equal length"
+    );
+
+    let mut passed = 0;
+
+    // Linebreaks can vary for scrapers each page render so they're removed
+    let expected = expected.map(|s| s.map(|s| s.lines().collect()));
+
+    for (idx, track) in PROVIDER_TEST_TRACKS.iter().enumerate() {
+      let token = CancellationToken::new();
+      let _guard = token.drop_guard_ref();
+
+      let lyrics = PROVIDER_MANAGER
+        .fetch()
+        .track(track)
+        .with_provider(id)
+        .cancel_token(token.clone())
+        .call()
+        .await
+        .inspect(|l| trace!("{id}Provider: Test: Returned lyrics for {track}:\n{l:#?}"))
+        .and_then(|l| l.plain_lyrics)
+        .map(|l| l.contents.lines().collect::<String>());
+
+      if let Some(expected) = expected.get(idx)
+        && expected == &lyrics
+      {
+        passed += 1;
+      }
+    }
+
+    let pass_rate = f64::from(passed) / PROVIDER_TEST_TRACKS.len() as f64;
+
+    info!("{id}Provider: Test: Passed {passed}/{} tests", PROVIDER_TEST_TRACKS.len());
+
+    match pass_rate {
+      ..0.0 => ProviderTestResult::Failed,
+      1.0.. => ProviderTestResult::Success,
+      _ => ProviderTestResult::Degraded,
+    }
+  }
 }
 
 impl AzLyricsProvider {
   async fn refresh_x_param(
     &self,
     http_client: &reqwest::Client,
+    user_agent: &str,
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
   ) -> Result<bool, ProviderError> {
-    trace!("AzLyricsProvider: {track}: Renewing URL 'x' param");
+    trace!("AzLyricsProvider: {track}: Renewing URL 'x' param dynamic token");
     trace!("AzLyricsProvider: {track}: GET request to \"{}\"", X_PARAM_URL);
 
-    let response = http_client.get(X_PARAM_URL).send().await.map_err(|e| {
-      error!("AzLyricsProvider: {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(X_PARAM_URL)
+      .header(reqwest::header::USER_AGENT, user_agent)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("AzLyricsProvider: {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -153,12 +238,22 @@ impl AzLyricsProvider {
           && let x_param = String::from(value.as_str())
         {
           if self.x_param.load().as_ref() == &x_param {
-            trace!("AzLyricsProvider: {track}: Got existing 'x' param \"{}\"", value.as_str());
+            trace!(
+              "AzLyricsProvider: {track}: Got existing 'x' param dynamic token \"{}\"",
+              value.as_str()
+            );
             return Ok(false);
           }
 
-          trace!("AzLyricsProvider: {track}: Got new 'x' param \"{}\"", value.as_str());
+          trace!(
+            "AzLyricsProvider: {track}: Got new 'x' param dynamic token \"{}\"",
+            value.as_str()
+          );
           self.x_param.store(Arc::new(x_param));
+
+          // Delay next request
+          self.sleep_for_default_req_delay();
+
           return Ok(true);
         }
       }
@@ -170,12 +265,13 @@ impl AzLyricsProvider {
   async fn search(
     &self,
     http_client: &reqwest::Client,
+    user_agent: &str,
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
   ) -> Result<String, ProviderError> {
     let url = Url::parse_with_params(
       SEARCH_URL,
-      &[
+      [
         ("q", format!("{} {}", track.artist_name, track.track_name).as_str()),
         ("x", self.x_param.load().as_str()),
       ],
@@ -187,10 +283,15 @@ impl AzLyricsProvider {
 
     trace!("AzLyricsProvider: {track}: GET request to \"{}\"", &url);
 
-    let response = http_client.get(url).send().await.map_err(|e| {
-      error!("AzLyricsProvider: {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(url)
+      .header(reqwest::header::USER_AGENT, user_agent)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("AzLyricsProvider: {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -215,12 +316,16 @@ impl AzLyricsProvider {
           continue;
         };
 
-        // <a> should have two <b> children containing track and artist names
+        // <a> link should contain 2x <b> children containing "track" and artist names
         let text = link
           .descendent_elements()
           .filter(|el| el.value().name() == "b")
           .map(|el| el.text().collect::<String>())
           .collect::<Vec<_>>();
+
+        trace!(
+          "AzLyricsProvider: {track}: Parsing search result <a> element with href={url} and <b> children: {text:?}"
+        );
 
         if text.len() != 2 {
           warn!(
@@ -258,16 +363,22 @@ impl AzLyricsProvider {
   async fn get_lyrics_for_song_url(
     &self,
     http_client: &reqwest::Client,
+    user_agent: &str,
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
     url: &str,
   ) -> Result<LyricsData, ProviderError> {
     trace!("AzLyricsProvider: {track}: GET request to \"{}\"", &url);
 
-    let response = http_client.get(url).send().await.map_err(|e| {
-      error!("AzLyricsProvider: {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(url)
+      .header(reqwest::header::USER_AGENT, user_agent)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("AzLyricsProvider: {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -280,126 +391,67 @@ impl AzLyricsProvider {
       error!("AzLyricsProvider: {track}: Failed to parse full text from response: {e}");
     }) && let document = scraper::Html::parse_document(&html)
       && let Ok(div_selector) = scraper::Selector::parse("div.col-xs-12")
-      && let Some(parent_div) = document.select(&div_selector).nth(1)
+      && let Some(grandparent_div) = document.select(&div_selector).nth(0)
     {
-      dbg!(&parent_div);
+      trace!("AzLyricsProvider: {track}: Found lyrics grandparent <div>");
 
-      if let Some(lyrics_div) = parent_div
+      if let Some(parent_div_children) = grandparent_div
         .child_elements()
         .filter(|el| {
-          dbg!("CANDIDATE: {}", &el);
-          let keep =
-            el.value().name() == "div" && el.attr("class").is_none() && el.attr("id").is_none();
-          dbg!("CANDIDATE VALID: {}", keep);
-          keep
+          // Lyrics should be children of first <div> without a class or ID attribute
+          el.value().name() == "div" && el.attr("class").is_none() && el.attr("id").is_none()
         })
-        .nth(1)
-        .map(|el| {
-          dbg!("FINAL: {}", &el);
-          el.text()
-        })
+        .nth(0)
+        .map(|el| el.text())
       {
-        lyrics_div.into_iter().for_each(|s| error!("{s}"));
+        trace!("AzLyricsProvider: {track}: Found lyrics parent <div>");
+
+        let mut buf = String::new();
+        let mut previous_line_empty = true;
+        for line in parent_div_children {
+          let line = line.trim();
+          let is_empty_line = line.is_empty();
+
+          if is_empty_line && previous_line_empty {
+            continue;
+          }
+          previous_line_empty = is_empty_line;
+
+          if !buf.is_empty() {
+            buf.push('\n');
+          }
+
+          buf.push_str(line);
+        }
+
+        let plain_lyrics = Some(Lyrics {
+          lyrics_type: LyricsType::Plain,
+          contents: buf,
+        });
+
+        let lyrics_data = LyricsData {
+          instrumental: None,
+          plain_lyrics,
+          sync_lyrics: None,
+        };
+
+        return Ok(lyrics_data);
       }
+    } else {
+      warn!("AzLyricsProvider: {track}: Unable to isolate <div> element containing lyrics");
     }
 
     error!("AzLyricsProvider: {track}: Failed to scrape lyrics with status {response_status}");
     Err(ProviderError::Permanent)
   }
 
-  // async fn get_lyrics_for_video_id(
-  //   &self,
-  //   http_client: &reqwest::Client,
-  //   req_counter: &Arc<AtomicUsize>,
-  //   track: &Track,
-  //   video_id: &str,
-  // ) -> ProviderResult {
-  //   let get_lyrics_url = format!("{API_BASE_URL}/{video_id}");
-  //   let get_lyrics_url = Url::parse(&get_lyrics_url).map_err(|e| {
-  //     error!("AzLyricsProvider: {track}: Could not parse URL from \"{get_lyrics_url}\": {e}");
-  //     ProviderError::Permanent
-  //   })?;
-
-  //   trace!("AzLyricsProvider: {track}: Step 2/2: Getting lyrics for track with videoId {video_id}");
-  //   trace!("AzLyricsProvider: {track}: GET request to \"{}\"", &get_lyrics_url);
-
-  //   let response = http_client.get(get_lyrics_url).send().await.map_err(|e| {
-  //     error!("AzLyricsProvider: {track}: Error encountered while getting lyrics for {track}: {e}");
-  //     ProviderError::Permanent
-  //   })?;
-  //   let response_status = response.status();
-
-  //   req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-  //   if response_status == StatusCode::TOO_MANY_REQUESTS {
-  //     return Err(self.handle_too_many_requests(&response, track));
-  //   }
-
-  //   if let Ok(api_response) = response.json::<ApiLyricsResponse>().await.inspect_err(|e| {
-  //     error!("AzLyricsProvider: {track}: Failed to parse get lyrics response: {e}");
-  //   }) {
-  //     trace!("AzLyricsProvider: {track}: API get lyrics response:\n{:#?}", &api_response);
-
-  //     match api_response {
-  //       ApiLyricsResponse::Success { data, .. } => {
-  //         if data.len() > 1 {
-  //           warn!(
-  //             "AzLyricsProvider: {track}: `ApiLyricsResponse.data` contains {} items when 1 was expected",
-  //             data.len()
-  //           );
-  //         }
-
-  //         if let Some(ApiLyricsResponseItem {
-  //           plain_lyric,
-  //           synced_lyrics,
-  //           ..
-  //         }) = data.first().cloned()
-  //         {
-  //           let plain_lyric = plain_lyric.trim().to_string();
-  //           let synced_lyrics = synced_lyrics.map(|s| s.trim().to_string());
-
-  //           let plain_lyrics = if plain_lyric.is_empty() {
-  //             None
-  //           } else {
-  //             Some(Lyrics {
-  //               lyrics_type: LyricsType::Plain,
-  //               contents: plain_lyric,
-  //             })
-  //           };
-
-  //           let sync_lyrics = if synced_lyrics.as_ref().is_none_or(String::is_empty) {
-  //             None
-  //           } else {
-  //             synced_lyrics.map(|s| Lyrics {
-  //               lyrics_type: LyricsType::Sync,
-  //               contents: s,
-  //             })
-  //           };
-
-  //           return Ok(LyricsData {
-  //             instrumental: None,
-  //             plain_lyrics,
-  //             sync_lyrics,
-  //           });
-  //         }
-
-  //         error!("AzLyricsProvider: {track}: Failed to parse lyrics data from `Success` response");
-  //         return Err(ProviderError::Permanent);
-  //       }
-
-  //       ApiLyricsResponse::Error { error, .. } => {
-  //         return Err(self.handle_error(error, track));
-  //       }
-  //     }
-  //   }
-
-  //   error!("AzLyricsProvider: {track}: Server responded with {response_status}");
-  //   Err(ProviderError::Permanent)
-  // }
-
   fn handle_too_many_requests(&self, response: &Response, track: &Track) -> ProviderError {
+    // TODO: Remove logging all headers
+    let headers = response.headers();
+    error!("AzLyricsProvider: {track}: TOO MANY REQUEST response with headers:\n{headers:#?}");
+
     // Set retry delay if 429 too many requests
-    let req_delay = if let Some(v) = response.headers().get("x-rate-limit-retry-after-seconds")
+    let req_delay = if let Some(v) = response.headers().get("Retry-After")
       && let Ok(s) = v.to_str()
       && let Ok(req_delay) = str::parse::<f64>(s)
     {
@@ -410,7 +462,7 @@ impl AzLyricsProvider {
       req_delay
     } else {
       warn!(
-        "AzLyricsProvider: {track}: Too many requests - no \"x-rate-limit-retry-after-seconds\" header; defaulting to delay of 5s"
+        "AzLyricsProvider: {track}: Too many requests - no \"Retry-After\" header; defaulting to delay of 5s"
       );
       5.0
     };
