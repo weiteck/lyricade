@@ -58,7 +58,7 @@ An AppImage package is also provided for convenience, however Flatpak is the onl
 
 ## Building
 
-Lyricade is primarily developed and packaged as a `flatpak`. The `flatpak` can be built and installed locally by following the below steps.
+Lyricade is primarily developed and packaged as a Flatpak application. The Flatpak can be built and installed locally by following the below steps.
 
 ### Requirements
 
