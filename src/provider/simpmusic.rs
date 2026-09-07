@@ -225,7 +225,7 @@ impl SimpMusicProvider {
     )
     .map_err(|e| {
       error!("SimpMusicProvider: {track}: Could not build search URL from Track data: {e}");
-      ProviderError::Permanent
+      ProviderError::NotFound
     })?;
 
     trace!("SimpMusicProvider: {track}: Step 1/2: Finding matching videoId");
@@ -286,7 +286,7 @@ impl SimpMusicProvider {
     let get_lyrics_url = format!("{API_BASE_URL}/{video_id}");
     let get_lyrics_url = Url::parse(&get_lyrics_url).map_err(|e| {
       error!("SimpMusicProvider: {track}: Could not parse URL from \"{get_lyrics_url}\": {e}");
-      ProviderError::Permanent
+      ProviderError::NotFound
     })?;
 
     trace!(

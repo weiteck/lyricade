@@ -99,9 +99,13 @@ impl FactoryComponent for ProviderStateRow {
             set_margin_all: VALUE_MARGIN,
             gtk::Image {
               #[watch]
-              set_opacity: if self.state.rate_limited.load(Ordering::Relaxed) { 1.0 } else { 0.15 },
-              set_icon_name: Some("media-playback-pause-symbolic"),
-              set_tooltip: "Rate-Limited",
+              set_opacity: if self.state.rate_limited.load(Ordering::Relaxed) || self.state.failing.load(Ordering::Relaxed) { 1.0 } else { 0.15 },
+              #[watch]
+              set_icon_name: if self.state.failing.load(Ordering::Relaxed) { Some("media-playback-stop-symbolic") } else { Some("media-playback-pause-symbolic") },
+              #[watch]
+              set_class_active: ("destructive-icon", self.state.failing.load(Ordering::Relaxed)),
+              #[watch]
+              set_tooltip: if self.state.failing.load(Ordering::Relaxed) { "Failing" } else { "Rate-Limited" },
             },
           },
         },

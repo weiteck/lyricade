@@ -210,7 +210,7 @@ impl GeniusProvider {
     )
     .map_err(|e| {
       error!("GeniusProvider: {track}: Could not build search URL from Track data: {e}");
-      ProviderError::Permanent
+      ProviderError::NotFound
     })?;
 
     trace!("GeniusProvider: {track}: GET request to \"{}\"", &search_url);

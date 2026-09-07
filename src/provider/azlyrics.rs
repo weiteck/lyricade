@@ -283,7 +283,7 @@ impl AzLyricsProvider {
     )
     .map_err(|e| {
       error!("AzLyricsProvider: {track}: Could not build search URL from Track data: {e}");
-      ProviderError::Permanent
+      ProviderError::NotFound
     })?;
 
     trace!("AzLyricsProvider: {track}: GET request to \"{}\"", &url);
@@ -451,10 +451,6 @@ impl AzLyricsProvider {
   }
 
   fn handle_too_many_requests(&self, response: &Response, track: &Track) -> ProviderError {
-    // TODO: Remove logging all headers
-    let headers = response.headers();
-    error!("AzLyricsProvider: {track}: TOO MANY REQUEST response with headers:\n{headers:#?}");
-
     // Set retry delay if 429 too many requests
     let req_delay = if let Some(v) = response.headers().get("Retry-After")
       && let Ok(s) = v.to_str()

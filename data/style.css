@@ -81,3 +81,7 @@ row.drop-target {
     outline: 1px solid var(--accent-color);
     outline-offset: -1px;
 }
+
+.destructive-icon {
+    color: var(--destructive-color);
+}

@@ -93,7 +93,7 @@ impl Provider for LrcLibProvider {
     )
     .map_err(|e| {
       error!("LrcLibProvider: {track}: Could not parse Track into request URL: {e}");
-      ProviderError::Permanent
+      ProviderError::NotFound
     })?;
 
     trace!("LrcLibProvider: {track}: GET request to \"{}\"", &url);

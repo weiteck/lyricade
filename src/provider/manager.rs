@@ -181,8 +181,11 @@ impl ProviderManager {
     // We loop through each Provider and return only when one of the following is true:
     // (1) we have the lyrics type requested;
     // (2) a Provider says the Track is instrumental; or
-    // (3) all *primary* Providers have returned a result.
-    // Secondary providers are a fallback for when primary Providers are busy
+    // (3) all *primary* Providers have returned a result (or are failing).
+    // Secondary providers are a fallback for when primary Providers are busy.
+    //
+    // If the last primary Provider is in a failing state, it will be removed and
+    // a secondary Provider will be promoted and checked (if not-yet-visited).
     loop {
       for provider in providers.iter() {
         let id = provider.id();
@@ -248,6 +251,24 @@ impl ProviderManager {
             }
           },
         };
+
+        // Don't wait for failing primary Providers (may have been marked failing from another thread)
+        if provider.is_failing() {
+          primary_not_checked.remove(&id);
+
+          // Promote a secondary Provider to guarantee a fetch is made in a future loop
+          if primary_not_checked.is_empty()
+            && let Some(sec_id) = self
+              .secondary_providers_order()
+              .iter()
+              .find(|&sec_id| &id != sec_id && secondary_not_checked.remove(sec_id))
+          {
+            warn!(
+              "ProviderManager: {track}: Promoting {sec_id} in place of failing provider {id} for this fetch"
+            );
+            primary_not_checked.insert(*sec_id);
+          }
+        }
 
         // Checked all primary Providers - return any lyrics we have, even if not preferred type
         if primary_not_checked.is_empty() {

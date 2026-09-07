@@ -42,6 +42,8 @@ mod genius;
 mod lrclib;
 mod simpmusic;
 
+const SECS_TO_SKIP_PROVIDER_IF_FAILING: f64 = 30.0;
+
 #[async_trait]
 pub trait Provider: Debug + Send + Sync {
   #[must_use]
@@ -76,7 +78,7 @@ pub trait Provider: Debug + Send + Sync {
     req_counter: Arc<AtomicUsize>,
     track: &Track,
   ) -> ProviderResult {
-    let permit = self.fetch_begin()?;
+    let _permit = self.fetch_begin()?;
 
     trace!("{}Provider: {track}: Requesting lyrics", self.id());
 
@@ -84,7 +86,7 @@ pub trait Provider: Debug + Send + Sync {
       .api_fetch(http_client, user_agent, req_counter, track)
       .await;
 
-    self.fetch_end(permit);
+    self.fetch_end(track, &result);
 
     result
   }
@@ -105,9 +107,7 @@ pub trait Provider: Debug + Send + Sync {
     Ok(permit)
   }
 
-  fn fetch_end(&self, permit: SemaphorePermit) {
-    drop(permit);
-
+  fn fetch_end(&self, track: &Track, result: &ProviderResult) {
     self.set_req_delay(self.default_req_delay_secs());
 
     let state = self.state_ref();
@@ -115,6 +115,29 @@ pub trait Provider: Debug + Send + Sync {
     state
       .available_permits
       .store(self.semaphore().available_permits(), Ordering::Relaxed);
+
+    // Set failing state of Provider on `ProviderError::Permanent`.
+    // Providers marked `failing` will have a connection delay of set.
+    let is_failing = self.is_failing();
+    match result {
+      Err(ProviderError::Permanent) if is_failing => {
+        // Still failing
+        debug!("{}Provider: {track}: Still failing", self.id());
+      }
+      Err(ProviderError::Permanent) => {
+        // Now failing (a connection delay will be set)
+        warn!("{}Provider: {track}: Now failing", self.id());
+        self.set_failing(true);
+      }
+      _ if is_failing => {
+        // No longer failing
+        debug!("{}Provider: {track}: Now healthy", self.id());
+        self.set_failing(false);
+      }
+      _ => {
+        // Was not failing
+      }
+    }
   }
 
   fn acquire_conn_permit(&self) -> Result<SemaphorePermit<'_>, ProviderError> {
@@ -187,6 +210,20 @@ pub trait Provider: Debug + Send + Sync {
     }
   }
 
+  fn is_failing(&self) -> bool {
+    self.state_ref().failing.load(Ordering::Relaxed)
+  }
+
+  fn set_failing(&self, failing: bool) {
+    self.state_ref().failing.store(failing, Ordering::Relaxed);
+
+    if failing {
+      self.set_req_delay(Some(SECS_TO_SKIP_PROVIDER_IF_FAILING));
+    } else {
+      self.set_req_delay(self.default_req_delay_secs());
+    }
+  }
+
   fn default_req_delay_secs(&self) -> Option<f64> {
     None
   }
@@ -202,6 +239,7 @@ pub trait Provider: Debug + Send + Sync {
     let state = self.state();
     state.rate_limited.store(false, Ordering::Relaxed);
     state.total_requests.store(0, Ordering::Relaxed);
+    state.failing.store(false, Ordering::Relaxed);
   }
 }
 
@@ -492,6 +530,7 @@ pub struct ProviderState {
   pub total_permits: AtomicUsize,
   pub available_permits: AtomicUsize,
   pub rate_limited: AtomicBool,
+  pub failing: AtomicBool,
 }
 
 impl ProviderState {
@@ -505,6 +544,7 @@ impl ProviderState {
       total_permits: AtomicUsize::new(permits),
       available_permits: AtomicUsize::new(permits),
       rate_limited: AtomicBool::new(false),
+      failing: AtomicBool::new(false),
     }
   }
 }
