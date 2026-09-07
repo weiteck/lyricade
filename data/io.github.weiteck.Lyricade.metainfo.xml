@@ -23,12 +23,13 @@
       Features:
     </p>
     <ul>
-      <li>Scan your music and find missing lyrics</li>
-      <li>Download either synchronous LRC or plain lyrics</li>
-      <li>Embed lyrics to the metadata tag, save as a sidecar file, or both</li>
+      <li>Scan your music and find missing lyrics from several providers</li>
+      <li>Download either synchronised LRC or plain TXT lyrics</li>
+      <li>Embed lyrics to the metadata tag and/or save as a sidecar file</li>
       <li>Embed <em>existing</em> sidecar LRC and TXT files into lyrics tags</li>
       <li>Remove existing lyrics files if a file is already tagged</li>
-      <li>Lyrics viewer with audio playback and LRC lyric highlighting</li>
+      <li>Convert LRC lyrics to plain TXT lyrics</li>
+      <li>Lyrics viewer with playback and lyric highlighting for LRC lyrics</li>
       <li>Supports multiple music libraries</li>
     </ul>
   </description>
