@@ -65,6 +65,8 @@ impl Provider for AzLyricsProvider {
     track: &Track,
   ) -> ProviderResult {
     if self.x_param.load().is_empty() {
+      trace!("AzLyricsProvider: {track}: No existing 'x' param dynamic token");
+
       self
         .refresh_x_param(&http_client, user_agent, &req_counter, track)
         .await?;
@@ -211,7 +213,7 @@ impl AzLyricsProvider {
     req_counter: &Arc<AtomicUsize>,
     track: &Track,
   ) -> Result<bool, ProviderError> {
-    trace!("AzLyricsProvider: {track}: Renewing URL 'x' param dynamic token");
+    trace!("AzLyricsProvider: {track}: Renewing 'x' param dynamic token");
     trace!("AzLyricsProvider: {track}: GET request to \"{}\"", X_PARAM_URL);
 
     let response = http_client
@@ -259,6 +261,9 @@ impl AzLyricsProvider {
       }
     }
 
+    error!(
+      "AzLyricsProvider: {track}: Failed to get 'x' param dynamic token with response {response_status}"
+    );
     Err(ProviderError::Permanent)
   }
 
