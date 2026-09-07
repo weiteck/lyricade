@@ -14,15 +14,16 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 ## Features
 
-- Scan your music and find missing lyrics
-- Download either synchronous LRC or plain lyrics
-- Embed lyrics to the metadata tag, save as a sidecar file, or both
-- Lyrics viewer with audio playback and LRC lyric highlighting
-- Supports multiple local music libraries
-- Three lyrics providers supported with more to be come:
+- Scan your music files and find missing lyrics
+- Download either synchronised LRC or plain TXT lyrics
+- Embed lyrics to the metadata tag and/or save as a sidecar file
+- Lyrics viewer with playback and lyric highlighting for LRC lyrics
+- Support for multiple local music libraries
+- Support for multiple lyrics providers, including:
   - [LRCLIB](https://lrclib.net)
-  - [SimpMusic](https://lyrics-frontend-zeta.vercel.app)
-  - [Genius (plain lyrics only)](https://genius.com/)
+  - [SimpMusic](https://www.simpmusic.org)
+  - [Genius (plain only)](https://genius.com)
+  - [AZLyrics (plain only)](https://azlyrics.com)
 
 ### Lyric management
 
@@ -58,14 +59,15 @@ An AppImage package is also provided for convenience, however Flatpak is the onl
 
 ## Building
 
-Lyricade is primarily developed and packaged as a Flatpak application. The Flatpak can be built and installed locally by following the below steps.
+**Lyricade** is intended to be packaged as a Flatpak application. The Flatpak can be built and installed locally by following the below steps.
 
 ### Requirements
 
 - git
 - Flatpak
 - flatpak-builder
-- GNOME Platform and SDK matching the manifest
+- GNOME Platform and SDK
+- Rust SDK extension
 
 #### 1. Clone the repository
 
@@ -82,7 +84,7 @@ flatpak install flathub \
     org.freedesktop.Sdk.Extension.rust-stable//25.08
 ```
 
-(Build with the runtime version specified by the project's Flatpak manifest file `io.github.weiteck.Lyricade.yml`)
+(Ensure the runtime version matches that specified by the manifest file [io.github.weiteck.Lyricade.dev.yml](io.github.weiteck.Lyricade.dev.yml))
 
 #### 3. Build
 
@@ -92,7 +94,7 @@ flatpak-builder \
     --install \
     --force-clean \
     build-dir \
-    io.github.weiteck.Lyricade.yml
+    io.github.weiteck.Lyricade.dev.yml
 ```
 
 #### 4. Run
