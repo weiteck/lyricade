@@ -25,7 +25,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
   - [Genius (plain only)](https://genius.com)
   - [AZLyrics (plain only)](https://azlyrics.com)
 
-### Lyric management
+### Lyrics management
 
 - Embed *existing* sidecar `.lrc` or `.txt` files into lyrics tags
 - Remove existing lyrics files if a file is already tagged
@@ -43,7 +43,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
 
 ## Supported Audio File Formats
 
-**Lyricade** uses [`lofty-rs`](https://github.com/Serial-ATA/lofty-rs) for reading and writing audio file metadata tags. Please refer to their repo for supported formats.
+**Lyricade** uses [`lofty-rs`](https://github.com/Serial-ATA/lofty-rs) for reading and writing audio file tags. Please refer to their repo for supported formats.
 
 ## Releases
 
