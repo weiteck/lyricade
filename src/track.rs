@@ -186,9 +186,9 @@ impl Track {
     let mut read_id3v2_tag = |tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>| {
       tag_read = true;
 
-      self.artist_name = tag.artist().map(String::from).unwrap_or_default();
-      self.album_name = tag.album().map(String::from).unwrap_or_default();
-      self.track_name = tag.title().map(String::from).unwrap_or_default();
+      self.artist_name = tag.artist().map_or_default(String::from);
+      self.album_name = tag.album().map_or_default(String::from);
+      self.track_name = tag.title().map_or_default(String::from);
 
       self.lyrics = lrc_lyrics_from_id3v2(tag, mpeg_sample_rate)
         .map(|l| l.contents)
@@ -257,9 +257,9 @@ impl Track {
 
           tag_read = true;
 
-          self.artist_name = tag.artist().map(String::from).unwrap_or_default();
-          self.album_name = tag.album().map(String::from).unwrap_or_default();
-          self.track_name = tag.title().map(String::from).unwrap_or_default();
+          self.artist_name = tag.artist().map_or_default(String::from);
+          self.album_name = tag.album().map_or_default(String::from);
+          self.track_name = tag.title().map_or_default(String::from);
 
           self.lyrics = tag
             .get_string(tag::ItemKey::Lyrics)
@@ -290,9 +290,9 @@ impl Track {
         })
         .ok_or_else(|| anyhow!("{self} scan: Failed to read metadata tag"))?;
 
-      self.artist_name = tag.artist().map(String::from).unwrap_or_default();
-      self.album_name = tag.album().map(String::from).unwrap_or_default();
-      self.track_name = tag.title().map(String::from).unwrap_or_default();
+      self.artist_name = tag.artist().map_or_default(String::from);
+      self.album_name = tag.album().map_or_default(String::from);
+      self.track_name = tag.title().map_or_default(String::from);
 
       self.lyrics = tag
         .get_string(tag::ItemKey::Lyrics)

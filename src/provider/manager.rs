@@ -105,8 +105,7 @@ impl ProviderManager {
 
     let preferred_lyrics = SETTINGS
       .read()
-      .map(|settings| settings.prefer_lyrics_type)
-      .unwrap_or_default();
+      .map_or_default(|settings| settings.prefer_lyrics_type);
     let preferred_lyrics = ArcSwap::new(Arc::new(preferred_lyrics));
 
     let user_agents = OnceCell::new();

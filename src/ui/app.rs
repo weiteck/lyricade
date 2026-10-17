@@ -601,7 +601,7 @@ impl Component for AppModel {
                           #[watch]
                           set_label: &format!(
                             "{}{} _Tracks",
-                            model.filtered_track_count.map(|n| format!("{}/",n.to_formatted_string(&*NUM_LOCALE))).unwrap_or_default(),
+                            model.filtered_track_count.map_or_default(|n| format!("{}/",n.to_formatted_string(&*NUM_LOCALE))),
                             model.track_count.to_formatted_string(&*NUM_LOCALE)
                           ),
 

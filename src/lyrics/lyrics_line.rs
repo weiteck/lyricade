@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::{collections::BTreeSet, str::FromStr};
 
 use tracing::trace;
 
@@ -38,7 +38,7 @@ impl LyricsLine {
       .filter_map(|line| {
         // Try to parse tags if sync lyrics not yet encountered
         if line_count == 0
-          && let Ok(tag) = LrcTag::try_from(line)
+          && let Ok(tag) = LrcTag::from_str(line)
         {
           trace!("Parsed LRC tag: \"{tag}\"");
           tags.insert(tag);

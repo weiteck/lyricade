@@ -1,4 +1,4 @@
-use std::{fmt::Display, sync::LazyLock};
+use std::{fmt::Display, str::FromStr, sync::LazyLock};
 
 use anyhow::anyhow;
 use regex::Regex;
@@ -42,11 +42,11 @@ pub enum LrcTag {
   Version(String),
 }
 
-impl TryFrom<&str> for LrcTag {
-  type Error = anyhow::Error;
+impl FromStr for LrcTag {
+  type Err = anyhow::Error;
 
-  fn try_from(value: &str) -> Result<Self, Self::Error> {
-    if let Some((prefix, suffix)) = value
+  fn from_str(s: &str) -> Result<Self, Self::Err> {
+    if let Some((prefix, suffix)) = s
       .trim()
       .trim_start_matches('[')
       .trim_end_matches(']')
