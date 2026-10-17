@@ -38,7 +38,7 @@ jobs:
         env:
           ICON: ./data/icons/512x512.png
           DESKTOP: ./data/io.github.weiteck.Lyricade.desktop
-          OUTPATH: ./dist
+          OUTPATH: ./
           OUTNAME: lyricade.AppImage
           SHARUN: "https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
         run: |
