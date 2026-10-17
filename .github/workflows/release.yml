@@ -39,10 +39,9 @@ jobs:
           ICON: ./data/icons/512x512.png
           DESKTOP: ./data/io.github.weiteck.Lyricade.desktop
           OUTPATH: ./dist
-          OUTNAME: lyricade-"$ARCH".AppImage
+          OUTNAME: lyricade.AppImage
+          SHARUN: "https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
         run: |
-          ARCH="$(uname -m)"
-          SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
           wget "$SHARUN" -O ./quick-sharun
           chmod +x ./quick-sharun
           ./quick-sharun ./target/release/lyricade
