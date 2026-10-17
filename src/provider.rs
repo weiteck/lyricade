@@ -26,10 +26,7 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
   DB_POOL,
   lyrics::Lyrics,
-  provider::{
-    azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider,
-    simpmusic::SimpMusicProvider,
-  },
+  provider::{azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider},
   schema::providers,
   track::Track,
   util::now,
@@ -40,7 +37,6 @@ pub mod manager;
 mod azlyrics;
 mod genius;
 mod lrclib;
-mod simpmusic;
 
 const SECS_TO_SKIP_PROVIDER_IF_FAILING: f64 = 30.0;
 
@@ -283,19 +279,17 @@ pub type ProviderResult = Result<LyricsData, ProviderError>;
 pub enum ProviderId {
   #[default]
   LrcLib,
-  SimpMusic,
   Genius,
   AzLyrics,
 }
 
 impl ProviderId {
-  pub const ALL: [Self; 4] = [Self::LrcLib, Self::SimpMusic, Self::Genius, Self::AzLyrics];
+  pub const ALL: [Self; 3] = [Self::LrcLib, Self::Genius, Self::AzLyrics];
 
   #[must_use]
   pub fn init_provider(self) -> Arc<dyn Provider> {
     match self {
       Self::LrcLib => Arc::new(LrcLibProvider::new()),
-      Self::SimpMusic => Arc::new(SimpMusicProvider::new()),
       Self::Genius => Arc::new(GeniusProvider::new()),
       Self::AzLyrics => Arc::new(AzLyricsProvider::new()),
     }
@@ -306,7 +300,6 @@ impl Display for ProviderId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::LrcLib => write!(f, "LRCLIB"),
-      Self::SimpMusic => write!(f, "SimpMusic"),
       Self::Genius => write!(f, "Genius"),
       Self::AzLyrics => write!(f, "AZLyrics"),
     }
@@ -317,7 +310,6 @@ impl From<&str> for ProviderId {
   fn from(value: &str) -> Self {
     match value {
       "LRCLIB" => Self::LrcLib,
-      "SimpMusic" => Self::SimpMusic,
       "Genius" => Self::Genius,
       "AZLyrics" => Self::AzLyrics,
       _ => Self::default(),

@@ -563,32 +563,6 @@ mod tests {
 
   #[tokio::test]
   #[traced_test]
-  async fn simpmusic_lyrics() {
-    let id = ProviderId::SimpMusic;
-
-    assert!(
-      PROVIDER_MANAGER
-        .providers
-        .load()
-        .iter()
-        .any(|p| p.id() == id),
-      "{id}Provider not initialised (must be in default Providers)"
-    );
-
-    let res = PROVIDER_MANAGER
-      .providers
-      .load()
-      .iter()
-      .find(|p| p.id() == id)
-      .map(async |p| p.test().await)
-      .expect("should have Provider")
-      .await;
-
-    assert_eq!(res, ProviderTestResult::Success);
-  }
-
-  #[tokio::test]
-  #[traced_test]
   async fn genius_lyrics() {
     let id = ProviderId::Genius;
 
