@@ -31,15 +31,22 @@ jobs:
       - name: Rust Cache
         uses: swatinem/rust-cache@v2
 
-      - name: Install cargo-packager
-        run: cargo install cargo-packager --locked
+      - name: Build Binary
+        run: cargo build --release
 
-      - name: Build and Bundle AppImage
+      - name: Build AppImage
         env:
-          DEPLOY_GTK_VERSION: 4
-          NO_STRIP: "true"
-          APPIMAGE_EXTRACT_AND_RUN: 1
-        run: cargo packager --release --formats appimage -c Packager.toml
+          ICON: ./data/icons/512x512.png
+          DESKTOP: ./data/io.github.weiteck.Lyricade.desktop
+          OUTPATH: ./dist
+          OUTNAME: lyricade-"$ARCH".AppImage
+        run: |
+          ARCH="$(uname -m)"
+          SHARUN="https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
+          wget "$SHARUN" -O ./quick-sharun
+          chmod +x ./quick-sharun
+          ./quick-sharun ./target/release/lyricade
+          ./quick-sharun --make-appimage
 
       # Rename file when a v* tag is pushed
       - name: Rename AppImage to include Git Tag
