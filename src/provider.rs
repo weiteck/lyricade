@@ -320,13 +320,7 @@ impl From<&str> for ProviderId {
 impl FromSql<Text, Sqlite> for ProviderId {
   fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
     let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-    Ok(
-      ron::from_str::<Self>(&s)
-        .inspect_err(|error| {
-          error!("Error deserialising `Providers` from database value \"{s}\"; using default value: {error}");
-        })
-        .unwrap_or_default(),
-    )
+    ron::from_str::<Self>(&s).map_err(std::convert::Into::into)
   }
 }
 
