@@ -23,7 +23,8 @@ jobs:
             libgtk-4-dev \
             libadwaita-1-dev \
             build-essential \
-            libasound2-dev
+            libasound2-dev \
+            pipewire-alsa
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -33,6 +34,11 @@ jobs:
 
       - name: Build Binary
         run: cargo build --release
+
+      - name: Check ALSA PipeWire plugin
+        run: |
+          find /usr/lib /lib -name 'libasound_module_pcm_pipewire.so' -print 2>/dev/null
+          find /usr/lib /lib -name 'alsa.conf' -print 2>/dev/null
 
       - name: Build AppImage
         env:
