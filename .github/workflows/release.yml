@@ -35,11 +35,6 @@ jobs:
       - name: Build Binary
         run: cargo build --release
 
-      - name: Check ALSA PipeWire plugin
-        run: |
-          find /usr/lib /lib -name 'libasound_module_pcm_pipewire.so' -print 2>/dev/null
-          find /usr/lib /lib -name 'alsa.conf' -print 2>/dev/null
-
       - name: Build AppImage
         env:
           ICON: ./data/icons/512x512.png
