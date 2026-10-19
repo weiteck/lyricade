@@ -41,6 +41,7 @@ jobs:
           OUTPATH: ./
           OUTNAME: lyricade.AppImage
           SHARUN: "https://raw.githubusercontent.com/pkgforge-dev/Anylinux-AppImages/refs/heads/main/useful-tools/quick-sharun.sh"
+          DEPLOY_PIPEWIRE: "1"
         run: |
           wget "$SHARUN" -O ./quick-sharun
           chmod +x ./quick-sharun
