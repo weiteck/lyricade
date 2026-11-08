@@ -20,6 +20,7 @@ use crate::{
 };
 
 const API_URL: &str = "https://lrclib.net/api/get";
+const LRCLIB_APP_ID: &str = "ojkA-hQXTZs13nAGk5Es7CBquZ3JDszt3P0GIrQOipc";
 
 #[derive(Debug)]
 pub struct LrcLibProvider {
@@ -51,6 +52,7 @@ enum ApiResponse {
     status_code: i64,
     name: String,
     message: String,
+    scope: Option<String>,
   },
 }
 
@@ -98,10 +100,15 @@ impl Provider for LrcLibProvider {
 
     trace!("LrcLibProvider: {track}: GET request to \"{}\"", &url);
 
-    let response = http_client.get(url).send().await.map_err(|e| {
-      error!("LrcLibProvider: {track}: {e}");
-      ProviderError::Permanent
-    })?;
+    let response = http_client
+      .get(url)
+      .header("Lrclib-App-Id", LRCLIB_APP_ID)
+      .send()
+      .await
+      .map_err(|e| {
+        error!("LrcLibProvider: {track}: {e}");
+        ProviderError::Permanent
+      })?;
     let response_status = response.status();
 
     req_counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
@@ -111,9 +118,17 @@ impl Provider for LrcLibProvider {
       if let Some(v) = response.headers().get("Retry-After")
         && let Ok(s) = v.to_str()
         && let Ok(req_delay) = str::parse::<f64>(s)
+        && let api_resp = response.json::<ApiResponse>().await
       {
+        let scope = api_resp.map_or_default(|resp| match &resp {
+          ApiResponse::Error { scope, .. } if let Some(s) = &scope => {
+            format!(" for {s}")
+          }
+          _ => String::new(),
+        });
+
         warn!(
-          "LrcLibProvider: {track}: Too many requests - retry-delay of {req_delay:.0$}s requested by server",
+          "LrcLibProvider: {track}: Too many requests{scope} - retry-delay of {req_delay:.0$}s requested by server",
           if req_delay.fract() >= 0.01 { 2 } else { 0 }
         );
         self.set_rate_limited(req_delay);
@@ -162,8 +177,12 @@ impl Provider for LrcLibProvider {
           status_code,
           name,
           message,
+          scope,
         } => {
-          warn!("LrcLibProvider: {track}: {status_code} {name}: {message}");
+          warn!(
+            "LrcLibProvider: {track}: {status_code} {name}: {message}{}",
+            scope.map_or_default(|s| format!(" (scope: {})", s))
+          );
           return Err(ProviderError::Permanent);
         }
       };
