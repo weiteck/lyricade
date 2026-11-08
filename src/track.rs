@@ -25,7 +25,7 @@ use tracing::{debug, error, trace, warn};
 
 use crate::{
   DB_POOL, PROVIDER_MANAGER, Result, SETTINGS,
-  lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType, lyrics_are_synchronised},
+  lyrics::{self, Lyrics, LyricsFile, LyricsFileType, LyricsType, lyrics_are_lrc},
   provider::LyricsData,
   schema::tracks,
   settings::Settings,
@@ -301,10 +301,7 @@ impl Track {
         .filter(|s| !s.is_empty());
     }
 
-    self.lyrics_synchronised = self
-      .lyrics
-      .as_ref()
-      .is_some_and(|l| lyrics_are_synchronised(l));
+    self.lyrics_synchronised = self.lyrics.as_ref().is_some_and(|l| lyrics_are_lrc(l));
 
     let now = now();
     self.updated_at = now;

@@ -124,6 +124,23 @@ pub fn unfold_error(mut error: &(dyn std::error::Error + 'static)) -> String {
   s
 }
 
+/// Returns a string slice of the first line of a string,
+/// or the first 100 (maximum) characters of a single-line string.
+#[must_use]
+pub fn short_string(s: &str) -> &str {
+  let (prefix, _) = s.split_once('\n').map_or_else(
+    || s.split_at(s.floor_char_boundary(100)),
+    |(p, _)| {
+      if p.len() > 100 {
+        p.split_at(s.floor_char_boundary(100))
+      } else {
+        (p, "")
+      }
+    },
+  );
+  prefix
+}
+
 #[cfg(test)]
 mod tests {
   use super::*;
@@ -133,5 +150,24 @@ mod tests {
     assert_eq!(secs_f64_to_hms(32.6), String::from("00:33"));
     assert_eq!(secs_f64_to_hms(92.4), String::from("01:32"));
     assert_eq!(secs_f64_to_hms(7292.4), String::from("02:01:32"));
+  }
+
+  #[test]
+  fn short_string_output() {
+    let multi_line_less_than_100_chars = "first line\nsecond line";
+    let multi_line_more_than_100_chars = "first line with more than 100 chars.......................................................0123456789x is 101st char\nsecond line";
+    let single_line_less_than_100_chars = "line less than 100 chars";
+    let single_line_more_than_100_chars = "line line with more than 100 chars........................................................0123456789x is 101st char";
+
+    assert_eq!(short_string(multi_line_less_than_100_chars), "first line");
+    assert_eq!(
+      short_string(multi_line_more_than_100_chars),
+      "first line with more than 100 chars.......................................................0123456789"
+    );
+    assert_eq!(short_string(single_line_less_than_100_chars), "line less than 100 chars");
+    assert_eq!(
+      short_string(single_line_more_than_100_chars),
+      "line line with more than 100 chars........................................................0123456789"
+    );
   }
 }

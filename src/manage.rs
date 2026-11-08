@@ -5,7 +5,7 @@ use tracing::{debug, error, info, trace, warn};
 
 use crate::{
   DB_POOL, Result, SETTINGS,
-  lyrics::{Lyrics, LyricsFileType, LyricsType, convert_sync_lyrics_to_plain},
+  lyrics::{Lyrics, LyricsFileType, LyricsType, convert_lrc_lyrics_to_plain},
   track::Track,
   util::reporter::IntervalReporter,
 };
@@ -249,7 +249,7 @@ impl ManageLyricsOptions {
       // Fallback to converting sync to plain lyrics
       ManageLyricsTarget::Plain
         if let Some(sidecar_lyrics) = track.lyrics_sidecar_lrc_file.as_ref()
-          && let converted_lyrics = convert_sync_lyrics_to_plain(sidecar_lyrics)
+          && let converted_lyrics = convert_lrc_lyrics_to_plain(sidecar_lyrics)
           && track.lyrics.as_ref().is_none_or(|l| l != &converted_lyrics) =>
       {
         debug!("{}: Copying to lyrics tag from LRC sidecar file (converted to plain)", track);
@@ -350,7 +350,7 @@ impl ManageLyricsOptions {
       track.lyrics = track
         .lyrics
         .as_deref_mut()
-        .map(|l| convert_sync_lyrics_to_plain(l));
+        .map(|l| convert_lrc_lyrics_to_plain(l));
       track.lyrics_synchronised = false;
       ManageLyricsResult::WriteToFileAndDb
     } else {
@@ -364,7 +364,7 @@ impl ManageLyricsOptions {
     if self.sidecars.convert_to_plain
       && let Some(lyrics) = track.lyrics_sidecar_lrc_file.as_ref()
     {
-      let contents = convert_sync_lyrics_to_plain(lyrics);
+      let contents = convert_lrc_lyrics_to_plain(lyrics);
       let lyrics = Lyrics {
         lyrics_type: LyricsType::Plain,
         contents,

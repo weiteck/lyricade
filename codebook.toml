@@ -7,12 +7,15 @@ words = [
     "expander",
     "gresource",
     "gresources",
+    "isrc",
     "lrc",
     "lrclib",
     "lyricade",
+    "lyricsfile",
     "ndt",
     "seekbar",
     "simpmusic",
+    "ttml",
     "unsync",
 ]
 ignore_patterns = ['".*\w.*_.*"']

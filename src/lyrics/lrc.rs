@@ -13,9 +13,15 @@ pub static LRC_LYRICS_STRIP_REGEX: LazyLock<Regex> = LazyLock::new(|| {
   regex::Regex::new(r"\[(\d+):(\d{2})(?:\.(\d{1,3}))?\][ \t]*").expect("should be valid regex")
 });
 
+/// Regex to match "\<00:00.000>\" or "\<0:00.0>\",
+/// indicating enhanced LRC with word-level synchronised lyrics.
+pub static ENHANCED_LRC_LYRICS_REGEX: LazyLock<Regex> = LazyLock::new(|| {
+  regex::Regex::new(r"<(\d+):(\d{2})(?:\.(\d{1,3}))?>").expect("should be valid regex")
+});
+
 /// Regex to match "\[xx:xxx...xxx]\".
 pub static LRC_TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| {
-  regex::Regex::new(r"\[([a-zA-Z]+):(.+)\][ \t]*$").expect("should be valid regex")
+  regex::Regex::new(r"\[([a-zA-Z]{2,6}):([^\]]+)\]\s*").expect("should be valid regex")
 });
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -123,5 +129,20 @@ impl LrcTag {
         format!("{}{} ms", if value.is_positive() { "+" } else { "" }, value)
       }
     }
+  }
+}
+
+#[cfg(test)]
+mod tests {
+  use super::*;
+
+  #[test]
+  fn lrc_tag_regex() {
+    let lyrics = "[ti:Sometimes]\nLyrics\n";
+    assert!(LRC_TAG_REGEX.is_match(lyrics));
+
+    let lyrics = r"[length:04:09]
+Lyrics";
+    assert!(LRC_TAG_REGEX.is_match(lyrics));
   }
 }

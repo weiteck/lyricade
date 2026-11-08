@@ -253,6 +253,16 @@ impl Provider for LrcLibProvider {
         && expected == &lyrics
       {
         passed += 1;
+      } else if let Some(expected) = expected.get(idx)
+        && expected != &lyrics
+      {
+        error!(
+          r"{id}Provider: Test: Returned lyrics did not match expected lyrics:
+----- Result:
+{lyrics:#?}
+----- Expected:
+{expected:#?}"
+        );
       }
     }
 

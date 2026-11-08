@@ -9,7 +9,7 @@ use relm4::{
 use tracing::{debug, trace};
 
 use crate::{
-  lyrics::{lyrics_are_synchronised, lyrics_line::LyricsLine},
+  lyrics::{lyrics_are_lrc, lyrics_line::LyricsLine},
   track::Track,
   ui::viewer::{
     line::{LyricsLineMsg, ViewLyricsLine},
@@ -284,7 +284,7 @@ impl SimpleComponent for ViewLyricsModel {
         PlayerOutput::StateChanged(state) => ViewLyricsMsg::PlayerStateChanged(state),
       });
 
-    let lyrics_sync = lyrics_are_synchronised(&lyrics);
+    let lyrics_sync = lyrics_are_lrc(&lyrics);
 
     let stylised_scrolled_window = gtk::ScrolledWindow::new();
 

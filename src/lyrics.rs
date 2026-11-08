@@ -15,16 +15,20 @@ use diesel::{
   sqlite::Sqlite,
 };
 use serde::{Deserialize, Serialize};
-use tracing::error;
+use tracing::{error, trace};
 
 use crate::{
   Result,
-  lyrics::lrc::{LRC_LYRICS_REGEX, LRC_LYRICS_STRIP_REGEX, LRC_TAG_REGEX},
+  lyrics::lrc::{
+    ENHANCED_LRC_LYRICS_REGEX, LRC_LYRICS_REGEX, LRC_LYRICS_STRIP_REGEX, LRC_TAG_REGEX,
+  },
   track::Track,
+  util::short_string,
 };
 
 pub mod lrc;
 pub mod lyrics_line;
+pub mod ttml;
 
 #[derive(Debug, Clone)]
 #[derive_where(PartialOrd, Ord, Eq, PartialEq)]
@@ -41,7 +45,7 @@ impl Lyrics {
   #[must_use]
   pub fn into_plain(mut self) -> Self {
     if self.lyrics_type == LyricsType::Sync {
-      self.contents = convert_sync_lyrics_to_plain(&self.contents);
+      self.contents = convert_lrc_lyrics_to_plain(&self.contents);
       self.lyrics_type = LyricsType::Plain;
     }
 
@@ -182,7 +186,7 @@ impl LyricsFile {
 
     let mut contents = String::new();
     if file.read_to_string(&mut contents).is_ok_and(|u| u != 0) {
-      let lyrics_type = if lyrics_are_synchronised(&contents) {
+      let lyrics_type = if lyrics_are_lrc(&contents) {
         LyricsType::Sync
       } else {
         LyricsType::Plain
@@ -235,28 +239,57 @@ impl LyricsFile {
 }
 
 /// Check if lyrics are synchronised using regex.
-pub fn lyrics_are_synchronised(lyrics: &str) -> bool {
-  LRC_LYRICS_REGEX.find(lyrics).is_some()
+pub fn lyrics_are_lrc(lyrics: &str) -> bool {
+  LRC_LYRICS_REGEX.is_match(lyrics)
+}
+
+/// Check if lyrics contain word-level timestamps (enhanced LRC) using regex.
+pub fn lyrics_are_enhanced_lrc(lyrics: &str) -> bool {
+  ENHANCED_LRC_LYRICS_REGEX.is_match(lyrics)
 }
 
 /// Convert sync lyrics (LRC) to plain text.
-pub fn convert_sync_lyrics_to_plain(lyrics: &str) -> String {
-  if lyrics_are_synchronised(lyrics) {
+#[must_use]
+pub fn convert_lrc_lyrics_to_plain(lyrics: &str) -> String {
+  // lrc.red can return plain lyrics with LRC-style tags, so we also handle these
+  if lyrics_are_lrc(lyrics) || LRC_TAG_REGEX.is_match(lyrics) {
+    trace!("Converting from LRC lyrics \"{} ...\" to plain lyrics", short_string(lyrics));
     lyrics
       .lines()
       .filter(|line| !line.is_empty())
-      .map(str::trim)
-      // Skip comments and tags
-      .filter(|line| !(line.starts_with('#') || LRC_TAG_REGEX.is_match(line)))
+      // Skip comments
+      .filter(|line| !line.starts_with('#'))
+      // Skip tags
+      .filter(|line| !LRC_TAG_REGEX.is_match(line))
       // Remove timestamps; add new line
       .fold(String::with_capacity(lyrics.len()), |mut buffer, line| {
         let stripped = LRC_LYRICS_STRIP_REGEX.replace(line, "");
-        buffer.push_str(&stripped);
+        let stripped = ENHANCED_LRC_LYRICS_REGEX.replace_all(&stripped, "");
+        buffer.push_str(stripped.trim());
         buffer.push('\n');
         buffer
       })
   } else {
-    lyrics.into()
+    trace!("Skipping conversion of plain lyrics \"{} ...\"", short_string(lyrics));
+    lyrics.to_string()
+  }
+}
+
+/// Convert enhanced LRC sync lyrics with word-level timestamps
+/// to regular LRC sync lyrics with line-level timestamps.
+#[must_use]
+pub fn convert_enhanced_lrc_lyrics_to_lrc(lyrics: &str) -> String {
+  if lyrics_are_lrc(lyrics) && lyrics_are_enhanced_lrc(lyrics) {
+    lyrics
+      .lines()
+      .fold(String::with_capacity(lyrics.len()), |mut buffer, line| {
+        let stripped = ENHANCED_LRC_LYRICS_REGEX.replace_all(line, "");
+        buffer.push_str(stripped.trim());
+        buffer.push('\n');
+        buffer
+      })
+  } else {
+    lyrics.to_string()
   }
 }
 
@@ -326,8 +359,8 @@ mod tests {
   }
 
   #[test]
-  fn sync_lyrics_to_plain() {
-    let sync_lyrics = Lyrics {
+  fn lrc_lyrics_to_plain() {
+    let lrc_lyrics = Lyrics {
       lyrics_type: LyricsType::Sync,
       contents: r"
 # comment preceded by empty line
@@ -338,8 +371,8 @@ mod tests {
 #another comment
 
 
-[1:12.34]line of lyrics, 1x minute digit
-[01:18.50]  line of lyrics prefixed with whitespace
+[1:12.343]line of lyrics, 1x minute digit
+[01:18.5]  line of lyrics prefixed with whitespace
 [01:20.00]
 [02:25.20]line of lyrics, preceded by retained empty line
 [1001:25.20]line of lyrics, 4x minute digits
@@ -359,6 +392,80 @@ line of lyrics, 4x minute digits
       .to_string(),
     };
 
-    assert_eq!(sync_lyrics.into_plain().contents, plain_lyrics.contents);
+    assert_eq!(lrc_lyrics.into_plain().contents, plain_lyrics.contents);
+  }
+
+  #[test]
+  fn enhanced_lrc_lyrics_to_plain() {
+    let enhanced_lrc_lyrics = Lyrics {
+      lyrics_type: LyricsType::Sync,
+      contents: r"
+# comment preceded by empty line
+[ar:Artist Name]
+[ti:Song Title]
+[al:Album Name]
+[by:Creator Name]
+#another comment
+
+
+[1:12.343]<1:12.343>line <01:13.11>of <01:14.21>lyrics, <01:15.31>1x <01:16.41>minute <01:17.51>digit
+[01:18.5]  <01:18.5>line <01:18.60>of <01:18.65>lyrics <01:18.70>prefixed <01:18.75>with <01:18.80>whitespace
+[01:20.00]
+[02:25.20]<02:25.20>line <02:26.20>of <02:27.20>lyrics, <02:28.20>preceded <02:29.20>by <02:30.20>retained <02:31.20>empty <02:32.20>line
+[1001:25.20]<1001:25.20>line <1001:26.20>of <1001:27.20>lyrics, <1001:28.20>4x <1001:29.20>minute <1001:30.20>digits
+
+"
+      .to_string(),
+    };
+
+    let plain_lyrics = Lyrics {
+      lyrics_type: LyricsType::Plain,
+      contents: r"line of lyrics, 1x minute digit
+line of lyrics prefixed with whitespace
+
+line of lyrics, preceded by retained empty line
+line of lyrics, 4x minute digits
+"
+      .to_string(),
+    };
+
+    assert_eq!(enhanced_lrc_lyrics.into_plain().contents, plain_lyrics.contents);
+  }
+
+  #[test]
+  fn enhanced_lrc_lyrics_to_lrc() {
+    let enhanced_lrc_lyrics = r"
+# comment preceded by empty line
+[ar:Artist Name]
+[ti:Song Title]
+[al:Album Name]
+[by:Creator Name]
+#another comment
+
+
+[1:12.343]<1:12.343>line <01:13.11>of <01:14.21>lyrics, <01:15.31>1x <01:16.41>minute <01:17.51>digit
+[01:18.5]  <01:18.5>line <01:18.60>of <01:18.65>lyrics <01:18.70>prefixed <01:18.75>with <01:18.80>whitespace
+[01:20.00]
+[02:25.20]<02:25.20>line <02:26.20>of <02:27.20>lyrics, <02:28.20>preceded <02:29.20>by <02:30.20>retained <02:31.20>empty <02:32.20>line
+[1001:25.20]<1001:25.20>line <1001:26.20>of <1001:27.20>lyrics, <1001:28.20>4x <1001:29.20>minute <1001:30.20>digits
+";
+
+    let lrc_lyrics = r"
+# comment preceded by empty line
+[ar:Artist Name]
+[ti:Song Title]
+[al:Album Name]
+[by:Creator Name]
+#another comment
+
+
+[1:12.343]line of lyrics, 1x minute digit
+[01:18.5]  line of lyrics prefixed with whitespace
+[01:20.00]
+[02:25.20]line of lyrics, preceded by retained empty line
+[1001:25.20]line of lyrics, 4x minute digits
+";
+
+    assert_eq!(convert_enhanced_lrc_lyrics_to_lrc(enhanced_lrc_lyrics), lrc_lyrics);
   }
 }

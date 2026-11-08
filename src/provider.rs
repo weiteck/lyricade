@@ -26,7 +26,10 @@ use tracing::{debug, error, info, trace, warn};
 use crate::{
   DB_POOL,
   lyrics::Lyrics,
-  provider::{azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider},
+  provider::{
+    azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider,
+    lrcred::LrcRedProvider,
+  },
   schema::providers,
   track::Track,
   util::now,
@@ -37,6 +40,7 @@ pub mod manager;
 mod azlyrics;
 mod genius;
 mod lrclib;
+mod lrcred;
 
 const SECS_TO_SKIP_PROVIDER_IF_FAILING: f64 = 30.0;
 
@@ -239,7 +243,7 @@ pub trait Provider: Debug + Send + Sync {
   }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LyricsData {
   pub instrumental: Option<bool>,
   pub plain_lyrics: Option<Lyrics>,
@@ -279,17 +283,19 @@ pub type ProviderResult = Result<LyricsData, ProviderError>;
 pub enum ProviderId {
   #[default]
   LrcLib,
+  LrcRed,
   Genius,
   AzLyrics,
 }
 
 impl ProviderId {
-  pub const ALL: [Self; 3] = [Self::LrcLib, Self::Genius, Self::AzLyrics];
+  pub const ALL: [Self; 4] = [Self::LrcLib, Self::LrcRed, Self::Genius, Self::AzLyrics];
 
   #[must_use]
   pub fn init_provider(self) -> Arc<dyn Provider> {
     match self {
       Self::LrcLib => Arc::new(LrcLibProvider::new()),
+      Self::LrcRed => Arc::new(LrcRedProvider::new()),
       Self::Genius => Arc::new(GeniusProvider::new()),
       Self::AzLyrics => Arc::new(AzLyricsProvider::new()),
     }
@@ -300,6 +306,7 @@ impl Display for ProviderId {
   fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
     match self {
       Self::LrcLib => write!(f, "LRCLIB"),
+      Self::LrcRed => write!(f, "LrcRed"),
       Self::Genius => write!(f, "Genius"),
       Self::AzLyrics => write!(f, "AZLyrics"),
     }
@@ -310,6 +317,7 @@ impl From<&str> for ProviderId {
   fn from(value: &str) -> Self {
     match value {
       "LRCLIB" => Self::LrcLib,
+      "LrcRed" => Self::LrcRed,
       "Genius" => Self::Genius,
       "AZLyrics" => Self::AzLyrics,
       _ => Self::default(),
