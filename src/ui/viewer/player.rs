@@ -471,7 +471,7 @@ impl SimpleComponent for PlayerModel {
 
         self.volume = vol;
 
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(clippy::cast_possible_truncation)]
         self
           .player
           .as_ref()

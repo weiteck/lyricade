@@ -364,7 +364,6 @@ impl GeniusProvider {
   }
 }
 
-#[allow(clippy::cast_possible_truncation)]
 fn find_best_match(songs: &[&ApiSearchResponseSong], track: &Track) -> Option<String> {
   // Exact match
   songs

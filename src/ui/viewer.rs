@@ -29,7 +29,7 @@ pub enum ViewLyricsSource {
   Txt,
 }
 
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 pub struct ViewLyricsModel {
   track: Rc<Track>,
   lyrics: String,

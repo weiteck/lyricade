@@ -100,7 +100,7 @@ where
       .to_text_en(accuracy, chrono_humanize::Tense::Present)
   }
 
-  #[allow(clippy::cast_possible_truncation)]
+  #[expect(clippy::cast_possible_truncation)]
   #[must_use]
   pub fn time_remaining(&self) -> chrono::TimeDelta {
     // Fallback to using items processed since start if processed in batch is too small

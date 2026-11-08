@@ -11,9 +11,9 @@ use crate::lyrics::{Lyrics, LyricsType, lrc::LRC_LYRICS_REGEX};
 const ID3V2_USLT_FRAME_ID: FrameId<'static> = FrameId::Valid(Cow::Borrowed("USLT"));
 const ID3V2_SYLT_FRAME_ID: FrameId<'static> = FrameId::Valid(Cow::Borrowed("SYLT"));
 
-#[allow(clippy::doc_markdown)]
+#[expect(clippy::doc_markdown)]
 /// Convert ID3v2 tag SYLT frame (synchronous text) to LRC-formatted lyrics.
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 #[must_use]
 pub fn lrc_lyrics_from_id3v2(tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>) -> Option<Lyrics> {
   if let Some(Frame::Binary(frame)) = tag.get(&ID3V2_SYLT_FRAME_ID)
@@ -73,7 +73,7 @@ pub fn lrc_lyrics_from_id3v2(tag: &Id3v2Tag, mpeg_sample_rate: Option<u32>) -> O
   None
 }
 
-#[allow(clippy::doc_markdown)]
+#[expect(clippy::doc_markdown)]
 /// Inserts sync or plain lyrics into the respective USLT or SYLT ID3v2 tag frames.
 /// For sync lyrics, additionally inserts LRC-formatted lyrics into the USLT frame or
 /// optionally converts to plain lyrics.

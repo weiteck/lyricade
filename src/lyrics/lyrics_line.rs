@@ -23,7 +23,7 @@ pub struct LyricsLine {
   pub gap_to_prev: Option<f64>,
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 impl LyricsLine {
   #[must_use]
   pub fn from_lyrics(lyrics: &str) -> (Vec<Self>, Option<BTreeSet<LrcTag>>) {

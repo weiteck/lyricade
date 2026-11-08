@@ -429,7 +429,7 @@ impl SimpleComponent for PrefsModel {
     },
   }
 
-  #[allow(clippy::cast_possible_truncation)]
+  #[expect(clippy::cast_possible_truncation)]
   fn init(
     (settings, libraries): Self::Init,
     root: Self::Root,

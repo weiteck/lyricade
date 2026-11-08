@@ -86,14 +86,14 @@ pub fn file_modified_at(path: &Utf8Path, file: Option<&fs::File>) -> NaiveDateTi
 
 /// Scale a value to fit the provided `min` and `max` range.
 /// Values over 1.0 will be clamped to the `max` value.
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 #[must_use]
 #[builder]
 pub fn scale(value: f64, min: i32, max: i32) -> i32 {
   (min + (value.abs() * f64::from(max)) as i32).min(max)
 }
 
-#[allow(clippy::cast_possible_truncation)]
+#[expect(clippy::cast_possible_truncation)]
 #[must_use]
 pub fn secs_f64_to_hms(secs: f64) -> String {
   let secs = secs.round() as i64;

@@ -36,7 +36,7 @@ pub(super) struct GetLyricsButtonModel {
   target_selected_action: RelmAction<ActionGetLyricsMenuTargetSelected>,
 }
 
-#[allow(clippy::enum_variant_names)]
+#[expect(clippy::enum_variant_names)]
 #[derive(Debug)]
 pub(super) enum GetLyricsButtonModelMsg {
   SetType(Type),

@@ -72,7 +72,6 @@ pub struct Track {
   pub library_id: i32,
   #[diesel(skip_update)]
   pub path: String,
-  #[allow(clippy::struct_field_names)]
   pub track_name: String,
   pub artist_name: String,
   pub album_name: String,
@@ -706,7 +705,7 @@ impl Track {
   }
 }
 
-#[allow(clippy::struct_excessive_bools)]
+#[expect(clippy::struct_excessive_bools)]
 #[derive(Debug, Clone, Copy)]
 pub struct FetchLyricsOptions {
   pub prefer_lyrics_type: lyrics::LyricsType,
