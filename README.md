@@ -21,7 +21,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
 - Support for multiple local music libraries
 - Support for multiple lyrics providers, including:
   - [LRCLIB](https://lrclib.net)
-  - [SimpMusic](https://www.simpmusic.org)
+  - [lrc.red](https://lrc.red)
   - [Genius (plain only)](https://genius.com)
   - [AZLyrics (plain only)](https://azlyrics.com)
 
