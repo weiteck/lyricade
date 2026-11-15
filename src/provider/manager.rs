@@ -252,7 +252,9 @@ impl ProviderManager {
         };
 
         // Don't wait for failing primary Providers (may have been marked failing from another thread)
-        if provider.is_failing() {
+        if provider.is_failing()
+          && (!secondary_not_checked.is_empty() || !primary_not_checked.is_empty())
+        {
           primary_not_checked.remove(&id);
 
           // Promote a secondary Provider to guarantee a fetch is made in a future loop
