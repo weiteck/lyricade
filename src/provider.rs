@@ -376,6 +376,7 @@ impl Providers {
       + 1;
 
     // Make sure all Providers are present
+    let mut db_update_required = false;
     for id in ProviderId::ALL {
       if primary.iter().chain(secondary.iter()).any(|ps| ps.id == id) {
         continue;
@@ -409,6 +410,8 @@ impl Providers {
         }
       }
 
+      db_update_required = true;
+
       info!("Provider {id} not found in database; added to {tier:?} Providers and enabled");
     }
 
@@ -431,7 +434,13 @@ impl Providers {
       );
     }
 
-    Ok(Self { primary, secondary })
+    let mut providers = Self { primary, secondary };
+
+    if db_update_required {
+      providers.save()?;
+    }
+
+    Ok(providers)
   }
 
   #[expect(clippy::cast_possible_truncation, clippy::cast_possible_wrap)]
