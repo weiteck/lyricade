@@ -2,15 +2,7 @@ use std::{env, fs, path::PathBuf, sync::LazyLock};
 
 use camino::Utf8PathBuf;
 use chrono::NaiveDateTime;
-use diesel::{
-  backend::Backend,
-  deserialize::{FromSql, FromSqlRow},
-  expression::AsExpression,
-  prelude::*,
-  serialize::ToSql,
-  sql_types::Text,
-  sqlite::Sqlite,
-};
+use diesel::{prelude::*, sql_types::Text};
 use directories::ProjectDirs;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, error, info};
@@ -192,7 +184,7 @@ impl Default for Settings {
 }
 
 #[derive(
-  Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, AsExpression, FromSqlRow,
+  Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize, diesel::types::Enum,
 )]
 #[diesel(sql_type = Text)]
 pub enum ColourScheme {
@@ -202,22 +194,22 @@ pub enum ColourScheme {
   Dark = 2,
 }
 
-impl FromSql<Text, Sqlite> for ColourScheme {
-  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-    ron::from_str(&s).map_err(|error| {
-      error!("Error deserializing enum `AppColourScheme` from database value \"{s}\": {error}");
-      error.into()
-    })
-  }
-}
+// impl FromSql<Text, Sqlite> for ColourScheme {
+//   fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
+//     let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
+//     ron::from_str(&s).map_err(|error| {
+//       error!("Error deserializing enum `AppColourScheme` from database value \"{s}\": {error}");
+//       error.into()
+//     })
+//   }
+// }
 
-impl ToSql<Text, Sqlite> for ColourScheme {
-  fn to_sql<'b>(
-    &'b self,
-    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-  ) -> diesel::serialize::Result {
-    out.set_value(ron::to_string(&self)?);
-    Ok(diesel::serialize::IsNull::No)
-  }
-}
+// impl ToSql<Text, Sqlite> for ColourScheme {
+//   fn to_sql<'b>(
+//     &'b self,
+//     out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
+//   ) -> diesel::serialize::Result {
+//     out.set_value(ron::to_string(&self)?);
+//     Ok(diesel::serialize::IsNull::No)
+//   }
+// }

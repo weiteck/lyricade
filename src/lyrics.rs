@@ -6,14 +6,7 @@ use std::{
 use anyhow::anyhow;
 use camino::{Utf8Path, Utf8PathBuf};
 use derive_where::derive_where;
-use diesel::{
-  backend::Backend,
-  deserialize::{FromSql, FromSqlRow},
-  expression::AsExpression,
-  serialize::ToSql,
-  sql_types::Text,
-  sqlite::Sqlite,
-};
+use diesel::sql_types::Text;
 use serde::{Deserialize, Serialize};
 use tracing::{error, trace};
 
@@ -65,34 +58,13 @@ impl Lyrics {
   Ord,
   Serialize,
   Deserialize,
-  AsExpression,
-  FromSqlRow,
+  diesel::types::Enum,
 )]
 #[diesel(sql_type = Text)]
 pub enum LyricsType {
   #[default]
   Sync = 1,
   Plain = 2,
-}
-
-impl FromSql<Text, Sqlite> for LyricsType {
-  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-    ron::from_str(&s).map_err(|error| {
-      error!("Error deserializing enum `LyricsType` from database value \"{s}\": {error}");
-      error.into()
-    })
-  }
-}
-
-impl ToSql<Text, Sqlite> for LyricsType {
-  fn to_sql<'b>(
-    &'b self,
-    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-  ) -> diesel::serialize::Result {
-    out.set_value(ron::to_string(&self)?);
-    Ok(diesel::serialize::IsNull::No)
-  }
 }
 
 impl Display for LyricsType {

@@ -10,15 +10,7 @@ use std::{
 use arc_swap::ArcSwap;
 use async_trait::async_trait;
 use chrono::{DateTime, NaiveDateTime, Utc};
-use diesel::{
-  backend::Backend,
-  deserialize::{FromSql, FromSqlRow},
-  expression::AsExpression,
-  prelude::*,
-  serialize::ToSql,
-  sql_types::Text,
-  sqlite::Sqlite,
-};
+use diesel::{prelude::*, sql_types::Text, sqlite::Sqlite};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{Semaphore, SemaphorePermit, TryAcquireError};
 use tracing::{debug, error, info, trace, warn};
@@ -282,7 +274,7 @@ pub enum ProviderTestResult {
 pub type ProviderResult = Result<LyricsData, ProviderError>;
 
 #[derive(
-  Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, AsExpression, FromSqlRow,
+  Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, diesel::types::Enum,
 )]
 #[diesel(sql_type = Text)]
 pub enum ProviderId {
@@ -327,23 +319,6 @@ impl From<&str> for ProviderId {
       "AZLyrics" => Self::AzLyrics,
       _ => Self::default(),
     }
-  }
-}
-
-impl FromSql<Text, Sqlite> for ProviderId {
-  fn from_sql(bytes: <Sqlite as Backend>::RawValue<'_>) -> diesel::deserialize::Result<Self> {
-    let s = <String as FromSql<Text, Sqlite>>::from_sql(bytes)?;
-    ron::from_str::<Self>(&s).map_err(std::convert::Into::into)
-  }
-}
-
-impl ToSql<Text, Sqlite> for ProviderId {
-  fn to_sql<'b>(
-    &'b self,
-    out: &mut diesel::serialize::Output<'b, '_, Sqlite>,
-  ) -> diesel::serialize::Result {
-    out.set_value(ron::to_string(&self)?);
-    Ok(diesel::serialize::IsNull::No)
   }
 }
 
