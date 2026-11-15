@@ -347,7 +347,7 @@ impl SimpleComponent for PrefsModel {
 
           adw::SwitchRow {
             set_title: "Restore _Hidden Alerts",
-            set_subtitle: "Restore dialogs hidden by clicking “Don't show again”",
+            set_subtitle: "Restore dialogs hidden by clicking “Don't ask again”",
             #[watch]
             set_active: model.restore_hidden_alerts,
             #[watch]
