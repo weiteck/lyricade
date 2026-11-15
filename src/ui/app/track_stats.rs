@@ -82,22 +82,30 @@ impl TrackStats {
   }
 
   pub(super) fn not_instrumental_percent(&self) -> f64 {
-    (self.not_instrumental as f64 / self.count as f64) * 100.0
+    calculate_percentage(self.not_instrumental, self.count)
   }
 
   pub(super) fn sync_lyrics_percent(&self) -> f64 {
-    (self.sync_lyrics as f64 / self.not_instrumental as f64) * 100.0
+    calculate_percentage(self.sync_lyrics, self.not_instrumental)
   }
 
   pub(super) fn plain_lyrics_percent(&self) -> f64 {
-    (self.plain_lyrics as f64 / self.not_instrumental as f64) * 100.0
+    calculate_percentage(self.plain_lyrics, self.not_instrumental)
   }
 
   pub(super) fn tagged_lyrics_percent(&self) -> f64 {
-    (self.tagged_lyrics as f64 / self.not_instrumental as f64) * 100.0
+    calculate_percentage(self.tagged_lyrics, self.not_instrumental)
   }
 
   pub(super) fn sidecar_file_percent(&self) -> f64 {
-    (self.sidecar_file as f64 / self.not_instrumental as f64) * 100.0
+    calculate_percentage(self.sidecar_file, self.not_instrumental)
   }
+}
+
+fn calculate_percentage(numerator: usize, denominator: usize) -> f64 {
+  if denominator == 0 {
+    return 0.0;
+  }
+
+  (numerator as f64 / denominator as f64) * 100.0
 }
