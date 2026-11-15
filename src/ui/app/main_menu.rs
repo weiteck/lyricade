@@ -8,7 +8,6 @@ use crate::{settings::APP_NAME_PRETTY, ui::app::AppMsg};
 
 #[derive(Debug, Clone)]
 pub(super) struct MainMenuButtonModel {
-  refresh_action: RelmAction<ActionRefreshLibraries>,
   manage_action: RelmAction<ActionManageLyrics>,
 }
 
@@ -57,7 +56,7 @@ impl SimpleComponent for MainMenuButtonModel {
           .output(AppMsg::RefreshLibraries)
           .expect("MainMenuButtonModel output receiver dropped");
       });
-    menu_actions_group.add_action(action_refresh_libraries.clone());
+    menu_actions_group.add_action(action_refresh_libraries);
 
     let sender_handle = sender.clone();
     let action_manage_lyrics: RelmAction<ActionManageLyrics> =
@@ -159,7 +158,6 @@ impl SimpleComponent for MainMenuButtonModel {
     window_actions_group.register_for_widget(&app_window);
 
     let model = Self {
-      refresh_action: action_refresh_libraries,
       manage_action: action_manage_lyrics,
     };
 
@@ -174,12 +172,10 @@ impl SimpleComponent for MainMenuButtonModel {
         if no_tracks {
           debug!("No tracks present - disabling track-related menu actions");
 
-          self.refresh_action.set_enabled(false);
           self.manage_action.set_enabled(false);
         } else {
           debug!("Tracks present - enabling track-related menu actions");
 
-          self.refresh_action.set_enabled(true);
           self.manage_action.set_enabled(true);
         }
       }
