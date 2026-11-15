@@ -592,6 +592,21 @@ impl Component for AppModel {
                         set_valign: gtk::Align::Center,
                         set_hexpand: true,
 
+                        // Library count
+                        gtk::Label {
+                          add_css_class: "caption",
+                          inline_css: "font-weight: bold",
+                          set_margin_end: 12,
+                          #[watch]
+                          set_text: &format!(
+                            "{} {}",
+                            model.libraries.len(),
+                            if model.libraries.len() == 1 { "Library" } else { "Libraries" }
+                          ),
+                        },
+
+                        gtk::Separator::new(gtk::Orientation::Vertical),
+
                         // Track count and stats
                         gtk::MenuButton {
                           set_direction: gtk::ArrowType::Up,
@@ -625,7 +640,6 @@ impl Component for AppModel {
                                   set_align: gtk::Align::End,
                                   add_css_class: "heading",
                                   set_tooltip: "Not Marked “Instrumental”",
-                                  #[watch]
                                   set_label: "Non-Inst.:",
                                 },
 
@@ -633,7 +647,6 @@ impl Component for AppModel {
                                   set_align: gtk::Align::End,
                                   add_css_class: "heading",
                                   set_tooltip: "Have Lyrics Tag",
-                                  #[watch]
                                   set_label: "Tagged:",
                                 },
 
@@ -641,7 +654,6 @@ impl Component for AppModel {
                                   set_align: gtk::Align::End,
                                   add_css_class: "heading",
                                   set_tooltip: "Have Lyrics Sidecar File",
-                                  #[watch]
                                   set_label: "Sidecar:",
                                 },
 
@@ -649,7 +661,6 @@ impl Component for AppModel {
                                   set_align: gtk::Align::End,
                                   add_css_class: "heading",
                                   set_tooltip: "Have Synchronous Lyrics",
-                                  #[watch]
                                   set_label: "Sync:",
                                 },
 
@@ -657,7 +668,6 @@ impl Component for AppModel {
                                   set_align: gtk::Align::End,
                                   add_css_class: "heading",
                                   set_tooltip: "Have Plain Lyrics",
-                                  #[watch]
                                   set_label: "Plain:",
                                 },
                               },
