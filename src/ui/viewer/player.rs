@@ -106,6 +106,12 @@ impl SimpleComponent for PlayerModel {
 
             connect_clicked[sender] => move |_btn| {
               sender.input(PlayerMsg::Seek(0.0));
+
+              // Momentarily set state as stopped to trigger scroll back to top (if sync)
+              sender.output(PlayerOutput::StateChanged(PlayerState::Stopped))
+              .expect("PlayerOutput receiver dropped");
+              sender.output(PlayerOutput::StateChanged(model.state))
+              .expect("PlayerOutput receiver dropped");
             },
           },
 
