@@ -241,6 +241,11 @@ pub trait Provider: Debug + Send + Sync {
     state.total_requests.store(0, Ordering::Relaxed);
     state.failing.store(false, Ordering::Relaxed);
   }
+
+  /// Which tier to use when a new Provider is added to the database.
+  fn default_tier(&self) -> ProviderTier {
+    ProviderTier::Secondary
+  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -384,6 +389,11 @@ impl Providers {
       .into_iter()
       .partition(|ps| ps.secondary);
 
+    let mut next_primary_position = primary
+      .iter()
+      .max_by_key(|ps| ps.position)
+      .map_or(99, |ps| ps.position)
+      + 1;
     let mut next_secondary_position = secondary
       .iter()
       .max_by_key(|ps| ps.position)
@@ -396,17 +406,35 @@ impl Providers {
         continue;
       }
 
-      secondary.push(ProviderSettings {
-        id,
-        secondary: true,
-        enabled: true,
-        position: next_secondary_position,
-        added_at: now,
-        updated_at: now,
-      });
-      next_secondary_position += 1;
+      // Add missing Provider
+      let tier = id.init_provider().default_tier();
 
-      info!("Provider {id} not found in database; added to secondary Providers and enabled");
+      match tier {
+        ProviderTier::Primary => {
+          primary.push(ProviderSettings {
+            id,
+            secondary: false,
+            enabled: true,
+            position: next_primary_position,
+            added_at: now,
+            updated_at: now,
+          });
+          next_primary_position += 1;
+        }
+        ProviderTier::Secondary => {
+          secondary.push(ProviderSettings {
+            id,
+            secondary: true,
+            enabled: true,
+            position: next_secondary_position,
+            added_at: now,
+            updated_at: now,
+          });
+          next_secondary_position += 1;
+        }
+      }
+
+      info!("Provider {id} not found in database; added to {tier:?} Providers and enabled");
     }
 
     // Must have a primary Provider

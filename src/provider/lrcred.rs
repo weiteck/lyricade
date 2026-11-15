@@ -17,7 +17,7 @@ use crate::{
   },
   provider::{
     LyricsData, Provider, ProviderError, ProviderId, ProviderResult, ProviderState,
-    ProviderTestResult, manager::PROVIDER_TEST_TRACKS,
+    ProviderTestResult, ProviderTier, manager::PROVIDER_TEST_TRACKS,
   },
   track::Track,
 };
@@ -142,6 +142,10 @@ impl Provider for LrcRedProvider {
 
   fn default_req_delay_secs(&self) -> Option<f64> {
     Some(0.2)
+  }
+
+  fn default_tier(&self) -> ProviderTier {
+    ProviderTier::Primary
   }
 
   async fn test(&self) -> ProviderTestResult {
