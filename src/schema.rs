@@ -43,6 +43,7 @@ diesel::table! {
         sidebar_pinned -> Bool,
         added_at -> Timestamp,
         updated_at -> Timestamp,
+        suppress_get_lyrics_dialog -> Bool,
     }
 }
 

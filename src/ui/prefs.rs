@@ -48,6 +48,8 @@ pub struct PrefsModel {
 
   add_library_file_dialog: Controller<OpenDialog>,
   edit_library_file_dialog: Controller<OpenDialog>,
+
+  restore_hidden_alerts: bool,
 }
 
 #[derive(Debug)]
@@ -104,6 +106,7 @@ pub enum ExposedSetting {
   ColourScheme(ColourScheme),
   ColumnSeparators(bool),
   RowSeparators(bool),
+  RestoreHiddenAlerts(bool),
 
   PreferIsoTimestamps(bool),
 
@@ -339,6 +342,21 @@ impl SimpleComponent for PrefsModel {
         },
 
         adw::PreferencesGroup {
+          set_title: "Miscellaneous",
+
+          adw::SwitchRow {
+            set_title: "Restore _Hidden Alerts",
+            set_subtitle: "Restore dialogs hidden by clicking “Don't show again”",
+            #[watch]
+            set_active: model.restore_hidden_alerts,
+            #[watch]
+            set_sensitive: model.settings_initial.suppress_get_lyrics_dialog,
+            set_use_underline: true,
+            connect_active_notify[sender] => move |btn| {
+              sender.input(PrefsMsg::UpdateSetting(ExposedSetting::RestoreHiddenAlerts(btn.is_active())));
+            }
+          },
+
           adw::ExpanderRow {
             set_focusable: false,
             set_selectable: false,
@@ -481,6 +499,7 @@ impl SimpleComponent for PrefsModel {
       });
 
     let model = Self {
+      root: root.clone(),
       libraries,
       library_rows,
       editing_library_row: None,
@@ -494,7 +513,7 @@ impl SimpleComponent for PrefsModel {
       providers_default: Providers::default(),
       add_library_file_dialog,
       edit_library_file_dialog,
-      root: root.clone(),
+      restore_hidden_alerts: false,
     };
 
     let libraries_list_box = model.library_rows.widget();
@@ -617,6 +636,8 @@ impl SimpleComponent for PrefsModel {
 
         self.providers_current = self.providers_default.clone();
         self.rebuild_provider_rows();
+
+        self.restore_hidden_alerts = false;
       }
 
       PrefsMsg::RevertSettings => {
@@ -625,6 +646,8 @@ impl SimpleComponent for PrefsModel {
 
         self.providers_current = self.providers_initial.clone();
         self.rebuild_provider_rows();
+
+        self.restore_hidden_alerts = false;
       }
 
       PrefsMsg::SaveAndClose => {
@@ -712,6 +735,18 @@ impl SimpleComponent for PrefsModel {
         ExposedSetting::RowSeparators(active) => {
           debug!("UpdateSetting: RowSeparators: {active}");
           self.settings_current.tracks_table_row_separators = active;
+        }
+        ExposedSetting::RestoreHiddenAlerts(active) => {
+          debug!("UpdateSetting: RestoreHiddenAlerts: {active}");
+
+          self.restore_hidden_alerts = active;
+
+          if active {
+            self.settings_current.suppress_get_lyrics_dialog = false;
+          } else {
+            self.settings_current.suppress_get_lyrics_dialog =
+              self.settings_initial.suppress_get_lyrics_dialog;
+          }
         }
         ExposedSetting::PreferIsoTimestamps(active) => {
           debug!("UpdateSetting: PreferIsoTimestamps: {active}");

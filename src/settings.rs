@@ -88,6 +88,7 @@ pub struct Settings {
   pub window_width: i32,
   pub window_height: i32,
   pub sidebar_pinned: bool,
+  pub suppress_get_lyrics_dialog: bool,
 
   #[diesel(skip_update)]
   pub added_at: NaiveDateTime,
@@ -182,6 +183,7 @@ impl Default for Settings {
       window_width: 1000,
       window_height: 600,
       sidebar_pinned: false,
+      suppress_get_lyrics_dialog: false,
 
       added_at: now,
       updated_at: now,

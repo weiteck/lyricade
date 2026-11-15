@@ -783,6 +783,15 @@ impl Component for AppModel {
 
     let about_widget = AboutModel::builder().launch(()).detach();
 
+    let dont_ask_again_check_button = gtk::CheckButton::default();
+    dont_ask_again_check_button.set_label(Some("_Don't ask again"));
+    dont_ask_again_check_button.set_use_underline(true);
+    let dont_ask_again_widget = gtk::Box::default();
+    dont_ask_again_widget.append(&dont_ask_again_check_button);
+    dont_ask_again_widget.add_css_class("caption");
+    dont_ask_again_widget.set_hexpand(true);
+    dont_ask_again_widget.set_align(gtk::Align::Center);
+
     let confirm_get_lyrics_alert_dialog = adw::AlertDialog::builder()
       .heading("Are you sure?")
       .body("Tags will be written to your files. This cannot be undone.")
@@ -793,15 +802,31 @@ impl Component for AppModel {
     confirm_get_lyrics_alert_dialog.add_response("confirm", "Confirm");
     confirm_get_lyrics_alert_dialog
       .set_response_appearance("confirm", adw::ResponseAppearance::Destructive);
+    confirm_get_lyrics_alert_dialog.set_extra_child(Some(&dont_ask_again_widget));
 
     let sender_handle = sender.clone();
     confirm_get_lyrics_alert_dialog.connect_response(None, move |_, resp| {
       if resp == "confirm" {
         debug!("User confirmed Get Lyrics request");
+
+        if dont_ask_again_check_button.is_active()
+          && let Ok(mut guard) = SETTINGS.try_write()
+          && !guard.suppress_get_lyrics_dialog
+        {
+          debug!("Future Get Lyrics confirmation alert dialogs will be suppressed");
+
+          guard.suppress_get_lyrics_dialog = true;
+          if guard.save().is_err() {
+            error!("Settings lock was poisoned while saving");
+          }
+        }
+
         sender_handle.input(AppMsg::FetchLyrics);
       } else {
         debug!("User cancelled Get Lyrics request");
       }
+
+      dont_ask_again_check_button.set_active(false);
     });
 
     let mut model = Self {
@@ -911,7 +936,11 @@ impl Component for AppModel {
 
       AppMsg::RequestConfirmGetLyrics => {
         // Show confirmation dialog only if tags will be written
-        if self.get_lyrics_requires_confirmation {
+        if self.get_lyrics_requires_confirmation
+          && !SETTINGS
+            .read()
+            .is_ok_and(|settings| settings.suppress_get_lyrics_dialog)
+        {
           debug!("Showing Get Lyrics confirmation alert");
           self.confirm_get_lyrics_alert_dialog.present(Some(root));
         } else {
