@@ -220,6 +220,7 @@ impl SimpleComponent for PrefsModel {
 
               #[local_ref]
               primary_providers_list_box -> gtk::ListBox {
+                set_selection_mode: gtk::SelectionMode::None,
               },
             },
 
