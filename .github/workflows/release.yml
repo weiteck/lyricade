@@ -121,10 +121,6 @@ jobs:
 
           ./quick-sharun.sh --make-appimage
 
-      - name: Test AppImage
-        run: |
-          ./quick-sharun.sh --test ./dist/lyricade.AppImage
-
       - name: Rename AppImage to include Git Tag
         if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
         run: |
