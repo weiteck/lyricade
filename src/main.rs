@@ -10,7 +10,7 @@ use std::{
 use anyhow::anyhow;
 use cpal::traits::HostTrait;
 use diesel::{
-  ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection,
+  SqliteConnection,
   connection::SimpleConnection,
   r2d2::{self, ConnectionManager},
 };
@@ -28,7 +28,6 @@ use tracing_subscriber::{
 
 use crate::{
   provider::{Providers, manager::ProviderManager},
-  schema::providers,
   settings::{APP_DATA_DIR, APP_DB_FILE_PATH, APP_NAME, Settings},
 };
 
@@ -248,27 +247,7 @@ fn init_db_pool() -> Result<()> {
     }
   }
 
-  delete_invalid_providers_from_db()?;
-
-  Ok(())
-}
-
-/// Reconcile database after a Provider is deleted.
-fn delete_invalid_providers_from_db() -> Result<()> {
-  let mut conn = DB_POOL.get()?;
-
-  let provider_ids = provider::ProviderId::ALL
-    .iter()
-    .map(|id| ron::to_string(id).expect("should be able to serialise ProviderId to RON string"))
-    .collect::<Vec<_>>();
-
-  let deleted_providers =
-    diesel::delete(providers::table.filter(providers::id.ne_all(provider_ids)))
-      .execute(&mut conn)?;
-
-  if deleted_providers > 0 {
-    warn!("Deleted {deleted_providers} invalid Providers from database");
-  }
+  provider::delete_invalid_providers_from_db()?;
 
   Ok(())
 }

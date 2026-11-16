@@ -565,3 +565,23 @@ impl ProviderState {
     }
   }
 }
+
+/// Reconcile database after a Provider is deleted.
+pub fn delete_invalid_providers_from_db() -> crate::Result<()> {
+  let mut conn = DB_POOL.get()?;
+
+  let provider_ids = ProviderId::ALL
+    .iter()
+    .map(|id| ron::to_string(id).expect("should be able to serialise ProviderId to RON string"))
+    .collect::<Vec<_>>();
+
+  let deleted_providers =
+    diesel::delete(providers::table.filter(providers::id.ne_all(provider_ids)))
+      .execute(&mut conn)?;
+
+  if deleted_providers > 0 {
+    warn!("Deleted {deleted_providers} invalid Providers from database");
+  }
+
+  Ok(())
+}
