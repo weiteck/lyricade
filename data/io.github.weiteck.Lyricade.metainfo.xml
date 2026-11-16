@@ -107,7 +107,7 @@
           <li>Added: Musixmatch lyrics provider</li>
           <li>Added: option to prevent future confirmation dialogs when writing lyrics tags</li>
           <li>Fixed: removed failing SimpMusic provider</li>
-          <li>Fixed: registeded Lyricade with LRCLIB to reduce rate-limiting</li>
+          <li>Fixed: registered Lyricade with LRCLIB to reduce rate-limiting</li>
         </ul>
       </description>
     </release>
