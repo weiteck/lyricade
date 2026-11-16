@@ -76,7 +76,8 @@ jobs:
             alsa-lib \
             pipewire-alsa \
             wget \
-            zsync
+            zsync \
+            patchelf
 
           chmod +x ./target/release/lyricade
 
