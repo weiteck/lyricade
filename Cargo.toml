@@ -34,6 +34,7 @@ futures = "0.3"
 libsqlite3-sys = { version = "0.40", features = ["bundled"] }
 lofty = "0.25"
 mimalloc = "0.1"
+musixmatch-inofficial = { version = "0.5", features = ["rustls"], default-features = false }
 num-format = { version = "0.4", features = ["with-system-locale"] }
 rand = "0.10"
 regex = "1.13"

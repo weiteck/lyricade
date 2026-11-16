@@ -57,7 +57,6 @@ pub static PROVIDER_TEST_TRACKS: LazyLock<Vec<Track>> = LazyLock::new(|| {
   ]
 });
 
-#[derive(Debug)]
 pub struct ProviderManager {
   providers: ArcSwap<Vec<Arc<dyn Provider>>>,
   primary_providers_order: ArcSwap<Vec<ProviderId>>,
@@ -564,6 +563,58 @@ mod tests {
 
   #[tokio::test]
   #[traced_test]
+  async fn lrc_red_lyrics() {
+    let id = ProviderId::LrcRed;
+
+    assert!(
+      PROVIDER_MANAGER
+        .providers
+        .load()
+        .iter()
+        .any(|p| p.id() == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    let res = PROVIDER_MANAGER
+      .providers
+      .load()
+      .iter()
+      .find(|p| p.id() == id)
+      .map(async |p| p.test().await)
+      .expect("should have Provider")
+      .await;
+
+    assert_eq!(res, ProviderTestResult::Success);
+  }
+
+  #[tokio::test]
+  #[traced_test]
+  async fn musixmatch_lyrics() {
+    let id = ProviderId::Musixmatch;
+
+    assert!(
+      PROVIDER_MANAGER
+        .providers
+        .load()
+        .iter()
+        .any(|p| p.id() == id),
+      "{id}Provider not initialised (must be in default Providers)"
+    );
+
+    let res = PROVIDER_MANAGER
+      .providers
+      .load()
+      .iter()
+      .find(|p| p.id() == id)
+      .map(async |p| p.test().await)
+      .expect("should have Provider")
+      .await;
+
+    assert_eq!(res, ProviderTestResult::Success);
+  }
+
+  #[tokio::test]
+  #[traced_test]
   async fn genius_lyrics() {
     let id = ProviderId::Genius;
 
@@ -592,32 +643,6 @@ mod tests {
   #[traced_test]
   async fn azlyrics_lyrics() {
     let id = ProviderId::AzLyrics;
-
-    assert!(
-      PROVIDER_MANAGER
-        .providers
-        .load()
-        .iter()
-        .any(|p| p.id() == id),
-      "{id}Provider not initialised (must be in default Providers)"
-    );
-
-    let res = PROVIDER_MANAGER
-      .providers
-      .load()
-      .iter()
-      .find(|p| p.id() == id)
-      .map(async |p| p.test().await)
-      .expect("should have Provider")
-      .await;
-
-    assert_eq!(res, ProviderTestResult::Success);
-  }
-
-  #[tokio::test]
-  #[traced_test]
-  async fn lrc_red_lyrics() {
-    let id = ProviderId::LrcRed;
 
     assert!(
       PROVIDER_MANAGER

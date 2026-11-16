@@ -22,6 +22,7 @@ A Linux desktop application for fetching and managing lyrics in your local music
 - Support for multiple lyrics providers, including:
   - [LRCLIB](https://lrclib.net)
   - [lrc.red](https://lrc.red)
+  - [Musixmatch](https://musixmatch.com)
   - [Genius (plain only)](https://genius.com)
   - [AZLyrics (plain only)](https://azlyrics.com)
 
@@ -55,7 +56,7 @@ If you already have Flathub [configured](https://flathub.org/en/setup), you can 
 flatpak install flathub io.github.weiteck.Lyricade
 ```
 
-An AppImage package is also provided for convenience, however Flatpak is the only recommended installation method. Because Lyricade utilises modern GTK4 features, you will likely not have the required up-to-date dependencies if you're not running the latest major release of your Linux distribution.
+An AppImage package is also provided for convenience, however Flatpak is the recommended installation method.
 
 ## Building
 

@@ -20,7 +20,7 @@ use crate::{
   lyrics::Lyrics,
   provider::{
     azlyrics::AzLyricsProvider, genius::GeniusProvider, lrclib::LrcLibProvider,
-    lrcred::LrcRedProvider,
+    lrcred::LrcRedProvider, musixmatch::MusixmatchProvider,
   },
   schema::providers,
   track::Track,
@@ -33,11 +33,12 @@ mod azlyrics;
 mod genius;
 mod lrclib;
 mod lrcred;
+mod musixmatch;
 
 const SECS_TO_SKIP_PROVIDER_IF_FAILING: f64 = 30.0;
 
 #[async_trait]
-pub trait Provider: Debug + Send + Sync {
+pub trait Provider: Send + Sync {
   #[must_use]
   fn id(&self) -> ProviderId;
 
@@ -281,18 +282,26 @@ pub enum ProviderId {
   #[default]
   LrcLib,
   LrcRed,
+  Musixmatch,
   Genius,
   AzLyrics,
 }
 
 impl ProviderId {
-  pub const ALL: [Self; 4] = [Self::LrcLib, Self::LrcRed, Self::Genius, Self::AzLyrics];
+  pub const ALL: [Self; 5] = [
+    Self::LrcLib,
+    Self::LrcRed,
+    Self::Musixmatch,
+    Self::Genius,
+    Self::AzLyrics,
+  ];
 
   #[must_use]
   pub fn init_provider(self) -> Arc<dyn Provider> {
     match self {
       Self::LrcLib => Arc::new(LrcLibProvider::new()),
       Self::LrcRed => Arc::new(LrcRedProvider::new()),
+      Self::Musixmatch => Arc::new(MusixmatchProvider::new()),
       Self::Genius => Arc::new(GeniusProvider::new()),
       Self::AzLyrics => Arc::new(AzLyricsProvider::new()),
     }
@@ -304,6 +313,7 @@ impl Display for ProviderId {
     match self {
       Self::LrcLib => write!(f, "LRCLIB"),
       Self::LrcRed => write!(f, "LrcRed"),
+      Self::Musixmatch => write!(f, "Musixmatch"),
       Self::Genius => write!(f, "Genius"),
       Self::AzLyrics => write!(f, "AZLyrics"),
     }
@@ -315,6 +325,7 @@ impl From<&str> for ProviderId {
     match value {
       "LRCLIB" => Self::LrcLib,
       "LrcRed" => Self::LrcRed,
+      "Musixmatch" => Self::Musixmatch,
       "Genius" => Self::Genius,
       "AZLyrics" => Self::AzLyrics,
       _ => Self::default(),
