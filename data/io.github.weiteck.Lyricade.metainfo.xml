@@ -64,25 +64,25 @@
     <screenshot type="default">
       <caption>Main window</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.6.0/data/screenshots/1.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.7.0/data/screenshots/1.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Main window + sidebar (dark scheme)</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.6.0/data/screenshots/2.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.7.0/data/screenshots/2.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Preferences</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.6.0/data/screenshots/3.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.7.0/data/screenshots/3.png
       </image>
     </screenshot>
     <screenshot>
       <caption>Lyrics viewer</caption>
       <image>
-        https://raw.githubusercontent.com/weiteck/lyricade/v0.6.0/data/screenshots/4.png
+        https://raw.githubusercontent.com/weiteck/lyricade/v0.7.0/data/screenshots/4.png
       </image>
     </screenshot>
   </screenshots>
@@ -98,13 +98,27 @@
   <update_contact>fair.lake5766_AT_fastmail.com</update_contact>
 
   <releases>
+    <release version="0.7.0" date="2026-11-16">
+      <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.7.0</url>
+      <description>
+        <p>This release adds additional lyrics providers and some UX improvements.</p>
+        <ul>
+          <li>Added: lrc.red lyrics provider</li>
+          <li>Added: Musixmatch lyrics provider</li>
+          <li>Added: option to prevent future confirmation dialogs when writing lyrics tags</li>
+          <li>Fixed: removed failing SimpMusic provider</li>
+          <li>Fixed: registeded Lyricade with LRCLIB to reduce rate-limiting</li>
+        </ul>
+      </description>
+    </release>
+
     <release version="0.6.0" date="2026-09-07">
       <url type="details">https://github.com/weiteck/lyricade/releases/tag/v0.6.0</url>
       <description>
         <p>This release adds additional lyrics providers, and some UI fixes and improvements.</p>
         <ul>
-          <li>Added: add Genius lyrics provider</li>
-          <li>Added: add AZLyrics lyrics provider</li>
+          <li>Added: Genius lyrics provider</li>
+          <li>Added: AZLyrics lyrics provider</li>
           <li>Added: new progress window showing provider state</li>
           <li>Added: open lyrics by clicking in the table view</li>
           <li>Fixed: preserve blank lines when viewing plain lyrics</li>
