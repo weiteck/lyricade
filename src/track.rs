@@ -416,8 +416,8 @@ impl Track {
           modified = true;
         }
 
-        let upgrade_tag = if options.update_lyrics_tag {
-          match options.prefer_lyrics_type {
+        let upgrade_tag = options.update_lyrics_tag
+          && match options.prefer_lyrics_type {
             LyricsType::Sync
               if self.lyrics.is_none()
                 || (!self.lyrics_synchronised
@@ -429,10 +429,7 @@ impl Track {
             }
             LyricsType::Plain if self.lyrics.is_none() => true,
             _ => false,
-          }
-        } else {
-          false
-        };
+          };
 
         if upgrade_tag {
           self.lyrics_synchronised = lyrics
