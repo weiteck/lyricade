@@ -418,13 +418,13 @@ fn find_best_matching_isrc(hits: &[SearchResult], track: &Track) -> Result<Strin
       sr.title.eq_ignore_ascii_case(&track.track_name)
         && sr.artist.eq_ignore_ascii_case(&track.artist_name)
         && sr.album.eq_ignore_ascii_case(&track.album_name)
-        && (sr.duration - track.duration).abs() < 5.0
+        && (sr.duration - track.duration).abs() < 3.0
     })
     .or_else(|| {
       hits.iter().enumerate().find(|(_, sr)| {
         sr.title.eq_ignore_ascii_case(&track.track_name)
           && sr.artist.eq_ignore_ascii_case(&track.artist_name)
-          && (sr.duration - track.duration).abs() < 5.0
+          && (sr.duration - track.duration).abs() < 3.0
       })
     })
     .map(|(idx, sr)| {
