@@ -234,11 +234,6 @@ pub trait Provider: Send + Sync {
     state.total_requests.store(0, Ordering::Relaxed);
     state.failing.store(false, Ordering::Relaxed);
   }
-
-  /// Which tier to use when a new Provider is added to the database.
-  fn default_tier(&self) -> ProviderTier {
-    ProviderTier::Secondary
-  }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -304,6 +299,15 @@ impl ProviderId {
       Self::Musixmatch => Arc::new(MusixmatchProvider::new()),
       Self::Genius => Arc::new(GeniusProvider::new()),
       Self::AzLyrics => Arc::new(AzLyricsProvider::new()),
+    }
+  }
+
+  /// Which tier to use when a new Provider is added to the database.
+  #[must_use]
+  pub const fn default_tier(self) -> ProviderTier {
+    match self {
+      Self::LrcLib | Self::LrcRed => ProviderTier::Primary,
+      _ => ProviderTier::Secondary,
     }
   }
 }
@@ -394,7 +398,7 @@ impl Providers {
       }
 
       // Add missing Provider
-      let tier = id.init_provider().default_tier();
+      let tier = id.default_tier();
 
       match tier {
         ProviderTier::Primary => {
@@ -505,18 +509,23 @@ impl Default for Providers {
   fn default() -> Self {
     let now = now();
 
-    let primary = vec![ProviderSettings {
-      id: ProviderId::default(),
-      secondary: false,
-      enabled: true,
-      position: 0,
-      added_at: now,
-      updated_at: now,
-    }];
+    let primary = ProviderId::ALL
+      .iter()
+      .filter(|&&id| id.default_tier() == ProviderTier::Primary)
+      .enumerate()
+      .map(|(idx, &id)| ProviderSettings {
+        id,
+        secondary: false,
+        enabled: true,
+        position: idx as i32,
+        added_at: now,
+        updated_at: now,
+      })
+      .collect();
 
     let secondary = ProviderId::ALL
       .iter()
-      .filter(|&&id| id != ProviderId::default())
+      .filter(|&&id| id.default_tier() == ProviderTier::Secondary)
       .enumerate()
       .map(|(idx, &id)| ProviderSettings {
         id,
