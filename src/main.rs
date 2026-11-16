@@ -8,6 +8,7 @@ use std::{
 };
 
 use anyhow::anyhow;
+use cpal::traits::HostTrait;
 use diesel::{
   ExpressionMethods, QueryDsl, RunQueryDsl, SqliteConnection,
   connection::SimpleConnection,
@@ -16,6 +17,7 @@ use diesel::{
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use libsqlite3_sys::SQLITE_VERSION;
 use mimalloc::MiMalloc;
+use rodio::DeviceTrait;
 use tracing::{debug, error, info, warn};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{
@@ -139,6 +141,8 @@ Settings:
       .unwrap_or_else(|_| "(error getting database path - see log)".into()),
     settings
   );
+
+  log_audio_diagnostics();
 
   Ok(())
 }
@@ -267,6 +271,38 @@ fn delete_invalid_providers_from_db() -> Result<()> {
   }
 
   Ok(())
+}
+
+fn log_audio_diagnostics() {
+  let host = cpal::default_host();
+
+  info!("Audio host: {}", host.id());
+
+  match host.output_devices() {
+    Ok(devices) => {
+      let default_device_id = host.default_output_device().and_then(|dev| dev.id().ok());
+      if default_device_id.is_none() {
+        error!("No default audio output device");
+      }
+
+      let mut buf = String::new();
+      for (idx, device) in devices.enumerate() {
+        buf.push('\n');
+
+        let default_str = if device.id().ok() == default_device_id {
+          " [DEFAULT]"
+        } else {
+          ""
+        };
+
+        let s = format!("{}: {}{}", idx, device, default_str);
+        buf.push_str(&s);
+      }
+
+      info!("Audio output devices:{buf}");
+    }
+    Err(e) => error!("Failed to enumerate audio output devices: {e}"),
+  }
 }
 
 fn main() -> Result<()> {
