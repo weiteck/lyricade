@@ -29,7 +29,9 @@ jobs:
             libadwaita-1-dev \
             build-essential \
             libasound2-dev \
-            pipewire-alsa
+            pipewire-alsa \
+            libpipewire-0.3-dev \
+            libpulse-dev
 
       - name: Setup Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -86,7 +88,8 @@ jobs:
             wget \
             zsync \
             alsa-lib \
-            pipewire-alsa
+            pipewire-alsa \
+            libpulse
 
           chmod +x ./target/release/lyricade
 
