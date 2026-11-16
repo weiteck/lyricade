@@ -71,13 +71,22 @@ jobs:
           pacman -Syu --noconfirm
 
           pacman -S --needed --noconfirm \
+            base-devel \
+            binutils \
+            coreutils \
+            findutils \
+            gawk \
+            glibc \
+            grep \
             gtk4 \
             libadwaita \
-            alsa-lib \
-            pipewire-alsa \
+            patchelf \
+            strace \
+            tar \
             wget \
             zsync \
-            patchelf
+            alsa-lib \
+            pipewire-alsa
 
           chmod +x ./target/release/lyricade
 
