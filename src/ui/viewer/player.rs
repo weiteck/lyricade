@@ -238,16 +238,25 @@ impl SimpleComponent for PlayerModel {
   ) -> ComponentParts<Self> {
     let path = track.path();
 
-    // Open audio file, create the decoder and open the default sound output device
-    let model = if let Ok(file) =
-      std::fs::File::open(path.clone()).inspect_err(|e| warn!("Failed to open file: {e}"))
+    // Open the default sound output device
+    // Must be on a separate thread due to how `cpal` initialises PulseAudio devices
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+      let result = rodio::DeviceSinkBuilder::open_default_sink();
+      let _ = tx.send(result);
+    });
+    let output = rx
+      .recv_timeout(Duration::from_secs(3))
+      .map_err(|e| format!("Audio initialisation timed out or failed: {e}"))
+      .and_then(|result| result.map_err(|e| e.to_string()));
+
+    // Open audio file and create the decoder
+    let model = if let Ok(mut output) =
+      output.inspect_err(|e| warn!("Failed to open audio device: {e}"))
+      && let Ok(file) =
+        std::fs::File::open(path.clone()).inspect_err(|e| warn!("Failed to open file: {e}"))
       && let Ok(mut source) =
         rodio::Decoder::try_from(file).inspect_err(|e| warn!("Failed to create Decoder: {e}"))
-      && let Ok(mut output) = std::thread::spawn(rodio::DeviceSinkBuilder::open_default_sink)
-        .join()
-        .map_err(|_| "Audio initialisation thread panicked".to_string())
-        .and_then(|result| result.map_err(|e| e.to_string()))
-        .inspect_err(|e| warn!("Failed to open audio device: {e}"))
     {
       output.log_on_drop(false);
 
