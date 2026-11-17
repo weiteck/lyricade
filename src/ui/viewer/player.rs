@@ -243,7 +243,10 @@ impl SimpleComponent for PlayerModel {
       std::fs::File::open(path.clone()).inspect_err(|e| warn!("Failed to open file: {e}"))
       && let Ok(mut source) =
         rodio::Decoder::try_from(file).inspect_err(|e| warn!("Failed to create Decoder: {e}"))
-      && let Ok(mut output) = rodio::DeviceSinkBuilder::open_default_sink()
+      && let Ok(mut output) = std::thread::spawn(rodio::DeviceSinkBuilder::open_default_sink)
+        .join()
+        .map_err(|_| "Audio initialisation thread panicked".to_string())
+        .and_then(|result| result.map_err(|e| e.to_string()))
         .inspect_err(|e| warn!("Failed to open audio device: {e}"))
     {
       output.log_on_drop(false);
