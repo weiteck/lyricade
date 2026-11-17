@@ -1288,6 +1288,7 @@ impl Component for AppModel {
             .launch((Rc::new(track.clone()), source))
             .forward(sender.input_sender(), |msg| match msg {
               ViewLyricsOutput::Close => AppMsg::CloseLyricsWindow,
+              ViewLyricsOutput::ShowToast(msg) => AppMsg::ShowToast(msg),
             });
 
           let window = controller.widget();

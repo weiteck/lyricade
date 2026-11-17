@@ -53,6 +53,7 @@ pub(super) enum PlayerMsg {
 pub(super) enum PlayerOutput {
   StateChanged(PlayerState),
   CurrentLyricsLine(Option<usize>),
+  ShowToast(String),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -248,7 +249,12 @@ impl SimpleComponent for PlayerModel {
     let output = rx
       .recv_timeout(Duration::from_secs(3))
       .map_err(|e| format!("Audio initialisation timed out or failed: {e}"))
-      .and_then(|result| result.map_err(|e| e.to_string()));
+      .and_then(|result| result.map_err(|e| e.to_string()))
+      .inspect_err(|_| {
+        sender
+          .output(PlayerOutput::ShowToast("Failed to initialise audio device".to_string()))
+          .expect("PlayerOutput receiver dropped");
+      });
 
     // Open audio file and create the decoder
     let model = if let Ok(mut output) =

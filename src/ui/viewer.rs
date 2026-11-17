@@ -57,11 +57,13 @@ pub enum ViewLyricsMsg {
   CurrentLyricsLine(Option<usize>),
   PlayerTogglePlay,
   PlayerSkipTime(f64),
+  ShowToast(String),
   CloseRequested,
 }
 
 #[derive(Debug)]
 pub enum ViewLyricsOutput {
+  ShowToast(String),
   Close,
 }
 
@@ -282,6 +284,7 @@ impl SimpleComponent for ViewLyricsModel {
       .forward(sender.input_sender(), |msg| match msg {
         PlayerOutput::CurrentLyricsLine(idx) => ViewLyricsMsg::CurrentLyricsLine(idx),
         PlayerOutput::StateChanged(state) => ViewLyricsMsg::PlayerStateChanged(state),
+        PlayerOutput::ShowToast(msg) => ViewLyricsMsg::ShowToast(msg),
       });
 
     let lyrics_sync = lyrics_are_lrc(&lyrics);
@@ -427,6 +430,14 @@ impl SimpleComponent for ViewLyricsModel {
         debug!("ViewLyrics: Skip time by {delta}s requested");
 
         self.player.sender().emit(PlayerMsg::SkipTime(delta));
+      }
+
+      ViewLyricsMsg::ShowToast(msg) => {
+        debug!("ViewLyrics: Show toast: \"{msg}\"");
+
+        sender
+          .output(ViewLyricsOutput::ShowToast(msg))
+          .expect("ViewLyricsOutput receiver dropped");
       }
 
       ViewLyricsMsg::CloseRequested => {
